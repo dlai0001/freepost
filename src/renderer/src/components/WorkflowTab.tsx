@@ -41,6 +41,9 @@ export default function WorkflowTab(props: Props): JSX.Element {
   const [statuses, setStatuses] = useState<(StepStatus | null)[]>([])
   const [summary, setSummary] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [dataFile, setDataFile] = useState('')
+  const [dataWarning, setDataWarning] = useState<string | null>(null)
+  const [iterations, setIterations] = useState<string[] | null>(null)
 
   const dirtyRef = useRef(false)
   const runningRef = useRef(false)
@@ -76,6 +79,7 @@ export default function WorkflowTab(props: Props): JSX.Element {
         const wf = await fp().readWorkflow(absPath)
         if (cancelled) return
         setDescription(wf.description ?? '')
+        setDataFile(wf.dataFile ?? '')
         setSteps(
           wf.steps.map((s) => ({
             id: nextId(),
@@ -117,6 +121,7 @@ export default function WorkflowTab(props: Props): JSX.Element {
     try {
       await fp().writeWorkflow(absPath, {
         description: description.trim() === '' ? undefined : description.trim(),
+        dataFile: dataFile.trim() === '' ? undefined : dataFile.trim(),
         steps: steps
           .filter((s) => s.request.trim() !== '')
           .map((s) =>
@@ -152,9 +157,39 @@ export default function WorkflowTab(props: Props): JSX.Element {
     return parts.join(' · ') + (report.halted ? ' · halted' : '')
   }
 
+  async function browseData(): Promise<void> {
+    setDataWarning(null)
+    try {
+      const chosen = await fp().browseDataFile()
+      if (chosen === null) return
+      // The main process expects a collection-relative path.
+      const norm = props.root.replace(/[/\\]$/, '')
+      if (chosen.startsWith(norm + '/') || chosen.startsWith(norm + '\\')) {
+        setDataFile(chosen.slice(norm.length + 1))
+      } else {
+        setDataFile(chosen)
+        setDataWarning('Data files should live inside the collection; this path is outside it.')
+      }
+      touch()
+    } catch (e) {
+      setError(errMsg(e))
+    }
+  }
+
+  function iterationSummary(report: WorkflowRunReport, i: number): string {
+    let passed = 0
+    let failed = 0
+    for (const s of report.steps) {
+      if (s.status === 'passed' || s.status === 'expected-error') passed++
+      else if (s.status === 'failed' || s.status === 'unexpected-success') failed++
+    }
+    return `iteration ${i + 1}: ${passed} passed / ${failed} failed${report.halted ? ' · halted' : ''}`
+  }
+
   async function run(): Promise<void> {
     setError(null)
     setSummary(null)
+    setIterations(null)
     const found = await validate()
     if (found.length > 0) return
     runningRef.current = true
@@ -169,6 +204,9 @@ export default function WorkflowTab(props: Props): JSX.Element {
       })
       setStatuses(report.steps.map((s) => s.status))
       setSummary(summarize(report))
+      if (report.iterations !== undefined && report.iterations.length > 0) {
+        setIterations(report.iterations.map((it, i) => iterationSummary(it, i)))
+      }
     } catch (e) {
       setError(errMsg(e))
     } finally {
@@ -231,6 +269,46 @@ export default function WorkflowTab(props: Props): JSX.Element {
           touch()
         }}
       />
+
+      <label className="field-label">Data file (collection-relative CSV/JSON — one run per row)</label>
+      <div className="wf-datafile">
+        <input
+          className="cell-input mono"
+          value={dataFile}
+          placeholder="data/users.csv"
+          onChange={(e) => {
+            setDataFile(e.target.value)
+            setDataWarning(null)
+            touch()
+          }}
+        />
+        <button className="btn btn-small" onClick={() => void browseData()}>
+          Browse…
+        </button>
+        <button
+          className="btn btn-small"
+          disabled={dataFile === ''}
+          onClick={() => {
+            setDataFile('')
+            setDataWarning(null)
+            touch()
+          }}
+        >
+          Clear
+        </button>
+      </div>
+      {dataWarning !== null && <div className="banner banner-warn">{dataWarning}</div>}
+
+      {iterations !== null && (
+        <div className="wf-iterations">
+          <div className="wf-iterations-title">Data-driven iterations</div>
+          {iterations.map((line, i) => (
+            <div key={i} className="wf-iteration mono">
+              {line}
+            </div>
+          ))}
+        </div>
+      )}
 
       <label className="field-label">Steps (collection-relative request paths, run in order)</label>
       <div className="wf-steps">

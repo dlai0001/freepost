@@ -1,0 +1,11 @@
+{
+  "defaultHeaders": [
+    {
+      "name": "X-Freepost-Demo",
+      "value": "true"
+    }
+  ],
+  "scripts": {
+    "pre-request": "pm.variables.set(\"RUN_AT\", new Date().toISOString());"
+  }
+}

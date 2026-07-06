@@ -130,4 +130,22 @@ emit(
   'environments/local.env.json',
   JSON.stringify({ BASE_URL: 'httpbin.org', WS_URL: 'ws://localhost:9090' }, null, 2) + '\n'
 )
+
+// M5: a collection-level config with a default header and a collection pre-request
+// script, demonstrating folder/collection inheritance.
+emit(
+  'collection.json',
+  JSON.stringify(
+    {
+      defaultHeaders: [{ name: 'X-Freepost-Demo', value: 'true' }],
+      scripts: { 'pre-request': 'pm.variables.set("RUN_AT", new Date().toISOString());' }
+    },
+    null,
+    2
+  ) + '\n'
+)
+
+// M5: a CSV data file for data-driven workflow runs.
+emit('data/users.csv', 'USER_ID,EXPECTED_NAME\n1,Leanne\n2,Ervin\n3,Clementine\n')
+
 console.log('done')

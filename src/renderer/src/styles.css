@@ -379,3 +379,76 @@ button { cursor: pointer; }
   text-overflow: ellipsis; white-space: nowrap; direction: rtl; flex: 1;
 }
 .import-hint { color: var(--warn); font-size: 12px; }
+
+/* --------------------------- modal title with actions -------------------- */
+.modal-title { display: flex; align-items: center; gap: 8px; }
+.modal-title .btn-small { margin-top: 0; }
+
+/* ------------------------------ codegen modal ---------------------------- */
+.codegen-controls { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.codegen-check { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.codegen-code {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px; font-size: 12px; line-height: 1.5;
+  max-height: 55vh; overflow: auto; white-space: pre; min-height: 120px;
+}
+
+/* ------------------------------ history panel ---------------------------- */
+.history-list { max-height: 55vh; overflow-y: auto; margin-top: 4px; }
+.history-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 4px; border-bottom: 1px solid rgba(48, 54, 61, 0.5);
+  cursor: pointer; font-size: 12px;
+}
+.history-row:hover { background: rgba(255, 255, 255, 0.05); }
+.history-url { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-at { color: var(--muted); font-size: 11px; white-space: nowrap; }
+
+/* ---------------------------- examples modal ----------------------------- */
+.example-list { max-height: 55vh; overflow-y: auto; margin-top: 4px; }
+.example-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 4px; border-bottom: 1px solid rgba(48, 54, 61, 0.5); font-size: 12px;
+}
+.example-name {
+  flex: 1; min-width: 0; text-align: left;
+  background: none; border: none; color: var(--blue); font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.example-name:hover { text-decoration: underline; }
+.example-content { max-height: 55vh; overflow: auto; padding: 10px 0; }
+.example-req-line { color: var(--text); font-size: 12px; margin-bottom: 8px; word-break: break-all; }
+
+/* ------------------------------ oauth2 auth ------------------------------ */
+.oauth-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.oauth-actions .btn-small { margin-top: 0; }
+.oauth-result { color: var(--teal); font-size: 12px; word-break: break-all; }
+
+/* --------------------------- graphql introspection ----------------------- */
+.gql-toolbar { display: flex; gap: 8px; margin-bottom: 8px; }
+.gql-toolbar .btn-small { margin-top: 0; }
+.gql-schema {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px; margin-bottom: 10px; max-height: 260px; overflow-y: auto;
+}
+.gql-schema-group { margin-bottom: 10px; }
+.gql-schema-title { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 4px; }
+.gql-field {
+  display: block; width: 100%; text-align: left;
+  background: none; border: none; color: var(--text);
+  padding: 2px 4px; border-radius: 4px; font-size: 12px;
+}
+.gql-field:hover { background: rgba(255, 255, 255, 0.06); }
+.gql-field-name { color: var(--blue); }
+.gql-field-args { color: var(--muted); }
+.gql-field-type { color: var(--teal); }
+.gql-types { display: flex; flex-wrap: wrap; gap: 4px; }
+.gql-type-chip { cursor: default; }
+
+/* ------------------------ workflow data files ---------------------------- */
+.wf-datafile { display: flex; gap: 8px; align-items: center; padding: 0 12px; }
+.wf-datafile .cell-input { flex: 1; }
+.wf-datafile .btn-small { margin-top: 0; flex-shrink: 0; }
+.wf-iterations { margin: 8px 12px 0; padding: 8px 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; }
+.wf-iterations-title { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 4px; }
+.wf-iteration { font-size: 12px; padding: 2px 0; color: var(--text); }

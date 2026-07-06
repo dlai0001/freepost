@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import type {
+  AcquiredToken,
   ExecutionReport,
   Frontmatter,
+  GqlSchemaSummary,
   Header,
+  OAuth2Config,
+  OAuth2Grant,
   ParseError,
   RequestFile,
   VariableDecl,
@@ -11,11 +15,15 @@ import type {
 import { errMsg, fp } from '../api'
 import { joinPath, nextId } from '../util'
 import ResponsePanel from './ResponsePanel'
+import CodegenModal from './CodegenModal'
+import ExamplesModal from './ExamplesModal'
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
+const OAUTH_GRANTS: OAuth2Grant[] = ['client_credentials', 'password', 'authorization_code']
+const DEFAULT_OAUTH_VAR = 'OAUTH_TOKEN'
 
 type Section = 'headers' | 'body' | 'auth' | 'scripts' | 'meta'
-type AuthMode = 'none' | 'basic' | 'bearer'
+type AuthMode = 'none' | 'basic' | 'bearer' | 'oauth2'
 
 interface HeaderRow {
   id: number
@@ -63,6 +71,25 @@ export default function RequestTab(props: Props): JSX.Element {
   const [authUser, setAuthUser] = useState('')
   const [authPass, setAuthPass] = useState('')
   const [authToken, setAuthToken] = useState('')
+  // OAuth2 config fields.
+  const [oauthGrant, setOauthGrant] = useState<OAuth2Grant>('client_credentials')
+  const [oauthTokenUrl, setOauthTokenUrl] = useState('')
+  const [oauthClientId, setOauthClientId] = useState('')
+  const [oauthClientSecret, setOauthClientSecret] = useState('')
+  const [oauthScope, setOauthScope] = useState('')
+  const [oauthUsername, setOauthUsername] = useState('')
+  const [oauthPassword, setOauthPassword] = useState('')
+  const [oauthSessionVar, setOauthSessionVar] = useState('')
+  const [oauthBusy, setOauthBusy] = useState(false)
+  const [oauthResult, setOauthResult] = useState<string | null>(null)
+  // GraphQL introspection.
+  const [gqlSchema, setGqlSchema] = useState<GqlSchemaSummary | null>(null)
+  const [gqlSchemaOpen, setGqlSchemaOpen] = useState(false)
+  const [gqlBusy, setGqlBusy] = useState(false)
+  const [gqlError, setGqlError] = useState<string | null>(null)
+  // Modals.
+  const [showCodegen, setShowCodegen] = useState(false)
+  const [showExamples, setShowExamples] = useState(false)
   const [preScript, setPreScript] = useState('')
   const [testScript, setTestScript] = useState('')
   const [description, setDescription] = useState('')
@@ -120,12 +147,23 @@ export default function RequestTab(props: Props): JSX.Element {
       setGqlOn(false)
     }
 
-    // Auth: --user => basic; Authorization: Bearer header => bearer.
+    // Auth: frontmatter.auth => oauth2; --user => basic; Bearer header => bearer.
     const user = http?.options.user
     const bearerHeader = (http?.headers ?? []).find(
       (h) => h.name.toLowerCase() === 'authorization' && /^bearer\s/i.test(h.value)
     )
-    if (user !== undefined) {
+    if (fm.auth !== undefined) {
+      const a = fm.auth
+      setAuthMode('oauth2')
+      setOauthGrant(a.grant)
+      setOauthTokenUrl(a.tokenUrl)
+      setOauthClientId(a.clientId)
+      setOauthClientSecret(a.clientSecret ?? '')
+      setOauthScope(a.scope ?? '')
+      setOauthUsername(a.username ?? '')
+      setOauthPassword(a.password ?? '')
+      setOauthSessionVar(a.sessionVar ?? '')
+    } else if (user !== undefined) {
       const colon = user.indexOf(':')
       setAuthMode('basic')
       setAuthUser(colon >= 0 ? user.slice(0, colon) : user)
@@ -250,6 +288,32 @@ export default function RequestTab(props: Props): JSX.Element {
       )
     }
 
+    // OAuth2 config is persisted in frontmatter.auth. When active, the token is
+    // applied at runtime via the session variable, so we write no Authorization
+    // header or --user here.
+    if (authMode === 'oauth2') {
+      const auth: OAuth2Config = {
+        grant: oauthGrant,
+        tokenUrl: oauthTokenUrl.trim(),
+        clientId: oauthClientId.trim()
+      }
+      if (oauthClientSecret !== '') auth.clientSecret = oauthClientSecret
+      if (oauthScope.trim() !== '') auth.scope = oauthScope.trim()
+      if (oauthGrant === 'password') {
+        if (oauthUsername !== '') auth.username = oauthUsername
+        if (oauthPassword !== '') auth.password = oauthPassword
+      }
+      if (oauthSessionVar.trim() !== '') auth.sessionVar = oauthSessionVar.trim()
+      // Preserve any inherited-only keys the editor doesn't surface.
+      const prev = orig.frontmatter.auth
+      if (prev?.authUrl !== undefined) auth.authUrl = prev.authUrl
+      if (prev?.redirectUri !== undefined) auth.redirectUri = prev.redirectUri
+      if (prev?.tokenName !== undefined) auth.tokenName = prev.tokenName
+      fm.auth = auth
+    } else {
+      delete fm.auth
+    }
+
     // Body / GraphQL.
     let body: { kind: 'raw' | 'file'; value: string } | undefined
     if (gqlOn) {
@@ -321,6 +385,55 @@ export default function RequestTab(props: Props): JSX.Element {
       setError(errMsg(e))
     } finally {
       setSending(false)
+    }
+  }
+
+  async function acquireToken(): Promise<void> {
+    setOauthResult(null)
+    setOauthBusy(true)
+    try {
+      const token: AcquiredToken = await fp().acquireOAuthToken({
+        root: props.root,
+        path: props.relPath,
+        envPath: props.envPath ?? undefined
+      })
+      const truncated =
+        token.accessToken.length > 16
+          ? `${token.accessToken.slice(0, 8)}…${token.accessToken.slice(-4)}`
+          : token.accessToken
+      const expiry =
+        token.expiresAt !== undefined
+          ? ` · expires ${new Date(token.expiresAt).toLocaleString()}`
+          : ''
+      setOauthResult(`${token.tokenType} ${truncated}${expiry}`)
+    } catch (e) {
+      setOauthResult(errMsg(e))
+    } finally {
+      setOauthBusy(false)
+    }
+  }
+
+  async function introspect(): Promise<void> {
+    setGqlError(null)
+    setGqlBusy(true)
+    try {
+      const result = await fp().introspectGraphql({
+        root: props.root,
+        path: props.relPath,
+        envPath: props.envPath ?? undefined
+      })
+      if (result.ok) {
+        setGqlSchema(result.schema)
+        setGqlSchemaOpen(true)
+      } else {
+        setGqlSchema(null)
+        setGqlError(result.error)
+      }
+    } catch (e) {
+      setGqlSchema(null)
+      setGqlError(errMsg(e))
+    } finally {
+      setGqlBusy(false)
     }
   }
 
@@ -396,6 +509,12 @@ export default function RequestTab(props: Props): JSX.Element {
         </button>
         <button className="btn" onClick={() => void save()} disabled={saving}>
           {saving ? 'Saving…' : 'Save'}
+        </button>
+        <button className="btn" onClick={() => setShowCodegen(true)}>
+          Code
+        </button>
+        <button className="btn" onClick={() => setShowExamples(true)}>
+          Examples
         </button>
       </div>
 
@@ -488,6 +607,40 @@ export default function RequestTab(props: Props): JSX.Element {
             {section === 'body' &&
               (gqlOn ? (
                 <div className="gql-editor">
+                  <div className="gql-toolbar">
+                    <button
+                      className="btn btn-small"
+                      onClick={() => void introspect()}
+                      disabled={gqlBusy}
+                    >
+                      {gqlBusy ? 'Introspecting…' : 'Introspect schema'}
+                    </button>
+                    {gqlSchema !== null && (
+                      <button
+                        className="btn btn-small"
+                        onClick={() => setGqlSchemaOpen((v) => !v)}
+                      >
+                        {gqlSchemaOpen ? 'Hide schema' : 'Show schema'}
+                      </button>
+                    )}
+                  </div>
+                  {gqlError !== null && (
+                    <div className="banner banner-danger">
+                      {gqlError}
+                      <button className="icon-btn" onClick={() => setGqlError(null)}>
+                        ×
+                      </button>
+                    </div>
+                  )}
+                  {gqlSchema !== null && gqlSchemaOpen && (
+                    <GqlSchemaView
+                      schema={gqlSchema}
+                      onPick={(name) => {
+                        setGqlQuery((q) => (q.trim() === '' ? name : `${q}\n${name}`))
+                        touch()
+                      }}
+                    />
+                  )}
                   <label className="field-label">Query</label>
                   <textarea
                     className="editor mono"
@@ -544,6 +697,7 @@ export default function RequestTab(props: Props): JSX.Element {
                   <option value="none">None</option>
                   <option value="basic">Basic</option>
                   <option value="bearer">Bearer</option>
+                  <option value="oauth2">OAuth 2.0</option>
                 </select>
                 {authMode === 'basic' && (
                   <div className="auth-fields">
@@ -582,6 +736,124 @@ export default function RequestTab(props: Props): JSX.Element {
                       }}
                     />
                     <div className="dim-note">Saved as an Authorization: Bearer header.</div>
+                  </div>
+                )}
+                {authMode === 'oauth2' && (
+                  <div className="auth-fields">
+                    <label className="field-label">Grant type</label>
+                    <select
+                      className="method-select"
+                      value={oauthGrant}
+                      onChange={(e) => {
+                        setOauthGrant(e.target.value as OAuth2Grant)
+                        touch()
+                      }}
+                    >
+                      {OAUTH_GRANTS.map((g) => (
+                        <option key={g} value={g}>
+                          {g}
+                        </option>
+                      ))}
+                    </select>
+                    <label className="field-label">Token URL</label>
+                    <input
+                      className="cell-input mono"
+                      value={oauthTokenUrl}
+                      placeholder="https://auth.example.com/oauth/token"
+                      onChange={(e) => {
+                        setOauthTokenUrl(e.target.value)
+                        touch()
+                      }}
+                    />
+                    <label className="field-label">Client ID</label>
+                    <input
+                      className="cell-input mono"
+                      value={oauthClientId}
+                      onChange={(e) => {
+                        setOauthClientId(e.target.value)
+                        touch()
+                      }}
+                    />
+                    <label className="field-label">Client secret</label>
+                    <input
+                      className="cell-input mono"
+                      type="password"
+                      value={oauthClientSecret}
+                      onChange={(e) => {
+                        setOauthClientSecret(e.target.value)
+                        touch()
+                      }}
+                    />
+                    <label className="field-label">Scope</label>
+                    <input
+                      className="cell-input mono"
+                      value={oauthScope}
+                      placeholder="read write"
+                      onChange={(e) => {
+                        setOauthScope(e.target.value)
+                        touch()
+                      }}
+                    />
+                    {oauthGrant === 'password' && (
+                      <>
+                        <label className="field-label">Username</label>
+                        <input
+                          className="cell-input mono"
+                          value={oauthUsername}
+                          onChange={(e) => {
+                            setOauthUsername(e.target.value)
+                            touch()
+                          }}
+                        />
+                        <label className="field-label">Password</label>
+                        <input
+                          className="cell-input mono"
+                          type="password"
+                          value={oauthPassword}
+                          onChange={(e) => {
+                            setOauthPassword(e.target.value)
+                            touch()
+                          }}
+                        />
+                      </>
+                    )}
+                    <label className="field-label">Session variable</label>
+                    <input
+                      className="cell-input mono"
+                      value={oauthSessionVar}
+                      placeholder={DEFAULT_OAUTH_VAR}
+                      onChange={(e) => {
+                        setOauthSessionVar(e.target.value)
+                        touch()
+                      }}
+                    />
+                    <div className="oauth-actions">
+                      <button
+                        className="btn btn-small"
+                        onClick={() => void acquireToken()}
+                        disabled={oauthBusy}
+                      >
+                        {oauthBusy ? 'Acquiring…' : 'Acquire token'}
+                      </button>
+                      {oauthResult !== null && (
+                        <span className="oauth-result mono">{oauthResult}</span>
+                      )}
+                    </div>
+                    <div className="dim-note">
+                      The acquired token is stored in the session variable{' '}
+                      <span className="mono">
+                        ${'{'}
+                        {oauthSessionVar.trim() === '' ? DEFAULT_OAUTH_VAR : oauthSessionVar.trim()}
+                        {'}'}
+                      </span>
+                      . Reference it in your request&apos;s own Authorization header, e.g.{' '}
+                      <span className="mono">
+                        Authorization: Bearer ${'{'}
+                        {oauthSessionVar.trim() === '' ? DEFAULT_OAUTH_VAR : oauthSessionVar.trim()}
+                        {'}'}
+                      </span>
+                      . The authorization_code grant is not supported interactively.
+                    </div>
                   </div>
                 )}
               </div>
@@ -720,10 +992,83 @@ export default function RequestTab(props: Props): JSX.Element {
             report={report}
             sending={sending}
             below={respBelow}
+            root={props.root}
+            relPath={props.relPath}
             onToggleLayout={() => setRespBelow(!respBelow)}
             onClose={() => setRespOpen(false)}
           />
         )}
+      </div>
+
+      {showCodegen && (
+        <CodegenModal
+          root={props.root}
+          relPath={props.relPath}
+          envPath={props.envPath}
+          onCancel={() => setShowCodegen(false)}
+        />
+      )}
+      {showExamples && (
+        <ExamplesModal
+          root={props.root}
+          relPath={props.relPath}
+          onCancel={() => setShowExamples(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+function GqlSchemaView({
+  schema,
+  onPick
+}: {
+  schema: GqlSchemaSummary
+  onPick: (name: string) => void
+}): JSX.Element {
+  return (
+    <div className="gql-schema">
+      <div className="gql-schema-group">
+        <div className="gql-schema-title">Queries ({schema.queries.length})</div>
+        {schema.queries.length === 0 && <div className="dim-note">none</div>}
+        {schema.queries.map((f) => (
+          <button
+            key={f.name}
+            className="gql-field mono"
+            title="Insert into query"
+            onClick={() => onPick(f.name)}
+          >
+            <span className="gql-field-name">{f.name}</span>
+            {f.args.length > 0 && <span className="gql-field-args">({f.args.join(', ')})</span>}
+            <span className="gql-field-type">: {f.type}</span>
+          </button>
+        ))}
+      </div>
+      <div className="gql-schema-group">
+        <div className="gql-schema-title">Mutations ({schema.mutations.length})</div>
+        {schema.mutations.length === 0 && <div className="dim-note">none</div>}
+        {schema.mutations.map((f) => (
+          <button
+            key={f.name}
+            className="gql-field mono"
+            title="Insert into query"
+            onClick={() => onPick(f.name)}
+          >
+            <span className="gql-field-name">{f.name}</span>
+            {f.args.length > 0 && <span className="gql-field-args">({f.args.join(', ')})</span>}
+            <span className="gql-field-type">: {f.type}</span>
+          </button>
+        ))}
+      </div>
+      <div className="gql-schema-group">
+        <div className="gql-schema-title">Types ({schema.types.length})</div>
+        <div className="gql-types">
+          {schema.types.map((t) => (
+            <span key={t} className="chip gql-type-chip">
+              {t}
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   )

@@ -1,11 +1,16 @@
 import { useState } from 'react'
 import type { ExecutionReport, ScriptOutcome } from '../../../shared/model'
+import { errMsg, fp } from '../api'
 import { fmtBytes, fmtMs, tryPrettyJson } from '../util'
+import PromptModal from './PromptModal'
 
 interface Props {
   report: ExecutionReport | null
   sending: boolean
   below: boolean
+  /** Collection root + request path, for saving the response as an example. */
+  root: string
+  relPath: string
   onToggleLayout: () => void
   onClose: () => void
 }
@@ -14,8 +19,25 @@ type Section = 'body' | 'headers' | 'tests'
 
 export default function ResponsePanel(props: Props): JSX.Element {
   const [section, setSection] = useState<Section>('body')
+  const [saving, setSaving] = useState(false)
+  const [savePrompt, setSavePrompt] = useState(false)
+  const [saveMsg, setSaveMsg] = useState<string | null>(null)
   const { report } = props
   const resp = report?.response
+
+  async function saveExample(name: string): Promise<void> {
+    setSavePrompt(false)
+    setSaving(true)
+    setSaveMsg(null)
+    try {
+      await fp().saveExample({ root: props.root, path: props.relPath, name })
+      setSaveMsg(`Saved example “${name}”.`)
+    } catch (e) {
+      setSaveMsg(errMsg(e))
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <div className="resp-panel">
@@ -40,6 +62,16 @@ export default function ResponsePanel(props: Props): JSX.Element {
           </>
         )}
         <div className="topbar-spacer" />
+        {resp !== undefined && (
+          <button
+            className="btn btn-small"
+            title="Snapshot this response as a saved example"
+            disabled={saving}
+            onClick={() => setSavePrompt(true)}
+          >
+            {saving ? 'Saving…' : 'Save as example'}
+          </button>
+        )}
         <button
           className="icon-btn"
           title={props.below ? 'Move response to the right' : 'Move response below'}
@@ -51,6 +83,26 @@ export default function ResponsePanel(props: Props): JSX.Element {
           ×
         </button>
       </div>
+
+      {saveMsg !== null && (
+        <div className="banner banner-warn">
+          {saveMsg}
+          <button className="icon-btn" onClick={() => setSaveMsg(null)}>
+            ×
+          </button>
+        </div>
+      )}
+
+      {savePrompt && (
+        <PromptModal
+          title="Save as example"
+          label="Example name"
+          placeholder="200 OK — happy path"
+          submitText="Save"
+          onSubmit={(name) => void saveExample(name)}
+          onCancel={() => setSavePrompt(false)}
+        />
+      )}
 
       {props.sending && <div className="resp-sending">Sending…</div>}
 

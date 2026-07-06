@@ -11,10 +11,12 @@ import WebSocketTab from './components/WebSocketTab'
 import WorkflowTab from './components/WorkflowTab'
 import PromptModal from './components/PromptModal'
 import ImportModal from './components/ImportModal'
+import HistoryPanel from './components/HistoryPanel'
 import type { NewItemKind } from './components/Tree'
 
 type ModalSpec =
   | { kind: 'import' }
+  | { kind: 'history' }
   | { kind: 'new-item'; folder: string; itemKind: NewItemKind }
 
 export default function App(): JSX.Element {
@@ -137,6 +139,7 @@ function Shell(): JSX.Element {
         notice={notice}
         onDismissNotice={() => setNotice(null)}
         onImport={() => setModal({ kind: 'import' })}
+        onHistory={() => setModal({ kind: 'history' })}
       />
       <div className="app-body">
         <Sidebar
@@ -220,6 +223,16 @@ function Shell(): JSX.Element {
             void loadCollection(state.root as string).catch((e) => setNotice(errMsg(e)))
           }}
           onError={(message) => setNotice(message)}
+          onCancel={() => setModal(null)}
+        />
+      )}
+      {modal?.kind === 'history' && state.root !== null && (
+        <HistoryPanel
+          root={state.root}
+          onOpen={(path) => {
+            setModal(null)
+            openPath(path, 'request')
+          }}
           onCancel={() => setModal(null)}
         />
       )}

@@ -3,6 +3,7 @@ interface Props {
   notice: string | null
   onDismissNotice: () => void
   onImport: () => void
+  onHistory: () => void
 }
 
 export default function TopBar(props: Props): JSX.Element {
@@ -21,6 +22,9 @@ export default function TopBar(props: Props): JSX.Element {
           </button>
         </span>
       )}
+      <button className="btn" onClick={props.onHistory} disabled={props.root === null}>
+        History
+      </button>
       <button className="btn" onClick={props.onImport} disabled={props.root === null}>
         Import
       </button>

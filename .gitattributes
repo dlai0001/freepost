@@ -1,0 +1,6 @@
+# Freepost request files are executable shell scripts — they must be LF.
+# Canonical writer output is LF; keep checkouts byte-identical on all platforms.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary

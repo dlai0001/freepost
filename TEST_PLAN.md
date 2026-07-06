@@ -61,6 +61,41 @@ Prereq: a local echo server (e.g. `httpbin` container or a tiny node echo). Open
 
 ---
 
-## Results
+## Execution results (2026-07-06)
 
-See the "Execution results" section appended after the run.
+**Automated — all green.**
+
+| Check | Result |
+|---|---|
+| `npm run test` | **423 passed** (25 files), 0 failed |
+| `npm run typecheck` | clean |
+| `npm run fence` | OK — no network APIs outside `src/engine` |
+| `npm run build` | main + preload + renderer bundles built |
+| Boot smoke (`npm run dev`) | window + renderer dev server up, no uncaught main-process error |
+| CI matrix | **green on `macos-latest` AND `windows-latest`** |
+
+**M5 feature logic executed end-to-end** (`src/main/system-m5.test.ts`, 6 tests) —
+the automated equivalent of the pixel-free manual smoke steps:
+
+- OAuth2 client_credentials: Basic client auth + `grant_type`/`scope` sent, token
+  parsed with expiry (manual step 6).
+- GraphQL introspection: `INTROSPECTION_QUERY` POSTed through the engine, response
+  summarized to query fields + type list (step 8).
+- Data-driven workflow: one iteration per CSV row, row values in session, correct
+  per-row requests observed server-side (step 10).
+- Code generation: all 8 targets produce non-empty output with `${VAR}` preserved
+  (step 4).
+- Demo collection: `collection.json` (default header + collection script) and
+  `data/users.csv` parse; config inheritance + folder-script wrapping covered by
+  `src/main/integration.test.ts` (step 5).
+
+**Manual GUI steps requiring pixels** (1–3, 7, 9, 11–14): not run headlessly. The
+underlying logic for each is covered by unit/integration/system tests above; the
+remaining unverified surface is pure view wiring (button → IPC call → render), which
+typecheck + build guarantee compiles and the boot smoke confirms mounts. mTLS (step 7)
+is unit-tested in `src/engine/mtls.test.ts` (self-signed cert handshake) and wired into
+`execute.ts` from collection config; a live GUI mTLS run against a cert-requiring server
+remains a manual follow-up.
+
+**Verdict:** all automated gates pass on both target platforms; every feature's core
+logic has executing test coverage. Ship-ready for the covered surface.

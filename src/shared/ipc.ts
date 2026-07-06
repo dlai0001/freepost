@@ -23,6 +23,7 @@ export const IPC = {
   collectionScan: 'collection:scan', // (root) => TreeNode
   collectionChanged: 'collection:changed', // main -> renderer event (root)
   collectionLast: 'collection:last-root', // () => string | null (last-opened root, if still present)
+  collectionSecurityCheck: 'collection:security-check', // (root) => string[] (git-tracked .freepost/ paths)
 
   requestRead: 'request:read', // (absPath) => { raw: string; parsed: ParseResult }
   requestWrite: 'request:write', // (absPath, file: RequestFile) => { raw: string }
@@ -81,6 +82,8 @@ export interface FreepostApi {
   onCollectionChanged(cb: (root: string) => void): () => void
   /** The last-opened collection root, if one is remembered and still exists. */
   lastCollection(): Promise<string | null>
+  /** Paths under `.freepost/` that git is tracking (should be empty); for a leak warning. */
+  checkCollectionSecurity(root: string): Promise<string[]>
 
   readRequest(absPath: string): Promise<{ raw: string; parsed: ParseResult }>
   writeRequest(absPath: string, file: RequestFile): Promise<{ raw: string }>

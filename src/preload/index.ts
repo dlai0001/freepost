@@ -13,6 +13,8 @@ const api = {
   onCollectionChanged: (cb: (root: string) => void) =>
     on(IPC.collectionChanged, cb as (...args: unknown[]) => void),
   lastCollection: () => ipcRenderer.invoke(IPC.collectionLast),
+  checkCollectionSecurity: (root: string) =>
+    ipcRenderer.invoke(IPC.collectionSecurityCheck, root),
 
   readRequest: (p: string) => ipcRenderer.invoke(IPC.requestRead, p),
   writeRequest: (p: string, f: unknown) => ipcRenderer.invoke(IPC.requestWrite, p, f),

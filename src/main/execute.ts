@@ -1,5 +1,5 @@
 import { promises as fs } from 'fs'
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'fs'
+import { appendFileSync, chmodSync, existsSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, isAbsolute, join } from 'path'
 import type { ExecutionReport, Header, HttpResponseModel } from '../shared/model'
 import { parseRequestFile, requestKindForPath } from '../core/format'
@@ -38,6 +38,12 @@ function appendHistory(root: string, entry: unknown): void {
     const dir = ensureFreepostDir(root)
     const file = join(dir, 'history', 'requests.jsonl')
     appendFileSync(file, JSON.stringify(entry) + '\n')
+    // History records full request/response data (incl. auth headers) — owner-only.
+    try {
+      chmodSync(file, 0o600)
+    } catch {
+      /* best-effort; no-op on Windows */
+    }
     const lines = readFileSync(file, 'utf8').split('\n').filter(Boolean)
     if (lines.length > HISTORY_CAP * 2) {
       writeFileSync(file, lines.slice(-HISTORY_CAP).join('\n') + '\n')

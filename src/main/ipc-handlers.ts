@@ -44,6 +44,7 @@ import { resolveVariables, substituteModel } from '../core/vars'
 import { ensureFreepostDir, listFiles, scanCollection } from './collection'
 import { executeRequest, jarFor, readEnvFile } from './execute'
 import { getLastRoot, setLastRoot } from './settings'
+import { trackedSecrets } from './security'
 
 /** App-global runtime variable store (PLAN.md: the "session" tier). */
 const session = new Map<string, string>()
@@ -186,6 +187,8 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(IPC.collectionLast, () => getLastRoot())
+
+  ipcMain.handle(IPC.collectionSecurityCheck, (_e, root: string) => trackedSecrets(root))
 
   ipcMain.handle(IPC.requestRead, async (_e, abs: string) => {
     const raw = await fs.readFile(abs, 'utf8')

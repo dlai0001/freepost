@@ -177,6 +177,8 @@ export interface ScriptOutcome {
 export interface ExecutionReport {
   requestPath: string
   resolvedUrl: string
+  /** The concrete request that was sent (post variable resolution). */
+  resolvedRequest?: { method: string; url: string; headers: Header[]; body?: string }
   response?: HttpResponseModel
   preScript?: ScriptOutcome
   testScript?: ScriptOutcome

@@ -5,8 +5,10 @@ import type { ExecutionReport, Header, HttpResponseModel } from '../shared/model
 import { parseRequestFile, requestKindForPath } from '../core/format'
 import { resolveVariables, substitute, substituteModel } from '../core/vars'
 import { runScript } from '../core/sandbox'
+import { mergeRequestHeaders } from '../core/config'
 import { sendHttp, CookieJar } from '../engine'
 import { ensureFreepostDir } from './collection'
+import { resolveConfigChain } from './config-resolve'
 
 /** One in-memory cookie jar per collection root. */
 const jars = new Map<string, CookieJar>()
@@ -88,11 +90,22 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
   const sessionObj = Object.fromEntries(session)
   const requestName = path.split('/').pop() ?? path
 
-  // Pre-request script (its session writes affect this request's resolution).
-  const preSource = file.frontmatter.scripts?.['pre-request']
-  if (preSource !== undefined && preSource.trim() !== '') {
+  // Inherited collection/folder config (default headers, folder scripts, mTLS).
+  const { config: cfg } = await resolveConfigChain(root, path)
+
+  // Pre-request scripts: collection/folder (outermost first), then the request's
+  // own. All session writes feed variable resolution for the send.
+  const preScripts = [
+    ...cfg.preScripts,
+    ...(file.frontmatter.scripts?.['pre-request']
+      ? [{ source: file.frontmatter.scripts['pre-request'], origin: requestName }]
+      : [])
+  ]
+  const preOutcomes: import('../shared/model').ScriptOutcome[] = []
+  for (const s of preScripts) {
+    if (s.source.trim() === '') continue
     const pre = await runScript({
-      source: preSource,
+      source: s.source,
       phase: 'pre-request',
       request: { method: http.method, url: http.url, headers: http.headers },
       session: sessionObj,
@@ -100,15 +113,14 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
       requestName,
       sendRequest: (r) => sandboxSend(r, args)
     })
-    report.preScript = pre
+    preOutcomes.push(pre)
     for (const [k, v] of Object.entries(pre.sessionWrites)) {
       session.set(k, v)
       sessionObj[k] = v
     }
-    if (pre.error !== undefined) {
-      report.errored = true
-    }
+    if (pre.error !== undefined) report.errored = true
   }
+  if (preOutcomes.length > 0) report.preScript = mergeOutcomes(preOutcomes)
 
   // Resolve variables: session > env > request defaults.
   const { values, unresolved } = resolveVariables(file.variables, sessionObj, env)
@@ -133,7 +145,13 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
       }
     }
   }
-  const headers: Header[] = [...resolved.headers]
+  // Merge inherited default headers under the request's own (request wins),
+  // with ${VAR} substitution applied to config header values.
+  const configHeaders = cfg.defaultHeaders.map((h) => ({
+    name: h.name,
+    value: substitute(h.value, values)
+  }))
+  const headers: Header[] = mergeRequestHeaders(configHeaders, resolved.headers)
   // GraphQL convenience: generated --data is JSON; default the content type.
   if (
     file.frontmatter.graphql !== undefined &&
@@ -141,6 +159,14 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
   ) {
     headers.push({ name: 'Content-Type', value: 'application/json' })
   }
+
+  // mTLS client cert/key from collection/folder config (paths are collection-relative).
+  const clientCert =
+    cfg.clientCert !== undefined ? resolveCertPath(root, substitute(cfg.clientCert, values)) : undefined
+  const clientKey =
+    cfg.clientKey !== undefined ? resolveCertPath(root, substitute(cfg.clientKey, values)) : undefined
+
+  report.resolvedRequest = { method: resolved.method, url: resolved.url, headers, body: bodyText }
 
   // Send.
   let response: HttpResponseModel | undefined
@@ -155,7 +181,13 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
           insecure: resolved.options.insecure,
           followRedirects: resolved.options.followRedirects,
           timeoutSeconds: resolved.options.timeoutSeconds,
-          user: resolved.options.user
+          user: resolved.options.user,
+          clientCert,
+          clientKey,
+          clientKeyPassphrase:
+            cfg.clientKeyPassphrase !== undefined
+              ? substitute(cfg.clientKeyPassphrase, values)
+              : undefined
         }
       },
       jarFor(root)
@@ -166,22 +198,32 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
     report.errored = true
   }
 
-  // Test script.
-  const testSource = file.frontmatter.scripts?.test
-  if (response !== undefined && testSource !== undefined && testSource.trim() !== '') {
-    const test = await runScript({
-      source: testSource,
-      phase: 'test',
-      request: { method: resolved.method, url: resolved.url, headers },
-      response,
-      session: sessionObj,
-      env,
-      requestName,
-      sendRequest: (r) => sandboxSend(r, args)
-    })
-    report.testScript = test
-    for (const [k, v] of Object.entries(test.sessionWrites)) session.set(k, v)
-    if (test.error !== undefined || test.tests.some((t) => !t.passed)) report.errored = true
+  // Test scripts: the request's own first, then collection/folder (outermost first).
+  const testScripts = [
+    ...(file.frontmatter.scripts?.test
+      ? [{ source: file.frontmatter.scripts.test, origin: requestName }]
+      : []),
+    ...cfg.testScripts
+  ]
+  if (response !== undefined) {
+    const testOutcomes: import('../shared/model').ScriptOutcome[] = []
+    for (const s of testScripts) {
+      if (s.source.trim() === '') continue
+      const test = await runScript({
+        source: s.source,
+        phase: 'test',
+        request: { method: resolved.method, url: resolved.url, headers },
+        response,
+        session: sessionObj,
+        env,
+        requestName,
+        sendRequest: (r) => sandboxSend(r, args)
+      })
+      testOutcomes.push(test)
+      for (const [k, v] of Object.entries(test.sessionWrites)) session.set(k, v)
+      if (test.error !== undefined || test.tests.some((t) => !t.passed)) report.errored = true
+    }
+    if (testOutcomes.length > 0) report.testScript = mergeOutcomes(testOutcomes)
   }
 
   if (response !== undefined && response.status >= 400) report.errored = true
@@ -196,6 +238,27 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
     errored: report.errored
   })
   return report
+}
+
+/** Combine several script outcomes (folder + request level) into one. */
+function mergeOutcomes(
+  outcomes: import('../shared/model').ScriptOutcome[]
+): import('../shared/model').ScriptOutcome {
+  const merged = { tests: [], consoleLines: [], sessionWrites: {} } as import('../shared/model').ScriptOutcome
+  for (const o of outcomes) {
+    merged.tests.push(...o.tests)
+    merged.consoleLines.push(...o.consoleLines)
+    Object.assign(merged.sessionWrites, o.sessionWrites)
+    if (o.error !== undefined) merged.error = merged.error ? `${merged.error}; ${o.error}` : o.error
+  }
+  return merged
+}
+
+/** Resolve a collection-relative (or absolute) cert path to an absolute path. */
+function resolveCertPath(root: string, p: string): string {
+  // Raw PEM content passes through untouched; only paths are resolved.
+  if (p.startsWith('-----BEGIN')) return p
+  return isAbsolute(p) ? p : join(root, p)
 }
 
 /** pm.sendRequest delegate — goes through the engine like everything else. */

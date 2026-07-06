@@ -8,10 +8,19 @@ import { existsSync, watch, type FSWatcher } from 'fs'
 import { dirname, isAbsolute, join, relative, sep } from 'path'
 import { IPC } from '../shared/ipc'
 import type {
+  AcquiredToken,
+  CodegenTarget,
+  GqlIntrospectResult,
+  Header,
+  HistoryEntry,
+  HttpResponseModel,
+  OAuth2Config,
   RequestFile,
   RequestKind,
+  SavedExample,
   SearchEntry,
   WorkflowFile,
+  WorkflowRunReport,
   WorkflowValidationIssue
 } from '../shared/model'
 import { parseRequestFile, requestKindForPath, writeRequestFile } from '../core/format'
@@ -25,10 +34,15 @@ import {
 } from '../core/workflow'
 import { importPostmanCollection } from '../core/importers/postman'
 import { importCommandText } from '../core/importers/command'
+import { importOpenApi } from '../core/importers/openapi'
+import { CODEGEN_TARGETS, generateCode } from '../core/codegen'
+import { parseDataFile } from '../core/data'
+import { INTROSPECTION_QUERY, parseIntrospection } from '../core/graphql/introspection'
+import { acquireToken, sendHttp, WsClient } from '../engine'
+import { resolveConfigChain } from './config-resolve'
 import { resolveVariables, substituteModel } from '../core/vars'
-import { WsClient } from '../engine'
 import { ensureFreepostDir, listFiles, scanCollection } from './collection'
-import { executeRequest, readEnvFile } from './execute'
+import { executeRequest, jarFor, readEnvFile } from './execute'
 
 /** App-global runtime variable store (PLAN.md: the "session" tier). */
 const session = new Map<string, string>()
@@ -36,6 +50,12 @@ const session = new Map<string, string>()
 const watchers = new Map<string, FSWatcher>()
 let wsCounter = 0
 const wsClients = new Map<string, WsClient>()
+
+/** Last execution per "root::path" — the source for "Save as example". */
+const lastResponses = new Map<
+  string,
+  { request: { method: string; url: string; headers: Header[]; body?: string }; response: HttpResponseModel }
+>()
 
 function broadcast(channel: string, ...args: unknown[]): void {
   for (const win of BrowserWindow.getAllWindows()) win.webContents.send(channel, ...args)
@@ -211,7 +231,14 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     IPC.requestExecute,
     async (_e, args: { root: string; path: string; envPath?: string }) => {
-      return executeRequest({ ...args, session })
+      const report = await executeRequest({ ...args, session })
+      if (report.response !== undefined && report.resolvedRequest !== undefined) {
+        lastResponses.set(`${args.root}::${args.path}`, {
+          request: report.resolvedRequest,
+          response: report.response
+        })
+      }
+      return report
     }
   )
 
@@ -267,13 +294,38 @@ export function registerIpcHandlers(): void {
           `Workflow has broken references: ${issues.map((i) => i.request).join(', ')}`
         )
       }
-      const report = await runWorkflow({
-        workflowPath: args.path,
-        wf,
-        execute: (rel) =>
-          executeRequest({ root: args.root, path: rel, envPath: args.envPath, session }),
-        onProgress: (r) => broadcast(IPC.workflowProgress, r)
-      })
+      const runOnce = (): Promise<WorkflowRunReport> =>
+        runWorkflow({
+          workflowPath: args.path,
+          wf,
+          execute: (rel) =>
+            executeRequest({ root: args.root, path: rel, envPath: args.envPath, session }),
+          onProgress: (r) => broadcast(IPC.workflowProgress, r)
+        })
+
+      let report: WorkflowRunReport
+      if (wf.dataFile !== undefined && wf.dataFile.trim() !== '') {
+        // Data-driven run: one iteration per row, each row loaded into the session.
+        const dataAbs = join(args.root, wf.dataFile)
+        const text = await fs.readFile(dataAbs, 'utf8')
+        const parsed = parseDataFile(text, wf.dataFile)
+        if (!parsed.ok) throw new Error(`Data file: ${parsed.error}`)
+        const iterations: WorkflowRunReport[] = []
+        for (const row of parsed.rows) {
+          for (const [k, v] of Object.entries(row)) session.set(k, v)
+          iterations.push(await runOnce())
+        }
+        report = {
+          workflow: args.path,
+          startedAt: new Date().toISOString(),
+          steps: iterations.flatMap((it) => it.steps),
+          halted: iterations.some((it) => it.halted),
+          iterations
+        }
+      } else {
+        report = await runOnce()
+      }
+
       try {
         const dir = ensureFreepostDir(args.root)
         const stamp = new Date().toISOString().replace(/[:.]/g, '-')
@@ -369,22 +421,188 @@ export function registerIpcHandlers(): void {
     async (_e, args: { root: string; path: string; name?: string }) => {
       const text = await fs.readFile(args.path, 'utf8')
       const trimmed = text.trimStart()
-      // Postman collection JSON is auto-detected; anything else is treated as
-      // a shell script containing a curl/websocat/wscat command.
+      // Auto-detect: Postman collection JSON, OpenAPI/Swagger (JSON or YAML),
+      // else treat as a shell script containing a curl/websocat/wscat command.
       if (trimmed.startsWith('{')) {
         try {
-          const obj = JSON.parse(text) as { info?: unknown }
-          if (obj !== null && typeof obj === 'object' && obj.info !== undefined) {
-            return importPostmanJson(args.root, text)
+          const obj = JSON.parse(text) as { info?: unknown; openapi?: unknown; swagger?: unknown }
+          if (obj !== null && typeof obj === 'object') {
+            if (obj.openapi !== undefined || obj.swagger !== undefined) {
+              return importOpenApiText(args.root, text)
+            }
+            if (obj.info !== undefined) return importPostmanJson(args.root, text)
           }
         } catch {
-          /* not JSON — fall through to command import */
+          /* not JSON — fall through */
         }
+      }
+      // OpenAPI/Swagger YAML (or JSON not caught above).
+      if (/^\s*(openapi|swagger)\s*:/m.test(text) || args.path.match(/\.ya?ml$/i)) {
+        const oa = importOpenApi(text)
+        if (oa.ok) return importOpenApiText(args.root, text)
       }
       const fallback = args.path.split(/[\\/]/).pop()?.replace(/\.(sh|bash|txt|curl|ws)$/i, '')
       return importAsCommand(args.root, text, args.name ?? fallback)
     }
   )
+
+  ipcMain.handle(IPC.importOpenApi, async (_e, args: { root: string; path: string }) => {
+    return importOpenApiText(args.root, await fs.readFile(args.path, 'utf8'))
+  })
+
+  // ---- code generation ----
+  ipcMain.handle(IPC.codegenTargets, () => CODEGEN_TARGETS)
+  ipcMain.handle(
+    IPC.codegenGenerate,
+    async (
+      _e,
+      args: { root: string; path: string; target: CodegenTarget; envPath?: string; resolve?: boolean }
+    ) => {
+      const kind = requestKindForPath(args.path)
+      if (kind === null) throw new Error('Not a request file')
+      const raw = await fs.readFile(join(args.root, args.path), 'utf8')
+      const parsed = parseRequestFile(raw, kind)
+      if (!parsed.ok) throw new Error('Cannot parse request file')
+      let file = parsed.file
+      if (args.resolve === true) {
+        // Substitute variables so the generated snippet is concrete.
+        const env = readEnvFile(args.root, args.envPath)
+        const { values } = resolveVariables(file.variables, Object.fromEntries(session), env)
+        file = {
+          ...file,
+          variables: [],
+          http: file.http !== undefined ? substituteModel(file.http, values) : undefined,
+          ws: file.ws !== undefined ? substituteModel(file.ws, values) : undefined
+        }
+      }
+      return { code: generateCode(file, args.target) }
+    }
+  )
+
+  // ---- history ----
+  ipcMain.handle(IPC.historyList, async (_e, root: string): Promise<HistoryEntry[]> => {
+    try {
+      const file = join(root, '.freepost', 'history', 'requests.jsonl')
+      const text = await fs.readFile(file, 'utf8')
+      return text
+        .split('\n')
+        .filter((l) => l.trim() !== '')
+        .map((l) => JSON.parse(l) as HistoryEntry)
+        .reverse()
+    } catch {
+      return []
+    }
+  })
+  ipcMain.handle(IPC.historyClear, async (_e, root: string) => {
+    try {
+      await fs.rm(join(root, '.freepost', 'history', 'requests.jsonl'))
+    } catch {
+      /* nothing to clear */
+    }
+  })
+
+  // ---- saved examples (sidecar Name.examples.json next to the request) ----
+  ipcMain.handle(IPC.exampleSave, async (_e, args: { root: string; path: string; name: string }) => {
+    const last = lastResponses.get(`${args.root}::${args.path}`)
+    if (last === undefined) throw new Error('No response to save — send the request first')
+    const file = exampleFilePath(args.root, args.path)
+    const existing = await readExamples(file)
+    const filtered = existing.filter((e) => e.name !== args.name)
+    filtered.push({
+      name: args.name,
+      savedAt: new Date().toISOString(),
+      request: last.request,
+      response: last.response
+    })
+    await fs.writeFile(file, JSON.stringify(filtered, null, 2) + '\n')
+  })
+  ipcMain.handle(IPC.exampleList, async (_e, args: { root: string; path: string }) => {
+    return readExamples(exampleFilePath(args.root, args.path))
+  })
+  ipcMain.handle(
+    IPC.exampleDelete,
+    async (_e, args: { root: string; path: string; name: string }) => {
+      const file = exampleFilePath(args.root, args.path)
+      const existing = await readExamples(file)
+      const filtered = existing.filter((e) => e.name !== args.name)
+      if (filtered.length === 0) await fs.rm(file).catch(() => undefined)
+      else await fs.writeFile(file, JSON.stringify(filtered, null, 2) + '\n')
+    }
+  )
+
+  // ---- OAuth2 token acquisition ----
+  ipcMain.handle(
+    IPC.oauthAcquire,
+    async (_e, args: { root: string; path: string; envPath?: string }): Promise<AcquiredToken> => {
+      const kind = requestKindForPath(args.path)
+      if (kind === null) throw new Error('Not a request file')
+      const raw = await fs.readFile(join(args.root, args.path), 'utf8')
+      const parsed = parseRequestFile(raw, kind)
+      if (!parsed.ok) throw new Error('Cannot parse request file')
+      // Auth config: request frontmatter wins over inherited collection/folder.
+      const { config } = await resolveConfigChain(args.root, args.path)
+      const oauth: OAuth2Config | undefined = parsed.file.frontmatter.auth ?? config.auth
+      if (oauth === undefined) throw new Error('No OAuth2 config on this request or its folders')
+      const env = readEnvFile(args.root, args.envPath)
+      const { values } = resolveVariables(parsed.file.variables, Object.fromEntries(session), env)
+      const resolve = (s: string): string => substituteScalar(s, values, Object.fromEntries(session), env)
+      const token = await acquireToken(oauth, resolve)
+      const varName = oauth.sessionVar ?? 'OAUTH_TOKEN'
+      session.set(varName, token.accessToken)
+      return token
+    }
+  )
+
+  // ---- GraphQL introspection ----
+  ipcMain.handle(
+    IPC.gqlIntrospect,
+    async (
+      _e,
+      args: { root: string; path: string; envPath?: string }
+    ): Promise<GqlIntrospectResult> => {
+      const kind = requestKindForPath(args.path)
+      if (kind === null) return { ok: false, error: 'Not a request file' }
+      const raw = await fs.readFile(join(args.root, args.path), 'utf8')
+      const parsed = parseRequestFile(raw, kind)
+      if (!parsed.ok || parsed.file.http === undefined) {
+        return { ok: false, error: 'Not an HTTP request' }
+      }
+      const env = readEnvFile(args.root, args.envPath)
+      const { values } = resolveVariables(parsed.file.variables, Object.fromEntries(session), env)
+      const http = substituteModel(parsed.file.http, values)
+      try {
+        const res = await sendHttp(
+          {
+            method: 'POST',
+            url: http.url,
+            headers: [
+              ...http.headers.filter((h) => h.name.toLowerCase() !== 'content-type'),
+              { name: 'Content-Type', value: 'application/json' }
+            ],
+            bodyText: JSON.stringify({ query: INTROSPECTION_QUERY }),
+            options: { insecure: http.options.insecure, user: http.options.user }
+          },
+          jarFor(args.root)
+        )
+        const schema = parseIntrospection(res.bodyText)
+        if (schema === null) return { ok: false, error: 'Introspection failed or not a GraphQL endpoint' }
+        return { ok: true, schema }
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : String(e) }
+      }
+    }
+  )
+
+  ipcMain.handle(IPC.browseDataFile, async () => {
+    const res = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [
+        { name: 'Data files', extensions: ['csv', 'json'] },
+        { name: 'All files', extensions: ['*'] }
+      ]
+    })
+    return res.canceled || res.filePaths.length === 0 ? null : res.filePaths[0]
+  })
 
   ipcMain.handle(
     IPC.importCommand,
@@ -392,6 +610,45 @@ export function registerIpcHandlers(): void {
       return importAsCommand(args.root, args.text, args.name)
     }
   )
+}
+
+async function importOpenApiText(root: string, text: string): Promise<{ written: string[] }> {
+  const result = importOpenApi(text)
+  if (!result.ok) throw new Error(result.error)
+  const written: string[] = []
+  for (const f of result.files) {
+    const abs = join(root, f.relPath)
+    await fs.mkdir(dirname(abs), { recursive: true })
+    await fs.writeFile(abs, writeRequestFile(f.file))
+    written.push(f.relPath)
+  }
+  return { written }
+}
+
+function exampleFilePath(root: string, relPath: string): string {
+  // Name.curl -> Name.examples.json alongside the request.
+  const base = relPath.replace(/\.(curl|ws)$/i, '')
+  return join(root, `${base}.examples.json`)
+}
+
+async function readExamples(file: string): Promise<SavedExample[]> {
+  try {
+    return JSON.parse(await fs.readFile(file, 'utf8')) as SavedExample[]
+  } catch {
+    return []
+  }
+}
+
+/** Resolve ${VAR} against values, then raw session/env, for scalar config fields. */
+function substituteScalar(
+  s: string,
+  values: Record<string, string>,
+  sess: Record<string, string>,
+  env: Record<string, string>
+): string {
+  return s.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (m, name: string) => {
+    return values[name] ?? sess[name] ?? env[name] ?? m
+  })
 }
 
 async function importPostmanJson(root: string, json: string): Promise<{ written: string[] }> {

@@ -14,11 +14,10 @@
     "isolatedModules": true,
     "noEmit": true,
     "types": ["node"],
-    "baseUrl": ".",
     "paths": {
-      "@core/*": ["src/core/*"],
-      "@shared/*": ["src/shared/*"],
-      "@engine/*": ["src/engine/*"]
+      "@core/*": ["./src/core/*"],
+      "@shared/*": ["./src/shared/*"],
+      "@engine/*": ["./src/engine/*"]
     }
   },
   "include": ["src", "scripts"]

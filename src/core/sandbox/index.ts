@@ -12,7 +12,7 @@
  */
 import * as vm from 'node:vm'
 import { inspect } from 'node:util'
-import chai from 'chai'
+import * as chai from 'chai'
 import type { HttpResponseModel, ScriptOutcome, TestResult } from '@shared/model'
 
 /* --------------------------------- types --------------------------------- */

@@ -20,7 +20,7 @@ import type {
   VariableDecl
 } from '@shared/model'
 import { sanitizePathSegment, sanitizeVarName } from './postman'
-import yaml from 'js-yaml'
+import * as yaml from 'js-yaml'
 
 export type ImportResult =
   | { ok: true; files: { relPath: string; file: RequestFile }[]; note?: string }

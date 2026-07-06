@@ -1,3 +1,4 @@
+import type { JSX } from 'react'
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import type { RequestKind, SearchEntry, TreeNode } from '../../shared/model'
 import { errMsg, fp, hasApi } from './api'

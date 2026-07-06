@@ -362,3 +362,20 @@ button { cursor: pointer; }
 .modal-title { font-weight: 700; margin-bottom: 10px; }
 .modal-label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+
+/* ------------------------------ import modal ------------------------------ */
+.modal-wide { width: 560px; max-width: 90vw; }
+.modal-textarea {
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 8px; font-size: 12.5px; width: 100%;
+  resize: vertical; min-height: 96px;
+}
+.modal-textarea:focus { outline: none; border-color: var(--blue); }
+.import-file-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.import-file-none { color: var(--muted); font-size: 12.5px; font-style: italic; }
+.import-file-path {
+  color: var(--text); font-size: 12px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; direction: rtl; flex: 1;
+}
+.import-hint { color: var(--warn); font-size: 12px; }

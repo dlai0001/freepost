@@ -41,7 +41,10 @@ const api = {
   wsClose: (id: string) => ipcRenderer.invoke(IPC.wsClose, id),
   onWsEvent: (cb: (e: unknown) => void) => on(IPC.wsEvent, cb as (...args: unknown[]) => void),
 
-  importPostman: (args: unknown) => ipcRenderer.invoke(IPC.importPostman, args)
+  importPostman: (args: unknown) => ipcRenderer.invoke(IPC.importPostman, args),
+  browseImportFile: () => ipcRenderer.invoke(IPC.importBrowse),
+  importFile: (args: unknown) => ipcRenderer.invoke(IPC.importFile, args),
+  importCommand: (args: unknown) => ipcRenderer.invoke(IPC.importCommand, args)
 }
 
 contextBridge.exposeInMainWorld('freepost', api)

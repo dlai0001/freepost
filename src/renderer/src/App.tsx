@@ -10,6 +10,7 @@ import RequestTab from './components/RequestTab'
 import WebSocketTab from './components/WebSocketTab'
 import WorkflowTab from './components/WorkflowTab'
 import PromptModal from './components/PromptModal'
+import ImportModal from './components/ImportModal'
 import type { NewItemKind } from './components/Tree'
 
 type ModalSpec =
@@ -129,18 +130,6 @@ function Shell(): JSX.Element {
     }
   }
 
-  async function doImport(collectionJsonPath: string): Promise<void> {
-    const root = state.root
-    if (root === null) return
-    try {
-      const { written } = await fp().importPostman({ root, collectionJsonPath })
-      setNotice(`Imported ${written.length} file${written.length === 1 ? '' : 's'}`)
-      await loadCollection(root)
-    } catch (e) {
-      setNotice(errMsg(e))
-    }
-  }
-
   return (
     <div className="app">
       <TopBar
@@ -222,16 +211,15 @@ function Shell(): JSX.Element {
         </main>
       </div>
 
-      {modal?.kind === 'import' && (
-        <PromptModal
-          title="Import Postman collection"
-          label="Path to the exported collection .json file"
-          placeholder="/path/to/collection.postman_collection.json"
-          submitText="Import"
-          onSubmit={(p) => {
+      {modal?.kind === 'import' && state.root !== null && (
+        <ImportModal
+          root={state.root}
+          onDone={(message) => {
             setModal(null)
-            void doImport(p)
+            setNotice(message)
+            void loadCollection(state.root as string).catch((e) => setNotice(errMsg(e)))
           }}
+          onError={(message) => setNotice(message)}
           onCancel={() => setModal(null)}
         />
       )}

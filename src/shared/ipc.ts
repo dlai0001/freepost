@@ -44,7 +44,10 @@ export const IPC = {
   wsClose: 'ws:close', // (id) => void
   wsEvent: 'ws:event', // main -> renderer event ({ id, type: 'open'|'message'|'close'|'error', data? })
 
-  importPostman: 'import:postman' // ({ root, collectionJsonPath }) => { written: string[] }
+  importPostman: 'import:postman', // ({ root, collectionJsonPath }) => { written: string[] }
+  importBrowse: 'import:browse', // () => string | null (native file picker)
+  importFile: 'import:file', // ({ root, path, name? }) => { written: string[] } — Postman JSON or shell script
+  importCommand: 'import:command' // ({ root, text, name? }) => { written: string[] } — pasted curl/websocat/wscat
 } as const
 
 /** Surface exposed on window.freepost by the preload script. */
@@ -83,4 +86,10 @@ export interface FreepostApi {
   ): () => void
 
   importPostman(args: { root: string; collectionJsonPath: string }): Promise<{ written: string[] }>
+  /** Native file picker for import; returns the chosen path or null. */
+  browseImportFile(): Promise<string | null>
+  /** Import a file: Postman collection JSON, or any shell script containing a curl/websocat/wscat command. */
+  importFile(args: { root: string; path: string; name?: string }): Promise<{ written: string[] }>
+  /** Import a pasted curl/websocat/wscat command as a new request file. */
+  importCommand(args: { root: string; text: string; name?: string }): Promise<{ written: string[] }>
 }

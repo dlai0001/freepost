@@ -24,6 +24,7 @@ import {
   validateReferences
 } from '../core/workflow'
 import { importPostmanCollection } from '../core/importers/postman'
+import { importCommandText } from '../core/importers/command'
 import { resolveVariables, substituteModel } from '../core/vars'
 import { WsClient } from '../engine'
 import { ensureFreepostDir, listFiles, scanCollection } from './collection'
@@ -348,17 +349,78 @@ export function registerIpcHandlers(): void {
       const jsonPath = isAbsolute(args.collectionJsonPath)
         ? args.collectionJsonPath
         : join(args.root, args.collectionJsonPath)
-      const json = await fs.readFile(jsonPath, 'utf8')
-      const result = importPostmanCollection(json)
-      if (!result.ok) throw new Error(result.error)
-      const written: string[] = []
-      for (const f of result.files) {
-        const abs = join(args.root, f.relPath)
-        await fs.mkdir(dirname(abs), { recursive: true })
-        await fs.writeFile(abs, writeRequestFile(f.file))
-        written.push(f.relPath)
-      }
-      return { written }
+      return importPostmanJson(args.root, await fs.readFile(jsonPath, 'utf8'))
     }
   )
+
+  ipcMain.handle(IPC.importBrowse, async () => {
+    const res = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [
+        { name: 'Importable (shell scripts, Postman JSON)', extensions: ['sh', 'bash', 'curl', 'ws', 'txt', 'json'] },
+        { name: 'All files', extensions: ['*'] }
+      ]
+    })
+    return res.canceled || res.filePaths.length === 0 ? null : res.filePaths[0]
+  })
+
+  ipcMain.handle(
+    IPC.importFile,
+    async (_e, args: { root: string; path: string; name?: string }) => {
+      const text = await fs.readFile(args.path, 'utf8')
+      const trimmed = text.trimStart()
+      // Postman collection JSON is auto-detected; anything else is treated as
+      // a shell script containing a curl/websocat/wscat command.
+      if (trimmed.startsWith('{')) {
+        try {
+          const obj = JSON.parse(text) as { info?: unknown }
+          if (obj !== null && typeof obj === 'object' && obj.info !== undefined) {
+            return importPostmanJson(args.root, text)
+          }
+        } catch {
+          /* not JSON — fall through to command import */
+        }
+      }
+      const fallback = args.path.split(/[\\/]/).pop()?.replace(/\.(sh|bash|txt|curl|ws)$/i, '')
+      return importAsCommand(args.root, text, args.name ?? fallback)
+    }
+  )
+
+  ipcMain.handle(
+    IPC.importCommand,
+    async (_e, args: { root: string; text: string; name?: string }) => {
+      return importAsCommand(args.root, args.text, args.name)
+    }
+  )
+}
+
+async function importPostmanJson(root: string, json: string): Promise<{ written: string[] }> {
+  const result = importPostmanCollection(json)
+  if (!result.ok) throw new Error(result.error)
+  const written: string[] = []
+  for (const f of result.files) {
+    const abs = join(root, f.relPath)
+    await fs.mkdir(dirname(abs), { recursive: true })
+    await fs.writeFile(abs, writeRequestFile(f.file))
+    written.push(f.relPath)
+  }
+  return { written }
+}
+
+async function importAsCommand(
+  root: string,
+  text: string,
+  name?: string
+): Promise<{ written: string[] }> {
+  const result = importCommandText(text)
+  if (!result.ok) throw new Error(result.error)
+  const ext = result.kind === 'curl' ? '.curl' : '.ws'
+  const base = (name !== undefined && name.trim() !== '' ? name.trim() : result.suggestedName)
+    .replace(/[<>:"/\\|?*]/g, '')
+    .replace(/\.$/, '')
+  // Avoid clobbering an existing request: suffix -2, -3, ...
+  let rel = `${base}${ext}`
+  for (let n = 2; existsSync(join(root, rel)); n++) rel = `${base}-${n}${ext}`
+  await fs.writeFile(join(root, rel), writeRequestFile(result.file))
+  return { written: [rel] }
 }

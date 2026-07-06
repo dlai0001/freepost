@@ -1,0 +1,47 @@
+{
+  "name": "freepost",
+  "version": "0.1.0",
+  "description": "The API client that never phones home. Open-source Postman alternative; collections are runnable curl files on disk.",
+  "license": "MIT",
+  "private": true,
+  "main": "./out/main/index.js",
+  "homepage": "https://dlai0001.github.io/freepost/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dlai0001/freepost.git"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "electron-vite dev",
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "fence": "node scripts/check-network-fence.mjs",
+    "verify": "npm run typecheck && npm run test && npm run fence && npm run build"
+  },
+  "dependencies": {
+    "chai": "^4.5.0",
+    "js-yaml": "^4.1.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/chai": "^4.3.19",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.17",
+    "@types/react-dom": "^18.3.5",
+    "@types/ws": "^8.5.13",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.2.1",
+    "electron-vite": "^3.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.5",
+    "vitest": "^2.1.8"
+  }
+}

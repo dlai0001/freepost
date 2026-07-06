@@ -8,8 +8,9 @@
  */
 import { readdirSync, readFileSync, statSync } from 'fs'
 import { join, relative } from 'path'
+import { fileURLToPath } from 'url'
 
-const ROOT = new URL('..', import.meta.url).pathname
+const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const SRC = join(ROOT, 'src')
 const ALLOWED_PREFIX = join('src', 'engine')
 

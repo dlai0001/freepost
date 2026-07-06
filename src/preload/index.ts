@@ -12,6 +12,7 @@ const api = {
   scanCollection: (root: string) => ipcRenderer.invoke(IPC.collectionScan, root),
   onCollectionChanged: (cb: (root: string) => void) =>
     on(IPC.collectionChanged, cb as (...args: unknown[]) => void),
+  lastCollection: () => ipcRenderer.invoke(IPC.collectionLast),
 
   readRequest: (p: string) => ipcRenderer.invoke(IPC.requestRead, p),
   writeRequest: (p: string, f: unknown) => ipcRenderer.invoke(IPC.requestWrite, p, f),

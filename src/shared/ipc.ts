@@ -22,6 +22,7 @@ export const IPC = {
   collectionOpen: 'collection:open', // () => string | null (chosen root, via dialog)
   collectionScan: 'collection:scan', // (root) => TreeNode
   collectionChanged: 'collection:changed', // main -> renderer event (root)
+  collectionLast: 'collection:last-root', // () => string | null (last-opened root, if still present)
 
   requestRead: 'request:read', // (absPath) => { raw: string; parsed: ParseResult }
   requestWrite: 'request:write', // (absPath, file: RequestFile) => { raw: string }
@@ -78,6 +79,8 @@ export interface FreepostApi {
   openCollection(): Promise<string | null>
   scanCollection(root: string): Promise<TreeNode>
   onCollectionChanged(cb: (root: string) => void): () => void
+  /** The last-opened collection root, if one is remembered and still exists. */
+  lastCollection(): Promise<string | null>
 
   readRequest(absPath: string): Promise<{ raw: string; parsed: ParseResult }>
   writeRequest(absPath: string, file: RequestFile): Promise<{ raw: string }>

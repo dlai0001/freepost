@@ -79,6 +79,18 @@ function Shell(): JSX.Element {
     })
   }, [])
 
+  // On startup, reopen the collection that was open last time (if it still exists).
+  useEffect(() => {
+    void (async () => {
+      try {
+        const last = await fp().lastCollection()
+        if (last !== null) await loadRef.current(last)
+      } catch {
+        // No remembered collection or it failed to load — user picks one manually.
+      }
+    })()
+  }, [])
+
   async function handleOpenCollection(): Promise<void> {
     try {
       const root = await fp().openCollection()

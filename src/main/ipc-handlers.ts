@@ -43,6 +43,7 @@ import { resolveConfigChain } from './config-resolve'
 import { resolveVariables, substituteModel } from '../core/vars'
 import { ensureFreepostDir, listFiles, scanCollection } from './collection'
 import { executeRequest, jarFor, readEnvFile } from './execute'
+import { getLastRoot, setLastRoot } from './settings'
 
 /** App-global runtime variable store (PLAN.md: the "session" tier). */
 const session = new Map<string, string>()
@@ -179,8 +180,12 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.collectionScan, async (_e, root: string) => {
     ensureFreepostDir(root)
     ensureWatcher(root)
+    // Every collection load funnels through here — remember it for next startup.
+    void setLastRoot(root)
     return scanCollection(root)
   })
+
+  ipcMain.handle(IPC.collectionLast, () => getLastRoot())
 
   ipcMain.handle(IPC.requestRead, async (_e, abs: string) => {
     const raw = await fs.readFile(abs, 'utf8')

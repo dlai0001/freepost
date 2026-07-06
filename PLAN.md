@@ -1,14 +1,19 @@
 # Freepost — Research Report & Implementation Plan
 
-> **Status (v0.1, July 2026):** implemented and CI-verified on macOS + Windows —
-> canonical curl/websocat format (parser/writer, round-trip-tested), three-tier
-> variables + session, pm.* script sandbox (chai), workflows with expect-error +
-> reference validation + rename auto-heal, search with labels, WebSocket client,
-> GraphQL body generation, Postman v2.1 import, zero-network fence in CI, examples
-> collection, marketing site live at https://dlai0001.github.io/freepost/.
-> **Not yet implemented** (M5/post-1.0): OAuth2 flows, mTLS client certs, code
-> generation, CSV/JSON data-file runner iteration, GraphQL introspection, saved
-> response examples UI, history viewer UI, headless CLI runner, gRPC, mock server.
+> **Status (M1–M5 complete, July 2026):** implemented and CI-verified on macOS +
+> Windows (423 tests). Canonical curl/websocat format (parser/writer, round-trip-
+> tested), three-tier variables + session, pm.* script sandbox (chai), workflows
+> with expect-error + reference validation + rename auto-heal, search with labels,
+> WebSocket client, GraphQL body generation + introspection, collection/folder
+> config sidecars with inherited default headers and folder/collection scripts,
+> CSV/JSON data-driven workflow runs, code generation (8 targets), OAuth2 token
+> acquisition (client_credentials, password), mTLS client certs, Postman v2.1 +
+> OpenAPI 3.x/Swagger 2.0 import, curl/websocat/wscat paste & file import, request
+> history + saved response examples, zero-network fence in CI, examples collection,
+> marketing site live at https://dlai0001.github.io/freepost/.
+> **Deferred to post-1.0:** OAuth2 authorization_code interactive flow, headless
+> CLI runner (Newman analog), gRPC, mock server, MQTT, plugin API. See TEST_PLAN.md
+> for verification coverage.
 
 An open-source Postman clone: offline-only, no registration, builds from source on
 Windows and macOS, saves requests to disk anywhere as pretty-printed curl commands.

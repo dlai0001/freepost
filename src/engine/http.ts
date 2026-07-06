@@ -15,6 +15,7 @@ import { request as httpsRequest, type RequestOptions } from 'node:https'
 import { createBrotliDecompress, createGunzip, createInflate } from 'node:zlib'
 import type { Header, HttpResponseModel } from '../shared/model'
 import type { CookieJar } from './cookies'
+import { parseProxy, proxyAuthHeader, proxyTunnel } from './proxy'
 
 export interface SendHttpOptions {
   /** Skip TLS certificate verification (curl --insecure). */
@@ -31,6 +32,10 @@ export interface SendHttpOptions {
   clientKey?: string
   /** Passphrase for an encrypted clientKey. */
   clientKeyPassphrase?: string
+  /** Extra CA to trust: PEM contents OR a filesystem path (https only). */
+  caCert?: string
+  /** Proxy URL (http://[user:pass@]host:port). http via absolute-form, https via CONNECT. */
+  proxy?: string
 }
 
 /**
@@ -169,16 +174,29 @@ export function sendHttp(req: SendHttpRequest, jar?: CookieJar): Promise<HttpRes
         headers: hopHeaders,
         ...(isHttps && opts.insecure ? { rejectUnauthorized: false } : {})
       }
-      // mTLS client certificate — https only; ignored for plain http targets.
+      const ca = opts.caCert !== undefined ? loadPem(opts.caCert) : undefined
+      // TLS material — https only; ignored for plain http targets.
       if (isHttps) {
         if (opts.clientCert !== undefined) requestOptions.cert = loadPem(opts.clientCert)
         if (opts.clientKey !== undefined) requestOptions.key = loadPem(opts.clientKey)
         if (opts.clientKeyPassphrase !== undefined) {
           requestOptions.passphrase = opts.clientKeyPassphrase
         }
+        if (ca !== undefined) requestOptions.ca = ca
       }
 
-      const request = (isHttps ? httpsRequest : httpRequest)(url, requestOptions, (res) => {
+      // Proxy dispatch: https tunnels via CONNECT (createConnection returns the
+      // TLS socket); http goes through the proxy in absolute-form.
+      const proxy = parseProxy(opts.proxy)
+      if (proxy !== undefined && isHttps) {
+        requestOptions.createConnection = proxyTunnel(proxy, true, {
+          insecure: opts.insecure,
+          ca,
+          servername: url.hostname
+        }) as unknown as RequestOptions['createConnection']
+      }
+
+      const onResponse = (res: IncomingMessage): void => {
         currentRes = res
         if (jar && res.headers['set-cookie']) {
           jar.storeFromResponse(url, res.headers['set-cookie'])
@@ -250,7 +268,27 @@ export function sendHttp(req: SendHttpRequest, jar?: CookieJar): Promise<HttpRes
             sizeBytes
           })
         })
-      })
+      }
+
+      let request: ClientRequest
+      if (proxy !== undefined && !isHttps) {
+        // HTTP forward proxy: dispatch to the proxy with the target's absolute
+        // URL as the request-target (RFC 7230 §5.3.2), plus proxy auth.
+        const auth = proxyAuthHeader(proxy)
+        if (auth !== undefined) hopHeaders['Proxy-Authorization'] = auth
+        request = httpRequest(
+          {
+            host: proxy.hostname,
+            port: Number(proxy.port) || 80,
+            method,
+            path: url.href,
+            headers: hopHeaders
+          },
+          onResponse
+        )
+      } else {
+        request = (isHttps ? httpsRequest : httpRequest)(url, requestOptions, onResponse)
+      }
 
       currentReq = request
       request.on('error', (err) => fail(err))

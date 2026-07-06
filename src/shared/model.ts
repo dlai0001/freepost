@@ -265,6 +265,10 @@ export interface CollectionConfig {
   clientCert?: string
   clientKey?: string
   clientKeyPassphrase?: string
+  /** HTTP/HTTPS proxy URL (e.g. http://user:pass@proxy.corp:8080) for requests under this scope. */
+  proxy?: string
+  /** Extra CA certificate to trust: PEM contents or a collection-relative path (corporate MITM CAs). */
+  caCert?: string
 }
 
 /** Resolved (merged) config applied to a single request at execution time. */
@@ -277,6 +281,8 @@ export interface ResolvedConfig {
   clientCert?: string
   clientKey?: string
   clientKeyPassphrase?: string
+  proxy?: string
+  caCert?: string
 }
 
 /* ---------------------------- data-driven runs --------------------------- */

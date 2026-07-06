@@ -132,7 +132,7 @@ export function parseConfig(json: string): ParseConfigResult {
     config.scripts = scripts
   }
 
-  for (const key of ['clientCert', 'clientKey', 'clientKeyPassphrase'] as const) {
+  for (const key of ['clientCert', 'clientKey', 'clientKeyPassphrase', 'proxy', 'caCert'] as const) {
     if (raw[key] !== undefined) {
       if (typeof raw[key] !== 'string') return { ok: false, error: `${key} must be a string` }
       config[key] = raw[key] as string
@@ -158,6 +158,8 @@ export function serializeConfig(config: CollectionConfig): string {
   if (config.clientKeyPassphrase !== undefined) {
     ordered.clientKeyPassphrase = config.clientKeyPassphrase
   }
+  if (config.proxy !== undefined) ordered.proxy = config.proxy
+  if (config.caCert !== undefined) ordered.caCert = config.caCert
   return JSON.stringify(ordered, null, 2) + '\n'
 }
 
@@ -209,6 +211,8 @@ export function resolveConfig(chain: ConfigChainEntry[]): ResolvedConfig {
     if (config.clientKeyPassphrase !== undefined) {
       resolved.clientKeyPassphrase = config.clientKeyPassphrase
     }
+    if (config.proxy !== undefined) resolved.proxy = config.proxy
+    if (config.caCert !== undefined) resolved.caCert = config.caCert
   }
 
   resolved.defaultHeaders = headerOrder.map((lower) => headerByLower.get(lower)!)

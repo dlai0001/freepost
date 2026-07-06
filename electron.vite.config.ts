@@ -1,4 +1,4 @@
-import { defineConfig } from 'electron-vite'
+import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import { resolve } from 'path'
 
@@ -10,10 +10,12 @@ const aliases = {
 
 export default defineConfig({
   main: {
-    resolve: { alias: aliases }
+    resolve: { alias: aliases },
+    plugins: [externalizeDepsPlugin()]
   },
   preload: {
-    resolve: { alias: aliases }
+    resolve: { alias: aliases },
+    plugins: [externalizeDepsPlugin()]
   },
   renderer: {
     resolve: { alias: aliases },

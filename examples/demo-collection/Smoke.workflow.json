@@ -1,0 +1,15 @@
+{
+  "description": "Demo workflow: IP check then POST echo; auth step expects 401 without TOKEN",
+  "steps": [
+    {
+      "request": "Get IP.curl"
+    },
+    {
+      "request": "Post Echo.curl"
+    },
+    {
+      "request": "auth/Bearer Check.curl",
+      "expectError": true
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# ---
+# description: Returns your public IP address as JSON
+# label:
+#   - demo
+#   - smoke
+# scripts:
+#   test: |-
+#     pm.test("status is 200", () => pm.response.to.have.status(200));
+#     pm.test("has origin", () => pm.expect(pm.response.json().origin).to.be.a("string"));
+# ---
+
+BASE_URL="${BASE_URL:-httpbin.org}"
+
+curl --request GET \
+  --url "https://${BASE_URL}/ip" \
+  --header 'Accept: application/json'

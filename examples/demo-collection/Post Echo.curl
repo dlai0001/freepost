@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# ---
+# description: POSTs a JSON body and asserts it is echoed back
+# label:
+#   - demo
+# scripts:
+#   pre-request: pm.variables.set("RUN_ID", String(Date.now()));
+#   test: |-
+#     pm.test("status is 200", () => pm.response.to.have.status(200));
+#     pm.test("echoes the body", () => {
+#       const echoed = JSON.parse(pm.response.json().data);
+#       pm.expect(echoed.hello).to.equal("freepost");
+#     });
+# ---
+
+BASE_URL="${BASE_URL:-httpbin.org}"
+RUN_ID="${RUN_ID:-local}"
+
+curl --request POST \
+  --url "https://${BASE_URL}/post" \
+  --header 'Content-Type: application/json' \
+  --header "X-Run-Id: ${RUN_ID}" \
+  --data '{"hello": "freepost"}'

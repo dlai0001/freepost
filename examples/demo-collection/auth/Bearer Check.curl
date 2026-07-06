@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# ---
+# description: Basic-auth demo; TOKEN is a secret with no committed default
+# label:
+#   - demo
+#   - auth
+# variables:
+#   TOKEN:
+#     secret: true
+#     description: Set via environment or session
+# scripts:
+#   test: pm.test("authorized", () => pm.response.to.have.status(200));
+# ---
+
+BASE_URL="${BASE_URL:-httpbin.org}"
+TOKEN="${TOKEN:?}"
+
+curl --request GET \
+  --url "https://${BASE_URL}/bearer" \
+  --header "Authorization: Bearer ${TOKEN}"

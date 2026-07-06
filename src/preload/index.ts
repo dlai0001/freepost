@@ -44,7 +44,22 @@ const api = {
   importPostman: (args: unknown) => ipcRenderer.invoke(IPC.importPostman, args),
   browseImportFile: () => ipcRenderer.invoke(IPC.importBrowse),
   importFile: (args: unknown) => ipcRenderer.invoke(IPC.importFile, args),
-  importCommand: (args: unknown) => ipcRenderer.invoke(IPC.importCommand, args)
+  importCommand: (args: unknown) => ipcRenderer.invoke(IPC.importCommand, args),
+  importOpenApi: (args: unknown) => ipcRenderer.invoke(IPC.importOpenApi, args),
+
+  codegenTargets: () => ipcRenderer.invoke(IPC.codegenTargets),
+  generateCode: (args: unknown) => ipcRenderer.invoke(IPC.codegenGenerate, args),
+
+  listHistory: (root: string) => ipcRenderer.invoke(IPC.historyList, root),
+  clearHistory: (root: string) => ipcRenderer.invoke(IPC.historyClear, root),
+
+  saveExample: (args: unknown) => ipcRenderer.invoke(IPC.exampleSave, args),
+  listExamples: (args: unknown) => ipcRenderer.invoke(IPC.exampleList, args),
+  deleteExample: (args: unknown) => ipcRenderer.invoke(IPC.exampleDelete, args),
+
+  acquireOAuthToken: (args: unknown) => ipcRenderer.invoke(IPC.oauthAcquire, args),
+  introspectGraphql: (args: unknown) => ipcRenderer.invoke(IPC.gqlIntrospect, args),
+  browseDataFile: () => ipcRenderer.invoke(IPC.browseDataFile)
 }
 
 contextBridge.exposeInMainWorld('freepost', api)

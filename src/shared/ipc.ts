@@ -3,9 +3,15 @@
  * The preload script exposes these as window.freepost.*
  */
 import type {
+  AcquiredToken,
+  CodegenTarget,
+  CodegenTargetInfo,
   ExecutionReport,
+  GqlIntrospectResult,
+  HistoryEntry,
   ParseResult,
   RequestFile,
+  SavedExample,
   SearchEntry,
   TreeNode,
   WorkflowRunReport,
@@ -47,7 +53,24 @@ export const IPC = {
   importPostman: 'import:postman', // ({ root, collectionJsonPath }) => { written: string[] }
   importBrowse: 'import:browse', // () => string | null (native file picker)
   importFile: 'import:file', // ({ root, path, name? }) => { written: string[] } — Postman JSON or shell script
-  importCommand: 'import:command' // ({ root, text, name? }) => { written: string[] } — pasted curl/websocat/wscat
+  importCommand: 'import:command', // ({ root, text, name? }) => { written: string[] } — pasted curl/websocat/wscat
+  importOpenApi: 'import:openapi', // ({ root, path }) => { written: string[] } — OpenAPI/Swagger
+
+  codegenTargets: 'codegen:targets', // () => CodegenTargetInfo[]
+  codegenGenerate: 'codegen:generate', // ({ root, path, target, envPath?, resolve? }) => { code: string }
+
+  historyList: 'history:list', // (root) => HistoryEntry[]
+  historyClear: 'history:clear', // (root) => void
+
+  exampleSave: 'example:save', // ({ root, path, name }) => void — snapshots last response
+  exampleList: 'example:list', // ({ root, path }) => SavedExample[]
+  exampleDelete: 'example:delete', // ({ root, path, name }) => void
+
+  oauthAcquire: 'oauth:acquire', // ({ root, path, envPath? }) => AcquiredToken (stores in session)
+
+  gqlIntrospect: 'gql:introspect', // ({ root, path, envPath? }) => { schema: GqlSchemaSummary } | { error }
+
+  browseDataFile: 'data:browse' // () => string | null (native file picker for CSV/JSON)
 } as const
 
 /** Surface exposed on window.freepost by the preload script. */
@@ -92,4 +115,31 @@ export interface FreepostApi {
   importFile(args: { root: string; path: string; name?: string }): Promise<{ written: string[] }>
   /** Import a pasted curl/websocat/wscat command as a new request file. */
   importCommand(args: { root: string; text: string; name?: string }): Promise<{ written: string[] }>
+  /** Import an OpenAPI 3.x / Swagger 2.0 document (JSON or YAML). */
+  importOpenApi(args: { root: string; path: string }): Promise<{ written: string[] }>
+
+  codegenTargets(): Promise<CodegenTargetInfo[]>
+  generateCode(args: {
+    root: string
+    path: string
+    target: CodegenTarget
+    envPath?: string
+    resolve?: boolean
+  }): Promise<{ code: string }>
+
+  listHistory(root: string): Promise<HistoryEntry[]>
+  clearHistory(root: string): Promise<void>
+
+  saveExample(args: { root: string; path: string; name: string }): Promise<void>
+  listExamples(args: { root: string; path: string }): Promise<SavedExample[]>
+  deleteExample(args: { root: string; path: string; name: string }): Promise<void>
+
+  /** Acquire an OAuth2 token for the request and store it in the session. */
+  acquireOAuthToken(args: { root: string; path: string; envPath?: string }): Promise<AcquiredToken>
+
+  /** Run a GraphQL introspection query for schema hints. */
+  introspectGraphql(args: { root: string; path: string; envPath?: string }): Promise<GqlIntrospectResult>
+
+  /** Native file picker for a CSV/JSON data file; returns the chosen path or null. */
+  browseDataFile(): Promise<string | null>
 }

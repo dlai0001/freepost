@@ -3,8 +3,9 @@
  * allowed to use network APIs (PLAN.md "Network policy").
  */
 
-export { sendHttp } from './http'
+export { sendHttp, loadPem } from './http'
 export type { SendHttpRequest, SendHttpOptions } from './http'
+export { acquireToken } from './oauth'
 export { CookieJar } from './cookies'
 export type { StoredCookie } from './cookies'
 export { WsClient } from './ws'

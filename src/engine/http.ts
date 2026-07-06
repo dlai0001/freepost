@@ -8,6 +8,7 @@
  * redirects, timing, decompression, and TLS verification.
  */
 
+import { readFileSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
 import type { ClientRequest, IncomingMessage } from 'node:http'
 import { request as httpsRequest, type RequestOptions } from 'node:https'
@@ -24,6 +25,22 @@ export interface SendHttpOptions {
   timeoutSeconds?: number
   /** "user:pass" for Basic auth (curl --user). */
   user?: string
+  /** mTLS client certificate: PEM contents OR a filesystem path (https only). */
+  clientCert?: string
+  /** mTLS client private key: PEM contents OR a filesystem path (https only). */
+  clientKey?: string
+  /** Passphrase for an encrypted clientKey. */
+  clientKeyPassphrase?: string
+}
+
+/**
+ * Resolve a PEM-bearing option that may be either the PEM text itself or a
+ * path to a file on disk. Returns the value unchanged when it looks like PEM
+ * (starts with the standard `-----BEGIN` armor), otherwise reads the file.
+ */
+export function loadPem(value: string): Buffer | string {
+  if (value.trimStart().startsWith('-----BEGIN')) return value
+  return readFileSync(value)
 }
 
 export interface SendHttpRequest {
@@ -151,6 +168,14 @@ export function sendHttp(req: SendHttpRequest, jar?: CookieJar): Promise<HttpRes
         method,
         headers: hopHeaders,
         ...(isHttps && opts.insecure ? { rejectUnauthorized: false } : {})
+      }
+      // mTLS client certificate — https only; ignored for plain http targets.
+      if (isHttps) {
+        if (opts.clientCert !== undefined) requestOptions.cert = loadPem(opts.clientCert)
+        if (opts.clientKey !== undefined) requestOptions.key = loadPem(opts.clientKey)
+        if (opts.clientKeyPassphrase !== undefined) {
+          requestOptions.passphrase = opts.clientKeyPassphrase
+        }
       }
 
       const request = (isHttps ? httpsRequest : httpRequest)(url, requestOptions, (res) => {

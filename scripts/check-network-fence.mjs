@@ -14,22 +14,31 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const SRC = join(ROOT, 'src')
 const ALLOWED_PREFIX = join('src', 'engine')
 
-const FORBIDDEN = [
+// Usage patterns — real network calls. Tested against a copy of the line with
+// string/template-literal CONTENTS blanked, so network-API names that appear as
+// generated code *data* (e.g. codegen emitting `new WebSocket(...)` inside a
+// string) don't trip the fence, while an actual call in executable code does.
+const USAGE = [
   /\bfetch\s*\(/, // global fetch
-  /from\s+['"](?:node:)?https?['"]/, // http/https imports
-  /require\(\s*['"](?:node:)?https?['"]\s*\)/,
-  /from\s+['"](?:node:)?net['"]/,
-  /require\(\s*['"](?:node:)?net['"]\s*\)/,
-  /from\s+['"](?:node:)?dgram['"]/,
-  /from\s+['"](?:node:)?tls['"]/,
-  /from\s+['"]ws['"]/, // ws package
-  /require\(\s*['"]ws['"]\s*\)/,
-  /from\s+['"]undici['"]/,
-  /new\s+WebSocket\s*\(/,
-  /XMLHttpRequest/,
-  /navigator\.sendBeacon/,
-  /new\s+EventSource\s*\(/
+  /\bnew\s+WebSocket\s*\(/,
+  /\bXMLHttpRequest\b/,
+  /\bnavigator\.sendBeacon\b/,
+  /\bnew\s+EventSource\s*\(/
 ]
+
+// Network module specifiers. A line that is structurally an import/require
+// (after blanking, it still starts with `import` or contains a `require(` call)
+// AND whose ORIGINAL text imports one of these is a violation. Emitted-as-string
+// imports blank away and are ignored.
+const NET_MODULE = /['"](?:node:)?(?:https?|net|dgram|tls|ws|undici)['"]/
+
+/** Blank the contents of '...', "...", and `...` literals (keep the quotes). */
+function blankStrings(line) {
+  return line
+    .replace(/'(?:[^'\\]|\\.)*'/g, "''")
+    .replace(/"(?:[^"\\]|\\.)*"/g, '""')
+    .replace(/`(?:[^`\\]|\\.)*`/g, '``')
+}
 
 const violations = []
 
@@ -47,9 +56,16 @@ function scan(dir) {
     const text = readFileSync(full, 'utf8')
     const lines = text.split('\n')
     lines.forEach((line, i) => {
-      if (line.trimStart().startsWith('//') || line.trimStart().startsWith('*')) return
-      for (const re of FORBIDDEN) {
-        if (re.test(line)) violations.push(`${rel}:${i + 1}  ${line.trim()}  [${re}]`)
+      const trimmed = line.trimStart()
+      if (trimmed.startsWith('//') || trimmed.startsWith('*')) return
+      const stripped = blankStrings(line)
+      for (const re of USAGE) {
+        if (re.test(stripped)) violations.push(`${rel}:${i + 1}  ${line.trim()}  [${re}]`)
+      }
+      // Real import/require of a network module (not string data).
+      const isImport = /^\s*import\b/.test(stripped) || /\brequire\s*\(/.test(stripped)
+      if (isImport && NET_MODULE.test(line)) {
+        violations.push(`${rel}:${i + 1}  ${line.trim()}  [network import]`)
       }
     })
   }

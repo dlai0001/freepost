@@ -1,5 +1,5 @@
 import { promises as fs } from 'fs'
-import { existsSync, mkdirSync, writeFileSync } from 'fs'
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'fs'
 import { join, relative, sep } from 'path'
 import type { TreeNode } from '../shared/model'
 import { requestKindForPath } from '../core/format'
@@ -7,10 +7,16 @@ import { requestKindForPath } from '../core/format'
 /** PLAN.md leak guardrail: .freepost/ always carries a self-regenerating ignore-all. */
 export function ensureFreepostDir(root: string): string {
   const dir = join(root, '.freepost')
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 })
   writeFileSync(join(dir, '.gitignore'), '*\n')
   const hist = join(dir, 'history')
-  if (!existsSync(hist)) mkdirSync(hist)
+  if (!existsSync(hist)) mkdirSync(hist, { mode: 0o700 })
+  // Tighten perms even if the folder predates this guardrail (best-effort; no-op on Windows).
+  try {
+    chmodSync(dir, 0o700)
+  } catch {
+    /* best-effort */
+  }
   return dir
 }
 

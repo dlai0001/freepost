@@ -1,12 +1,12 @@
 import { promises as fs } from 'fs'
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'fs'
+import { appendFileSync, chmodSync, existsSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, isAbsolute, join } from 'path'
 import type { ExecutionReport, Header, HttpResponseModel } from '../shared/model'
 import { parseRequestFile, requestKindForPath } from '../core/format'
 import { resolveVariables, substitute, substituteModel } from '../core/vars'
 import { runScript } from '../core/sandbox'
 import { mergeRequestHeaders } from '../core/config'
-import { sendHttp, CookieJar } from '../engine'
+import { sendHttp, CookieJar, shouldBypassProxy } from '../engine'
 import { ensureFreepostDir } from './collection'
 import { resolveConfigChain } from './config-resolve'
 
@@ -38,6 +38,12 @@ function appendHistory(root: string, entry: unknown): void {
     const dir = ensureFreepostDir(root)
     const file = join(dir, 'history', 'requests.jsonl')
     appendFileSync(file, JSON.stringify(entry) + '\n')
+    // History records full request/response data (incl. auth headers) — owner-only.
+    try {
+      chmodSync(file, 0o600)
+    } catch {
+      /* best-effort; no-op on Windows */
+    }
     const lines = readFileSync(file, 'utf8').split('\n').filter(Boolean)
     if (lines.length > HISTORY_CAP * 2) {
       writeFileSync(file, lines.slice(-HISTORY_CAP).join('\n') + '\n')
@@ -165,6 +171,14 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
     cfg.clientCert !== undefined ? resolveCertPath(root, substitute(cfg.clientCert, values)) : undefined
   const clientKey =
     cfg.clientKey !== undefined ? resolveCertPath(root, substitute(cfg.clientKey, values)) : undefined
+  // Custom CA (corporate MITM) — PEM or collection-relative path, like the client cert.
+  const caCert =
+    cfg.caCert !== undefined ? resolveCertPath(root, substitute(cfg.caCert, values)) : undefined
+  // Proxy: collection/folder config wins, else *_PROXY env vars; NO_PROXY bypasses.
+  const proxy = resolveProxy(
+    cfg.proxy !== undefined ? substitute(cfg.proxy, values) : undefined,
+    resolved.url
+  )
 
   report.resolvedRequest = { method: resolved.method, url: resolved.url, headers, body: bodyText }
 
@@ -187,7 +201,9 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
           clientKeyPassphrase:
             cfg.clientKeyPassphrase !== undefined
               ? substitute(cfg.clientKeyPassphrase, values)
-              : undefined
+              : undefined,
+          caCert,
+          proxy
         }
       },
       jarFor(root)
@@ -259,6 +275,30 @@ function resolveCertPath(root: string, p: string): string {
   // Raw PEM content passes through untouched; only paths are resolved.
   if (p.startsWith('-----BEGIN')) return p
   return isAbsolute(p) ? p : join(root, p)
+}
+
+/**
+ * Pick the proxy for a target URL: explicit collection config wins, else the
+ * scheme-appropriate *_PROXY environment variable (the corporate default).
+ * Returns undefined when the target host matches NO_PROXY, or no proxy is set.
+ */
+function resolveProxy(configProxy: string | undefined, targetUrl: string): string | undefined {
+  let host = ''
+  let isHttps = false
+  try {
+    const u = new URL(targetUrl)
+    host = u.hostname
+    isHttps = u.protocol === 'https:'
+  } catch {
+    /* unparseable URL — send will fail later; treat as no host */
+  }
+  const env = process.env
+  if (host !== '' && shouldBypassProxy(host, env.NO_PROXY ?? env.no_proxy)) return undefined
+  if (configProxy !== undefined && configProxy.trim() !== '') return configProxy
+  const scheme = isHttps
+    ? (env.HTTPS_PROXY ?? env.https_proxy)
+    : (env.HTTP_PROXY ?? env.http_proxy)
+  return scheme ?? env.ALL_PROXY ?? env.all_proxy
 }
 
 /** pm.sendRequest delegate — goes through the engine like everything else. */

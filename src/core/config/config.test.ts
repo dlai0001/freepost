@@ -23,7 +23,9 @@ describe('parseConfig', () => {
       scripts: { 'pre-request': 'pm.a()', test: 'pm.b()' },
       clientCert: './cert.pem',
       clientKey: './key.pem',
-      clientKeyPassphrase: 'pw'
+      clientKeyPassphrase: 'pw',
+      proxy: 'http://proxy.corp:8080',
+      caCert: './corp-ca.pem'
     })
     const res = parseConfig(json)
     expect(res.ok).toBe(true)
@@ -32,6 +34,8 @@ describe('parseConfig', () => {
     expect(res.config.auth?.grant).toBe('client_credentials')
     expect(res.config.scripts).toEqual({ 'pre-request': 'pm.a()', test: 'pm.b()' })
     expect(res.config.clientCert).toBe('./cert.pem')
+    expect(res.config.proxy).toBe('http://proxy.corp:8080')
+    expect(res.config.caCert).toBe('./corp-ca.pem')
   })
 
   it('accepts an empty object', () => {

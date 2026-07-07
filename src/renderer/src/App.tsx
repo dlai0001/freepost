@@ -66,6 +66,17 @@ function Shell(): JSX.Element {
     } catch {
       // Index unavailable — tree falls back to generic badges.
     }
+    try {
+      // Leak guardrail: warn if secrets/history under .freepost/ are git-tracked.
+      const tracked = await fp().checkCollectionSecurity(root)
+      if (tracked.length > 0) {
+        setNotice(
+          `⚠ ${tracked.length} file(s) under .freepost/ are tracked by git — secrets/history may be committed. Run: git rm -r --cached .freepost`
+        )
+      }
+    } catch {
+      // Security check is best-effort.
+    }
   }, [])
 
   const loadRef = useRef(loadCollection)

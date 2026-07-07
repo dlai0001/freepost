@@ -18,6 +18,7 @@ import { joinPath, nextId } from '../util'
 import ResponsePanel from './ResponsePanel'
 import CodegenModal from './CodegenModal'
 import ExamplesModal from './ExamplesModal'
+import CodeEditor from './CodeEditor'
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
 const OAUTH_GRANTS: OAuth2Grant[] = ['client_credentials', 'password', 'authorization_code']
@@ -643,23 +644,23 @@ export default function RequestTab(props: Props): JSX.Element {
                     />
                   )}
                   <label className="field-label">Query</label>
-                  <textarea
-                    className="editor mono"
+                  <CodeEditor
+                    language="text"
                     rows={10}
                     value={gqlQuery}
-                    onChange={(e) => {
-                      setGqlQuery(e.target.value)
+                    onChange={(v) => {
+                      setGqlQuery(v)
                       touch()
                     }}
                   />
                   <label className="field-label">Variables (JSON)</label>
-                  <textarea
-                    className="editor mono"
+                  <CodeEditor
+                    language="json"
                     rows={6}
                     value={gqlVars}
                     placeholder="{}"
-                    onChange={(e) => {
-                      setGqlVars(e.target.value)
+                    onChange={(v) => {
+                      setGqlVars(v)
                       touch()
                     }}
                   />
@@ -672,13 +673,13 @@ export default function RequestTab(props: Props): JSX.Element {
                       the value below is the file path.
                     </div>
                   )}
-                  <textarea
-                    className="editor mono"
+                  <CodeEditor
+                    language={bodyKind !== 'file' && /^\s*[[{]/.test(bodyText) ? 'json' : 'text'}
                     rows={14}
                     value={bodyText}
                     placeholder="Request body"
-                    onChange={(e) => {
-                      setBodyText(e.target.value)
+                    onChange={(v) => {
+                      setBodyText(v)
                       touch()
                     }}
                   />
@@ -863,24 +864,24 @@ export default function RequestTab(props: Props): JSX.Element {
             {section === 'scripts' && (
               <div className="scripts-editor">
                 <label className="field-label">Pre-request script</label>
-                <textarea
-                  className="editor mono"
+                <CodeEditor
+                  language="javascript"
                   rows={8}
                   value={preScript}
                   placeholder={'pm.variables.set("ts", Date.now());'}
-                  onChange={(e) => {
-                    setPreScript(e.target.value)
+                  onChange={(v) => {
+                    setPreScript(v)
                     touch()
                   }}
                 />
                 <label className="field-label">Test script</label>
-                <textarea
-                  className="editor mono"
+                <CodeEditor
+                  language="javascript"
                   rows={8}
                   value={testScript}
                   placeholder={'pm.test("status is 200", () => pm.response.to.have.status(200));'}
-                  onChange={(e) => {
-                    setTestScript(e.target.value)
+                  onChange={(v) => {
+                    setTestScript(v)
                     touch()
                   }}
                 />

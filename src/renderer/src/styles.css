@@ -260,6 +260,9 @@ button { cursor: pointer; }
   border: 1px solid var(--border); border-radius: 6px;
   padding: 8px; font-size: 13px; line-height: 1.5;
 }
+/* CodeMirror editor host — matches .editor width/spacing; chrome themed in CodeEditor.tsx. */
+.cm-host { width: 100%; }
+.cm-host .cm-editor { width: 100%; }
 .field-label { display: block; color: var(--muted); font-size: 12px; font-weight: 600; margin: 10px 0 4px; }
 .section-content .field-label:first-child, .gql-editor .field-label:first-child,
 .scripts-editor .field-label:first-child, .meta-editor .field-label:first-child { margin-top: 0; }

@@ -1,3 +1,4 @@
+import type { JSX } from 'react'
 import { useEffect, useState } from 'react'
 import type { SearchEntry, TreeNode } from '../../../shared/model'
 import { fp } from '../api'

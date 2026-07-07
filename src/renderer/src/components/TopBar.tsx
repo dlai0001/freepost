@@ -1,3 +1,4 @@
+import type { JSX } from 'react'
 interface Props {
   root: string | null
   notice: string | null

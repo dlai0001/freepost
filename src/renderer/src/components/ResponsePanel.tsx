@@ -1,3 +1,4 @@
+import type { JSX } from 'react'
 import { useState } from 'react'
 import type { ExecutionReport, ScriptOutcome } from '../../../shared/model'
 import { errMsg, fp } from '../api'

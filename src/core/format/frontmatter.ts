@@ -4,7 +4,7 @@
  * stripped content is standard YAML. Unknown keys round-trip verbatim
  * (PLAN.md rewrite contract) — values are preserved, key order need not be.
  */
-import yaml from 'js-yaml'
+import * as yaml from 'js-yaml'
 import type { Frontmatter, ParseError } from '@shared/model'
 
 const DELIMITER = '# ---'
@@ -52,8 +52,13 @@ export function extractFrontmatter(lines: string[], startIndex: number): Frontma
     )
   }
   let doc: unknown
+  const body = inner.join('\n')
+  if (body.trim() === '') {
+    // js-yaml >=5 throws on empty input; an all-comment block is empty frontmatter.
+    return { ok: true, frontmatter: {} as Frontmatter, nextIndex: i + 1 }
+  }
   try {
-    doc = yaml.load(inner.join('\n'))
+    doc = yaml.load(body)
   } catch (e) {
     const mark = (e as { mark?: { line?: number } }).mark
     const line = startIndex + 2 + (mark?.line ?? 0)

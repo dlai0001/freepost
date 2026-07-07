@@ -1,3 +1,4 @@
+import type { JSX } from 'react'
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import type { RequestKind, SearchEntry, TreeNode } from '../../shared/model'
 import { errMsg, fp, hasApi } from './api'
@@ -76,6 +77,18 @@ function Shell(): JSX.Element {
         void loadRef.current(root).catch((e) => setNotice(errMsg(e)))
       }
     })
+  }, [])
+
+  // On startup, reopen the collection that was open last time (if it still exists).
+  useEffect(() => {
+    void (async () => {
+      try {
+        const last = await fp().lastCollection()
+        if (last !== null) await loadRef.current(last)
+      } catch {
+        // No remembered collection or it failed to load — user picks one manually.
+      }
+    })()
   }, [])
 
   async function handleOpenCollection(): Promise<void> {

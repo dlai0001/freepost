@@ -1,3 +1,4 @@
+import type { JSX } from 'react'
 import type { Tab } from '../state'
 
 interface Props {

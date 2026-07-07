@@ -1,3 +1,4 @@
+import type { JSX } from 'react'
 const CLASS_BY_METHOD: Record<string, string> = {
   GET: 'get',
   POST: 'post',

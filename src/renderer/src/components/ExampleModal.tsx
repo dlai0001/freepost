@@ -1,3 +1,4 @@
+import type { JSX } from 'react'
 import { useState } from 'react'
 import type { SavedExample } from '../../../shared/model'
 import { fmtBytes, fmtMs, tryPrettyJson } from '../util'

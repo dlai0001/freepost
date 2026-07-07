@@ -1,3 +1,4 @@
+import type { JSX } from 'react'
 import type { SearchEntry } from '../../../shared/model'
 import MethodBadge from './MethodBadge'
 

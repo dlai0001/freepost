@@ -5,6 +5,9 @@
   "license": "MIT",
   "private": true,
   "main": "./out/main/index.js",
+  "bin": {
+    "freepost": "./out/cli/index.mjs"
+  },
   "homepage": "https://dlai0001.github.io/freepost/",
   "repository": {
     "type": "git",
@@ -17,11 +20,13 @@
     "start": "electron-vite dev",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "build:cli": "vite build --config vite.cli.config.ts",
+    "cli": "node out/cli/index.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "fence": "node scripts/check-network-fence.mjs",
-    "verify": "npm run typecheck && npm run test && npm run fence && npm run build"
+    "verify": "npm run typecheck && npm run test && npm run fence && npm run build && npm run build:cli"
   },
   "dependencies": {
     "chai": "^6.2.2",

@@ -6,3 +6,4 @@ out/
 .freepost/
 *.local.env.json
 coverage/
+.claude/

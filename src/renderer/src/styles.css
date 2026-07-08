@@ -602,6 +602,37 @@ td .var-input.cell-var { width: 100%; }
 .gql-types { display: flex; flex-wrap: wrap; gap: 4px; }
 .gql-type-chip { cursor: default; }
 
+/* ------------------------- gql schema explorer --------------------------- */
+.gql-explorer { max-height: 320px; }
+.gql-ex-search {
+  width: 100%; margin-bottom: 10px;
+}
+.gql-ex-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 8px; font-size: 12px; }
+.gql-crumb { background: none; border: none; color: var(--blue); cursor: pointer; padding: 0; font: inherit; }
+.gql-crumb:hover { text-decoration: underline; }
+.gql-crumb-sep { color: var(--muted); }
+.gql-type-link { background: none; border: none; color: var(--teal); cursor: pointer; padding: 0; font: inherit; }
+.gql-type-link:hover { text-decoration: underline; }
+.gql-ex-field { padding: 3px 4px; border-radius: 4px; }
+.gql-ex-field:hover { background: rgba(255, 255, 255, 0.04); }
+.gql-ex-sig { font-size: 12px; }
+.gql-ex-pick { background: none; border: none; cursor: pointer; padding: 0; font: inherit; }
+.gql-ex-pick:hover { text-decoration: underline; }
+.gql-ex-desc { color: var(--muted); font-size: 11px; margin-top: 1px; }
+.gql-ex-typedesc { margin-bottom: 8px; }
+.gql-ex-deprecated { color: var(--danger); font-size: 11px; margin-top: 1px; }
+.gql-ex-typehead { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }
+.gql-ex-kind { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+.gql-ex-typename { color: var(--purple); font-size: 13px; font-weight: 600; }
+.gql-ex-implements { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+
+/* ------------------------ gql subscriptions ------------------------------ */
+.gql-sub-config { margin-bottom: 8px; }
+.gql-sub-row { display: flex; gap: 8px; align-items: center; }
+.gql-sub-row .grow { flex: 1; }
+.gql-sub-transport { flex: 0 0 auto; width: auto; }
+.gql-sub-stream { margin-top: 12px; }
+
 /* ------------------------ workflow data files ---------------------------- */
 .wf-datafile { display: flex; gap: 8px; align-items: center; padding: 0 12px; }
 .wf-datafile .cell-input { flex: 1; }

@@ -69,6 +69,10 @@ const api = {
 
   acquireOAuthToken: (args: unknown) => ipcRenderer.invoke(IPC.oauthAcquire, args),
   introspectGraphql: (args: unknown) => ipcRenderer.invoke(IPC.gqlIntrospect, args),
+  subscribeGraphql: (args: unknown) => ipcRenderer.invoke(IPC.gqlSubscribe, args),
+  unsubscribeGraphql: (id: string) => ipcRenderer.invoke(IPC.gqlUnsubscribe, id),
+  onGqlSubEvent: (cb: (e: unknown) => void) =>
+    on(IPC.gqlSubEvent, cb as (...args: unknown[]) => void),
   browseDataFile: () => ipcRenderer.invoke(IPC.browseDataFile),
 
   onAppBeforeClose: (cb: () => void) => on(IPC.appBeforeClose, cb as (...args: unknown[]) => void),

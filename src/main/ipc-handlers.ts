@@ -44,7 +44,7 @@ import {
   extractIntrospectionData,
   parseIntrospection
 } from '../core/graphql/introspection'
-import { acquireToken, sendHttp, WsClient } from '../engine'
+import { acquireToken, sendHttp, subscribeGraphql, WsClient, type GqlTransport } from '../engine'
 import { resolveConfigChain } from './config-resolve'
 import { resolveVariables, substitute, substituteModel } from '../core/vars'
 import { ensureFreepostDir, listFiles, scanCollection } from './collection'
@@ -58,6 +58,16 @@ const session = new Map<string, string>()
 const watchers = new Map<string, FSWatcher>()
 let wsCounter = 0
 const wsClients = new Map<string, WsClient>()
+let gqlSubCounter = 0
+/** Active GraphQL subscriptions by id → dispose fn. */
+const gqlSubs = new Map<string, () => void>()
+
+/** Map an http(s) endpoint to its ws(s) equivalent for the WebSocket transport. */
+function toWsUrl(url: string): string {
+  if (url.startsWith('https://')) return `wss://${url.slice('https://'.length)}`
+  if (url.startsWith('http://')) return `ws://${url.slice('http://'.length)}`
+  return url
+}
 
 /** Last execution per "root::path" — the source for "Save as example". */
 const lastResponses = new Map<
@@ -639,6 +649,65 @@ export function registerIpcHandlers(): void {
       }
     }
   )
+
+  // ---- GraphQL subscriptions ----
+  ipcMain.handle(
+    IPC.gqlSubscribe,
+    async (
+      _e,
+      args: {
+        root: string
+        path: string
+        envPath?: string
+        query: string
+        variables?: Record<string, unknown>
+        url?: string
+        transport?: GqlTransport
+      }
+    ): Promise<{ id: string }> => {
+      const kind = requestKindForPath(args.path)
+      if (kind === null) throw new Error('Not a request file')
+      const raw = await fs.readFile(join(args.root, args.path), 'utf8')
+      const parsed = parseRequestFile(raw, kind)
+      if (!parsed.ok || parsed.file.http === undefined) throw new Error('Not an HTTP request')
+
+      const env = readEnvFile(args.root, args.envPath)
+      const { values } = resolveVariables(parsed.file.variables, Object.fromEntries(session), env)
+      const http = substituteModel(parsed.file.http, values)
+      const gql = parsed.file.frontmatter.graphql
+      // Endpoint precedence: explicit override → saved subscription URL → schema
+      // URL → the request URL. Reuse the request's ${VAR}-resolved auth headers.
+      const transport: GqlTransport = args.transport ?? gql?.subscriptionTransport ?? 'ws'
+      const rawUrl = args.url ?? gql?.subscriptionUrl ?? gql?.schemaUrl ?? parsed.file.http.url
+      let url = substitute(rawUrl, values)
+      if (transport === 'ws') url = toWsUrl(url)
+      const headers = http.headers.filter((h) => h.name.toLowerCase() !== 'content-type')
+
+      const id = `gqlsub${++gqlSubCounter}`
+      const dispose = subscribeGraphql(
+        { url, transport, headers, query: args.query, variables: args.variables },
+        {
+          next: (payload) =>
+            broadcast(IPC.gqlSubEvent, { id, type: 'next', data: JSON.stringify(payload) }),
+          error: (err) => {
+            broadcast(IPC.gqlSubEvent, { id, type: 'error', data: err.message })
+            gqlSubs.delete(id)
+          },
+          complete: () => {
+            broadcast(IPC.gqlSubEvent, { id, type: 'complete' })
+            gqlSubs.delete(id)
+          }
+        }
+      )
+      gqlSubs.set(id, dispose)
+      return { id }
+    }
+  )
+
+  ipcMain.handle(IPC.gqlUnsubscribe, (_e, id: string) => {
+    gqlSubs.get(id)?.()
+    gqlSubs.delete(id)
+  })
 
   ipcMain.handle(IPC.browseDataFile, async () => {
     const res = await dialog.showOpenDialog({

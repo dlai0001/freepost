@@ -30,6 +30,14 @@ export interface GraphqlBody {
   schemaUrl?: string
   /** Typed variable rows (editor source of truth); `variables` is derived from these. */
   variableDefs?: GqlVariableDef[]
+  /**
+   * Subscription endpoint override. When unset, the engine derives it from
+   * schemaUrl (or the request URL): http→ws / https→wss for the `ws` transport,
+   * unchanged for `sse`.
+   */
+  subscriptionUrl?: string
+  /** Transport for subscription operations. Defaults to `ws` (graphql-transport-ws). */
+  subscriptionTransport?: 'ws' | 'sse'
 }
 
 /** How a multipart form field supplies its value. */

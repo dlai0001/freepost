@@ -7,7 +7,6 @@ import type {
   FormField,
   FormFieldType,
   Frontmatter,
-  GqlSchemaSummary,
   GqlVariableDef,
   GraphqlBody,
   Header,
@@ -20,10 +19,13 @@ import type {
 } from '../../../shared/model'
 import { errMsg, fp } from '../api'
 import { joinPath, looksLikeCommand, nextId } from '../util'
+import { detectOperationType } from '../../../core/graphql/operation'
 import ResponsePanel from './ResponsePanel'
 import CodegenModal from './CodegenModal'
 import ExamplesModal from './ExamplesModal'
 import CodeEditor from './CodeEditor'
+import GqlSchemaExplorer from './GqlSchemaExplorer'
+import StreamLog, { streamEntry, type StreamEntry } from './StreamLog'
 import ConfirmModal from './ConfirmModal'
 import VarInput from './VarInput'
 import type { VarLookup } from './varHighlight'
@@ -92,6 +94,16 @@ function parseGqlValue(raw: string): unknown {
   }
 }
 
+/** Pretty-print a JSON string for the subscription log; pass through on failure. */
+function prettyJson(s?: string): string {
+  if (s === undefined) return ''
+  try {
+    return JSON.stringify(JSON.parse(s), null, 2)
+  } catch {
+    return s
+  }
+}
+
 interface Props {
   root: string
   relPath: string
@@ -133,6 +145,12 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
   const [gqlVarRows, setGqlVarRows] = useState<GqlVarRow[]>([])
   // Variables editor: structured table vs. raw JSON escape hatch.
   const [gqlVarsJson, setGqlVarsJson] = useState(false)
+  // Subscription endpoint override + transport (only used for subscription ops).
+  const [gqlSubUrl, setGqlSubUrl] = useState('')
+  const [gqlSubTransport, setGqlSubTransport] = useState<'ws' | 'sse'>('ws')
+  const [subLog, setSubLog] = useState<StreamEntry[]>([])
+  const [subActive, setSubActive] = useState(false)
+  const subIdRef = useRef<string | null>(null)
   const [authMode, setAuthMode] = useState<AuthMode>('none')
   const [authUser, setAuthUser] = useState('')
   const [authPass, setAuthPass] = useState('')
@@ -149,7 +167,6 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
   const [oauthBusy, setOauthBusy] = useState(false)
   const [oauthResult, setOauthResult] = useState<string | null>(null)
   // GraphQL introspection.
-  const [gqlSchema, setGqlSchema] = useState<GqlSchemaSummary | null>(null)
   const [gqlSchemaObj, setGqlSchemaObj] = useState<GraphQLSchema | null>(null)
   const [gqlSchemaOpen, setGqlSchemaOpen] = useState(false)
   const [gqlBusy, setGqlBusy] = useState(false)
@@ -212,6 +229,8 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
     if (fm.graphql !== undefined) {
       setGqlQuery(fm.graphql.query)
       setGqlSchemaUrl(fm.graphql.schemaUrl ?? '')
+      setGqlSubUrl(fm.graphql.subscriptionUrl ?? '')
+      setGqlSubTransport(fm.graphql.subscriptionTransport ?? 'ws')
       setGqlVars(
         fm.graphql.variables !== undefined ? JSON.stringify(fm.graphql.variables, null, 2) : ''
       )
@@ -336,6 +355,10 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
     }
     return makeVarLookup(varSources, decls)
   }, [varSources, varRows])
+
+  // A subscription operation streams over ws/sse instead of a one-shot POST.
+  const gqlOpType = useMemo(() => detectOperationType(gqlQuery), [gqlQuery])
+  const isGqlSubscription = bodyMode === 'graphql' && gqlOpType === 'subscription'
 
   /* ------------------------------ assembly ------------------------------ */
 
@@ -487,6 +510,8 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
       if (variables !== undefined) g.variables = variables
       if (variableDefs !== undefined) g.variableDefs = variableDefs
       if (gqlSchemaUrl.trim() !== '') g.schemaUrl = gqlSchemaUrl.trim()
+      if (gqlSubUrl.trim() !== '') g.subscriptionUrl = gqlSubUrl.trim()
+      if (gqlSubTransport !== 'ws') g.subscriptionTransport = gqlSubTransport
       fm.graphql = g
       // The writer regenerates --data from frontmatter.graphql.
       body = orig.http?.body
@@ -584,6 +609,88 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
       setSending(false)
     }
   }
+
+  /* ------------------------ graphql subscriptions ------------------------ */
+
+  /** The current editor variables (typed rows or the raw-JSON escape hatch). */
+  function currentGqlVariables(): Record<string, unknown> | undefined {
+    if (gqlVarsJson) {
+      const t = gqlVars.trim()
+      if (t === '') return undefined
+      try {
+        return JSON.parse(t) as Record<string, unknown>
+      } catch {
+        return undefined
+      }
+    }
+    const rows = gqlVarRows.filter((r) => r.name.trim() !== '')
+    if (rows.length === 0) return undefined
+    const out: Record<string, unknown> = {}
+    for (const r of rows) out[r.name.trim()] = parseGqlValue(r.value)
+    return out
+  }
+
+  async function subscribe(): Promise<void> {
+    setError(null)
+    // Query + variables + endpoint come from the live editor; the main process
+    // reads the saved file only for auth headers and ${VAR} resolution (as
+    // introspection does), so unsaved header edits require a save first.
+    setSubLog((l) => [...l, streamEntry('info', `subscribing over ${gqlSubTransport}…`)])
+    setSubActive(true)
+    try {
+      const { id } = await fp().subscribeGraphql({
+        root: props.root,
+        path: props.relPath,
+        envPath: props.envPath ?? undefined,
+        query: gqlQuery,
+        variables: currentGqlVariables(),
+        url: gqlSubUrl.trim() === '' ? undefined : gqlSubUrl.trim(),
+        transport: gqlSubTransport
+      })
+      subIdRef.current = id
+    } catch (e) {
+      setSubActive(false)
+      setSubLog((l) => [...l, streamEntry('error', errMsg(e))])
+    }
+  }
+
+  async function stopSubscription(): Promise<void> {
+    const id = subIdRef.current
+    subIdRef.current = null
+    setSubActive(false)
+    if (id !== null) {
+      setSubLog((l) => [...l, streamEntry('info', 'stopped')])
+      try {
+        await fp().unsubscribeGraphql(id)
+      } catch {
+        /* already gone */
+      }
+    }
+  }
+
+  // Accumulate streamed subscription payloads; filter to our active connection.
+  useEffect(() => {
+    const off = fp().onGqlSubEvent((e) => {
+      if (e.id !== subIdRef.current) return
+      if (e.type === 'next') {
+        setSubLog((l) => [...l, streamEntry('recv', prettyJson(e.data))])
+      } else if (e.type === 'error') {
+        setSubLog((l) => [...l, streamEntry('error', e.data ?? 'error')])
+        setSubActive(false)
+        subIdRef.current = null
+      } else {
+        setSubLog((l) => [...l, streamEntry('info', 'complete')])
+        setSubActive(false)
+        subIdRef.current = null
+      }
+    })
+    return () => {
+      off()
+      const id = subIdRef.current
+      if (id !== null) void fp().unsubscribeGraphql(id).catch(() => undefined)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   /* --------------------------- paste-curl-to-fill --------------------------- */
 
@@ -692,23 +799,22 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
         schemaUrl: gqlSchemaUrl.trim() === '' ? undefined : gqlSchemaUrl.trim()
       })
       if (result.ok) {
-        setGqlSchema(result.schema)
         if (opts?.open !== false) setGqlSchemaOpen(true)
-        // Build the full client schema for editor completion/linting.
+        // Build the full client schema for editor completion/linting + explorer.
         if (result.introspection !== undefined) {
           try {
             setGqlSchemaObj(buildClientSchema(result.introspection as IntrospectionQuery))
           } catch {
             setGqlSchemaObj(null)
           }
+        } else {
+          setGqlSchemaObj(null)
         }
       } else {
-        setGqlSchema(null)
         setGqlSchemaObj(null)
         setGqlError(result.error)
       }
     } catch (e) {
-      setGqlSchema(null)
       setGqlSchemaObj(null)
       setGqlError(errMsg(e))
     } finally {
@@ -808,9 +914,21 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
             touch()
           }}
         />
-        <button className="btn btn-accent" onClick={() => void send()} disabled={sending}>
-          {sending ? 'Sending…' : 'Send'}
-        </button>
+        {isGqlSubscription ? (
+          subActive ? (
+            <button className="btn btn-danger" onClick={() => void stopSubscription()}>
+              Stop
+            </button>
+          ) : (
+            <button className="btn btn-accent" onClick={() => void subscribe()}>
+              Subscribe
+            </button>
+          )
+        ) : (
+          <button className="btn btn-accent" onClick={() => void send()} disabled={sending}>
+            {sending ? 'Sending…' : 'Send'}
+          </button>
+        )}
         <button className="btn" onClick={() => void save()} disabled={saving}>
           {saving ? 'Saving…' : 'Save'}
         </button>
@@ -989,7 +1107,7 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
                     {gqlSchemaObj !== null && (
                       <span className="dim-note">Schema loaded · completion active</span>
                     )}
-                    {gqlSchema !== null && (
+                    {gqlSchemaObj !== null && (
                       <button
                         className="btn btn-small"
                         onClick={() => setGqlSchemaOpen((v) => !v)}
@@ -1006,14 +1124,41 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
                       </button>
                     </div>
                   )}
-                  {gqlSchema !== null && gqlSchemaOpen && (
-                    <GqlSchemaView
-                      schema={gqlSchema}
+                  {gqlSchemaObj !== null && gqlSchemaOpen && (
+                    <GqlSchemaExplorer
+                      schema={gqlSchemaObj}
                       onPick={(name) => {
                         setGqlQuery((q) => (q.trim() === '' ? name : `${q}\n${name}`))
                         touch()
                       }}
                     />
+                  )}
+                  {isGqlSubscription && (
+                    <div className="gql-sub-config">
+                      <label className="field-label">Subscription endpoint</label>
+                      <div className="gql-sub-row">
+                        <input
+                          className="cell-input mono grow"
+                          value={gqlSubUrl}
+                          placeholder="(derives from the request URL — http→ws)"
+                          onChange={(e) => {
+                            setGqlSubUrl(e.target.value)
+                            touch()
+                          }}
+                        />
+                        <select
+                          className="cell-input gql-sub-transport"
+                          value={gqlSubTransport}
+                          onChange={(e) => {
+                            setGqlSubTransport(e.target.value as 'ws' | 'sse')
+                            touch()
+                          }}
+                        >
+                          <option value="ws">WebSocket</option>
+                          <option value="sse">SSE</option>
+                        </select>
+                      </div>
+                    </div>
                   )}
                   <label className="field-label">Query</label>
                   <CodeEditor
@@ -1149,6 +1294,21 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
                         text is treated as a string.
                       </div>
                     </>
+                  )}
+                  {isGqlSubscription && (subActive || subLog.length > 0) && (
+                    <div className="gql-sub-stream">
+                      <div className="gql-vars-head">
+                        <label className="field-label">
+                          Subscription stream{subActive ? ' · live' : ''}
+                        </label>
+                        {subLog.length > 0 && (
+                          <button className="btn btn-small" onClick={() => setSubLog([])}>
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                      <StreamLog entries={subLog} empty="Waiting for data…" />
+                    </div>
                   )}
                 </div>
                 )}
@@ -1542,61 +1702,6 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
 }
 
 export default forwardRef(RequestTab)
-
-function GqlSchemaView({
-  schema,
-  onPick
-}: {
-  schema: GqlSchemaSummary
-  onPick: (name: string) => void
-}): JSX.Element {
-  return (
-    <div className="gql-schema">
-      <div className="gql-schema-group">
-        <div className="gql-schema-title">Queries ({schema.queries.length})</div>
-        {schema.queries.length === 0 && <div className="dim-note">none</div>}
-        {schema.queries.map((f) => (
-          <button
-            key={f.name}
-            className="gql-field mono"
-            title="Insert into query"
-            onClick={() => onPick(f.name)}
-          >
-            <span className="gql-field-name">{f.name}</span>
-            {f.args.length > 0 && <span className="gql-field-args">({f.args.join(', ')})</span>}
-            <span className="gql-field-type">: {f.type}</span>
-          </button>
-        ))}
-      </div>
-      <div className="gql-schema-group">
-        <div className="gql-schema-title">Mutations ({schema.mutations.length})</div>
-        {schema.mutations.length === 0 && <div className="dim-note">none</div>}
-        {schema.mutations.map((f) => (
-          <button
-            key={f.name}
-            className="gql-field mono"
-            title="Insert into query"
-            onClick={() => onPick(f.name)}
-          >
-            <span className="gql-field-name">{f.name}</span>
-            {f.args.length > 0 && <span className="gql-field-args">({f.args.join(', ')})</span>}
-            <span className="gql-field-type">: {f.type}</span>
-          </button>
-        ))}
-      </div>
-      <div className="gql-schema-group">
-        <div className="gql-schema-title">Types ({schema.types.length})</div>
-        <div className="gql-types">
-          {schema.types.map((t) => (
-            <span key={t} className="chip gql-type-chip">
-              {t}
-            </span>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
 
 const FORM_TYPES: FormFieldType[] = ['text', 'file', 'json']
 

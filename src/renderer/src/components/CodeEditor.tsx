@@ -9,6 +9,7 @@ import { javascript } from '@codemirror/lang-javascript'
 import { graphql } from 'cm6-graphql'
 import type { GraphQLSchema } from 'graphql'
 import { oneDarkHighlightStyle } from '@codemirror/theme-one-dark'
+import { refreshVarsEffect, variableHighlighting, type VarLookup } from './varHighlight'
 
 export type EditorLanguage = 'json' | 'javascript' | 'graphql' | 'text'
 
@@ -22,6 +23,8 @@ interface Props {
   readOnly?: boolean
   /** For language="graphql": schema powering completion, hover, and linting. */
   graphqlSchema?: GraphQLSchema | null
+  /** When set, `${VAR}` references are highlighted and get a hover hint. */
+  varLookup?: VarLookup
 }
 
 function languageExtension(lang: EditorLanguage, schema?: GraphQLSchema | null): Extension {
@@ -79,6 +82,10 @@ export default function CodeEditor(props: Props): JSX.Element {
   const langComp = useRef(new Compartment())
   const onChangeRef = useRef(props.onChange)
   onChangeRef.current = props.onChange
+  // Read live inside the CodeMirror extension so decorations/tooltips always
+  // reflect the latest session/env/declaration data without recreating the view.
+  const varLookupRef = useRef(props.varLookup)
+  varLookupRef.current = props.varLookup
 
   // Create the editor once; later prop changes are applied via effects below.
   useEffect(() => {
@@ -89,6 +96,7 @@ export default function CodeEditor(props: Props): JSX.Element {
         basicSetup,
         langComp.current.of(languageExtension(props.language ?? 'text', props.graphqlSchema)),
         syntaxHighlighting(oneDarkHighlightStyle),
+        variableHighlighting(() => varLookupRef.current ?? null),
         theme(props.rows ?? 8),
         EditorView.lineWrapping,
         EditorState.readOnly.of(props.readOnly === true),
@@ -128,6 +136,12 @@ export default function CodeEditor(props: Props): JSX.Element {
       )
     })
   }, [props.language, props.graphqlSchema])
+
+  // Rebuild variable decorations when session/env/declaration data changes
+  // (the lookup is a fresh function each time its inputs change).
+  useEffect(() => {
+    view.current?.dispatch({ effects: refreshVarsEffect.of(null) })
+  }, [props.varLookup])
 
   return <div className="cm-host" ref={host} />
 }

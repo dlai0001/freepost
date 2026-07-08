@@ -263,6 +263,71 @@ button { cursor: pointer; }
 /* CodeMirror editor host — matches .editor width/spacing; chrome themed in CodeEditor.tsx. */
 .cm-host { width: 100%; }
 .cm-host .cm-editor { width: 100%; }
+
+/* --------------------- ${VAR} highlighting + hover hint -------------------- */
+/* Tokens are coloured by where the value resolves from (session/env/request). */
+.cm-var {
+  border-radius: 3px;
+  padding: 0 1px;
+  font-weight: 600;
+  cursor: help;
+}
+.cm-var-session { color: var(--teal); background: rgba(57, 197, 207, 0.12); }
+.cm-var-env { color: var(--purple); background: rgba(188, 140, 255, 0.12); }
+.cm-var-request { color: var(--blue); background: rgba(88, 166, 255, 0.12); }
+/* Unknown / required-but-unset: flag it clearly. */
+.cm-var-unresolved {
+  color: var(--warn);
+  background: rgba(210, 153, 34, 0.12);
+  text-decoration: underline dotted var(--warn);
+  text-underline-offset: 2px;
+}
+
+/* Scope to our tip only so GraphQL schema hover tooltips keep their chrome. */
+.cm-tooltip:has(.cm-var-tip) { border: none; background: none; padding: 0; }
+.cm-var-tip {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 9px;
+  max-width: 320px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+.cm-var-tip-head { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+.cm-var-tip-badge {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
+  padding: 1px 6px; border-radius: 10px;
+}
+.cm-var-badge-session { color: var(--teal); background: rgba(57, 197, 207, 0.15); }
+.cm-var-badge-env { color: var(--purple); background: rgba(188, 140, 255, 0.15); }
+.cm-var-badge-request { color: var(--blue); background: rgba(88, 166, 255, 0.15); }
+.cm-var-badge-unresolved { color: var(--warn); background: rgba(210, 153, 34, 0.15); }
+.cm-var-tip-name {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px; color: var(--muted);
+}
+.cm-var-tip-value {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px; color: var(--text); line-height: 1.4;
+  word-break: break-all; white-space: pre-wrap;
+}
+.cm-var-tip-empty { color: var(--muted); font-style: italic; }
+
+/* Single-line, input-like CodeMirror field (VarInput). Mirrors .cell-input. */
+.var-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  width: 100%;
+  overflow: hidden;
+}
+.var-input.grow { flex: 1; min-width: 0; }
+.var-input .cm-editor { background: transparent; }
+.var-input .cm-editor.cm-focused { outline: none; }
+.var-input:focus-within { border-color: var(--blue); }
+/* Table cells give the field a little breathing room like the old inputs. */
+td .var-input.cell-var { width: 100%; }
 .field-label { display: block; color: var(--muted); font-size: 12px; font-weight: 600; margin: 10px 0 4px; }
 .section-content .field-label:first-child, .gql-editor .field-label:first-child,
 .scripts-editor .field-label:first-child, .meta-editor .field-label:first-child { margin-top: 0; }

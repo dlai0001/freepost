@@ -4,6 +4,12 @@ import type { TreeNode } from '../../shared/model'
 
 export type TabType = 'request' | 'websocket' | 'workflow'
 
+/** Imperative handle a tab component exposes so the shell can save it on close. */
+export interface TabHandle {
+  /** Persist unsaved edits. Resolves true on success (or if nothing to save). */
+  save(): Promise<boolean>
+}
+
 export interface Tab {
   /** Collection-relative path doubles as the tab id. */
   id: string

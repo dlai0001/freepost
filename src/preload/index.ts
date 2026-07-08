@@ -67,7 +67,10 @@ const api = {
 
   acquireOAuthToken: (args: unknown) => ipcRenderer.invoke(IPC.oauthAcquire, args),
   introspectGraphql: (args: unknown) => ipcRenderer.invoke(IPC.gqlIntrospect, args),
-  browseDataFile: () => ipcRenderer.invoke(IPC.browseDataFile)
+  browseDataFile: () => ipcRenderer.invoke(IPC.browseDataFile),
+
+  onAppBeforeClose: (cb: () => void) => on(IPC.appBeforeClose, cb as (...args: unknown[]) => void),
+  confirmAppClose: () => ipcRenderer.invoke(IPC.appCloseConfirmed)
 }
 
 contextBridge.exposeInMainWorld('freepost', api)

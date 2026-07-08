@@ -41,6 +41,13 @@ describe('parseBody: assignments', () => {
     expect(body.variables).toEqual([{ name: 'SUFFIX', required: false, defaultValue: '' }])
   })
 
+  it('parses a default that references other variables (derived value)', () => {
+    const body = ok(['URL="${URL:-${env}-${id}}"', 'curl x'].join('\n'))
+    expect(body.variables).toEqual([
+      { name: 'URL', required: false, defaultValue: '${env}-${id}' },
+    ])
+  })
+
   it("handles the '\\'' escape inside a literal assignment", () => {
     const body = ok(["NAME='It'\\''s'", 'curl x'].join('\n'))
     expect(body.variables[0].defaultValue).toBe("It's")

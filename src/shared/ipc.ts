@@ -30,7 +30,7 @@ export const IPC = {
   requestCreate: 'request:create', // (absPath, kind) => void
   requestRename: 'request:rename', // (absPath, newAbsPath) => void  (auto-heals workflow refs)
   requestDelete: 'request:delete', // (absPath) => void
-  requestExecute: 'request:execute', // ({ root, path, envPath? }) => ExecutionReport
+  requestExecute: 'request:execute', // ({ root, path, envPath?, model? }) => ExecutionReport (model runs unsaved editor state)
 
   envList: 'env:list', // (root) => string[]
   envRead: 'env:read', // (absPath) => Record<string,string>
@@ -77,7 +77,10 @@ export const IPC = {
 
   gqlIntrospect: 'gql:introspect', // ({ root, path, envPath? }) => { schema: GqlSchemaSummary } | { error }
 
-  browseDataFile: 'data:browse' // () => string | null (native file picker for CSV/JSON)
+  browseDataFile: 'data:browse', // () => string | null (native file picker for CSV/JSON)
+
+  appBeforeClose: 'app:before-close', // main -> renderer event: window close requested; renderer decides
+  appCloseConfirmed: 'app:close-confirmed' // renderer -> main: proceed with closing the window
 } as const
 
 /** Surface exposed on window.freepost by the preload script. */
@@ -95,7 +98,13 @@ export interface FreepostApi {
   createRequest(absPath: string, kind: 'curl' | 'websocat'): Promise<void>
   renameRequest(absPath: string, newAbsPath: string): Promise<void>
   deleteRequest(absPath: string): Promise<void>
-  executeRequest(args: { root: string; path: string; envPath?: string }): Promise<ExecutionReport>
+  executeRequest(args: {
+    root: string
+    path: string
+    envPath?: string
+    /** Unsaved editor state to execute in place of the on-disk file. */
+    model?: RequestFile
+  }): Promise<ExecutionReport>
 
   listEnvs(root: string): Promise<string[]>
   readEnv(absPath: string): Promise<Record<string, string>>
@@ -167,4 +176,9 @@ export interface FreepostApi {
 
   /** Native file picker for a CSV/JSON data file; returns the chosen path or null. */
   browseDataFile(): Promise<string | null>
+
+  /** Fires when the user tries to close the window; the renderer prompts to save. */
+  onAppBeforeClose(cb: () => void): () => void
+  /** Tell main it's safe to close the window (after handling unsaved changes). */
+  confirmAppClose(): Promise<void>
 }

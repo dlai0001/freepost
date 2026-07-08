@@ -243,7 +243,7 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(
     IPC.requestExecute,
-    async (_e, args: { root: string; path: string; envPath?: string }) => {
+    async (_e, args: { root: string; path: string; envPath?: string; model?: RequestFile }) => {
       const report = await executeRequest({ ...args, session })
       if (report.response !== undefined && report.resolvedRequest !== undefined) {
         lastResponses.set(`${args.root}::${args.path}`, {

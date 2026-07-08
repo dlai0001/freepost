@@ -163,6 +163,29 @@ describe('executeRequest end-to-end', () => {
     expect(body).toContain(`--${boundary}--\r\n`)
   })
 
+  it('executes the in-memory model (unsaved edits) instead of the on-disk file', async () => {
+    // On disk: a stale request that would 404.
+    writeRequest('Draft.curl', {
+      kind: 'curl',
+      frontmatter: {},
+      variables: [{ name: 'BASE_URL', defaultValue: baseUrl, required: false }],
+      http: { method: 'GET', url: 'http://${BASE_URL}/nonexistent', headers: [], options: {} },
+      comments: []
+    })
+    // In the editor (unsaved): the URL and default now point at /login.
+    const model: RequestFile = {
+      kind: 'curl',
+      frontmatter: {},
+      variables: [{ name: 'BASE_URL', defaultValue: baseUrl, required: false }],
+      http: { method: 'GET', url: 'http://${BASE_URL}/login', headers: [], options: {} },
+      comments: []
+    }
+    const report = await executeRequest({ root, path: 'Draft.curl', session: new Map(), model })
+    expect(report.errored).toBe(false)
+    expect(report.response?.status).toBe(200)
+    expect(report.resolvedUrl).toBe(`http://${baseUrl}/login`)
+  })
+
   it('blocks send and reports unresolved required variables', async () => {
     const report = await executeRequest({ root, path: 'Me.curl', session: new Map() })
     expect(report.errored).toBe(true)

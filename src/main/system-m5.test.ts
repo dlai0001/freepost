@@ -190,7 +190,10 @@ describe('data-driven workflow run', () => {
           frontmatter: {},
           variables: [
             { name: 'BASE_URL', defaultValue: base, required: false },
-            { name: 'USER_ID', defaultValue: '0', required: false }
+            // Data-driven: USER_ID is supplied per-row via the session. Meta
+            // values are highest precedence, so a driven variable must not carry
+            // a literal value here (a blank value stays a fallback, not an override).
+            { name: 'USER_ID', defaultValue: '', required: false }
           ],
           http: { method: 'GET', url: 'http://${BASE_URL}/u?id=${USER_ID}', headers: [], options: {} },
           comments: []

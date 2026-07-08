@@ -1,5 +1,5 @@
-import type { JSX } from 'react'
-import { useEffect, useRef, useState } from 'react'
+import type { ForwardedRef, JSX } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import type {
   StepStatus,
   WorkflowRunReport,
@@ -7,6 +7,7 @@ import type {
 } from '../../../shared/model'
 import { errMsg, fp } from '../api'
 import { joinPath, nextId } from '../util'
+import type { TabHandle } from '../state'
 
 interface StepRow {
   id: number
@@ -29,7 +30,7 @@ const STATUS_ICON: Record<StepStatus, { icon: string; cls: string; label: string
   skipped: { icon: '○', cls: 'st-skip', label: 'skipped' }
 }
 
-export default function WorkflowTab(props: Props): JSX.Element {
+function WorkflowTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
   const absPath = joinPath(props.root, props.relPath)
 
   const [loading, setLoading] = useState(true)
@@ -116,7 +117,7 @@ export default function WorkflowTab(props: Props): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function save(): Promise<void> {
+  async function save(): Promise<boolean> {
     setError(null)
     setSaving(true)
     try {
@@ -133,12 +134,17 @@ export default function WorkflowTab(props: Props): JSX.Element {
       })
       clean()
       await validate()
+      return true
     } catch (e) {
       setError(errMsg(e))
+      return false
     } finally {
       setSaving(false)
     }
   }
+
+  // Let the shell save this workflow when closing it (or the app) with unsaved edits.
+  useImperativeHandle(ref, () => ({ save }))
 
   function summarize(report: WorkflowRunReport): string {
     const counts = new Map<StepStatus, number>()
@@ -406,3 +412,5 @@ export default function WorkflowTab(props: Props): JSX.Element {
     </div>
   )
 }
+
+export default forwardRef(WorkflowTab)

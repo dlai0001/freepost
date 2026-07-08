@@ -10,6 +10,7 @@
  */
 import type {
   BodyComment,
+  FormField,
   Frontmatter,
   HttpRequestModel,
   RequestFile,
@@ -50,6 +51,24 @@ function commandBlock(first: string, flags: string[]): string[] {
   return all.map((line, idx) => (idx < all.length - 1 ? `${line} \\` : line))
 }
 
+/**
+ * Render one form field as a curl -F argument value. json parts are inlined as
+ * a literal tagged `;type=application/json` — a best-effort approximation; the
+ * engine assembles the real body (with filename) from frontmatter.form.
+ */
+function formArg(f: FormField): string {
+  if (f.type === 'file') {
+    const base = `${f.name}=@${f.value ?? ''}`
+    return f.filename !== undefined ? `${base};filename=${f.filename}` : base
+  }
+  if (f.type === 'json') {
+    let arg = `${f.name}=${f.content ?? ''}`
+    if (f.filename !== undefined) arg += `;filename=${f.filename}`
+    return `${arg};type=application/json`
+  }
+  return `${f.name}=${f.value ?? ''}`
+}
+
 function curlLines(http: HttpRequestModel, frontmatter: Frontmatter): string[] {
   let body = http.body
   const gql = frontmatter.graphql
@@ -58,12 +77,16 @@ function curlLines(http: HttpRequestModel, frontmatter: Frontmatter): string[] {
     if (gql.variables !== undefined) payload.variables = gql.variables
     body = { kind: 'raw', value: JSON.stringify(payload) }
   }
+  // frontmatter.form is canonical; fall back to the parsed --form fields.
+  const form = frontmatter.form ?? http.form
 
   const flags: string[] = [`--url ${quoteShellValue(http.url)}`]
   for (const h of http.headers) {
     flags.push(`--header ${quoteShellValue(`${h.name}: ${h.value}`)}`)
   }
-  if (body !== undefined) {
+  if (form !== undefined && form.length > 0) {
+    for (const f of form) flags.push(`--form ${quoteShellValue(formArg(f))}`)
+  } else if (body !== undefined) {
     flags.push(`--data ${quoteShellValue(body.kind === 'file' ? `@${body.value}` : body.value)}`)
   }
   const o = http.options

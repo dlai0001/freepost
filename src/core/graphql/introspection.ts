@@ -3,7 +3,33 @@
  * response into a compact GqlSchemaSummary for editor hints. Pure — the actual
  * network request is made by the engine in the main process.
  */
+import { getIntrospectionQuery } from 'graphql'
 import type { GqlField, GqlSchemaSummary } from '@shared/model'
+
+/**
+ * The canonical full introspection query. Superset of INTROSPECTION_QUERY;
+ * its response satisfies both parseIntrospection (summary for the schema
+ * browser) and graphql's buildClientSchema (schema-aware editor completion).
+ */
+export const FULL_INTROSPECTION_QUERY = getIntrospectionQuery()
+
+/**
+ * Pull the `{ __schema }` introspection object out of a response body, in the
+ * shape buildClientSchema expects. Returns null when the body isn't valid
+ * introspection JSON.
+ */
+export function extractIntrospectionData(responseText: string): unknown | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(responseText)
+  } catch {
+    return null
+  }
+  const data = (parsed as { data?: unknown })?.data ?? parsed
+  const schema = (data as { __schema?: unknown })?.__schema
+  if (schema === undefined || schema === null || typeof schema !== 'object') return null
+  return data
+}
 
 /** A trimmed standard introspection query (enough for root fields + type names). */
 export const INTROSPECTION_QUERY = `query IntrospectionQuery {

@@ -38,10 +38,14 @@ import { importCommandText } from '../core/importers/command'
 import { importOpenApi } from '../core/importers/openapi'
 import { CODEGEN_TARGETS, generateCode } from '../core/codegen'
 import { parseDataFile } from '../core/data'
-import { INTROSPECTION_QUERY, parseIntrospection } from '../core/graphql/introspection'
+import {
+  FULL_INTROSPECTION_QUERY,
+  extractIntrospectionData,
+  parseIntrospection
+} from '../core/graphql/introspection'
 import { acquireToken, sendHttp, WsClient } from '../engine'
 import { resolveConfigChain } from './config-resolve'
-import { resolveVariables, substituteModel } from '../core/vars'
+import { resolveVariables, substitute, substituteModel } from '../core/vars'
 import { ensureFreepostDir, listFiles, scanCollection } from './collection'
 import { executeRequest, jarFor, readEnvFile } from './execute'
 import { getLastRoot, setLastRoot } from './settings'
@@ -582,7 +586,7 @@ export function registerIpcHandlers(): void {
     IPC.gqlIntrospect,
     async (
       _e,
-      args: { root: string; path: string; envPath?: string }
+      args: { root: string; path: string; envPath?: string; schemaUrl?: string }
     ): Promise<GqlIntrospectResult> => {
       const kind = requestKindForPath(args.path)
       if (kind === null) return { ok: false, error: 'Not a request file' }
@@ -594,23 +598,27 @@ export function registerIpcHandlers(): void {
       const env = readEnvFile(args.root, args.envPath)
       const { values } = resolveVariables(parsed.file.variables, Object.fromEntries(session), env)
       const http = substituteModel(parsed.file.http, values)
+      // A dedicated schema endpoint overrides the request URL when set; it gets
+      // the same ${VAR} substitution and reuses the request's auth/headers.
+      const rawSchemaUrl = args.schemaUrl ?? parsed.file.frontmatter.graphql?.schemaUrl
+      const url = rawSchemaUrl !== undefined ? substitute(rawSchemaUrl, values) : http.url
       try {
         const res = await sendHttp(
           {
             method: 'POST',
-            url: http.url,
+            url,
             headers: [
               ...http.headers.filter((h) => h.name.toLowerCase() !== 'content-type'),
               { name: 'Content-Type', value: 'application/json' }
             ],
-            bodyText: JSON.stringify({ query: INTROSPECTION_QUERY }),
+            bodyText: JSON.stringify({ query: FULL_INTROSPECTION_QUERY }),
             options: { insecure: http.options.insecure, user: http.options.user }
           },
           jarFor(args.root)
         )
         const schema = parseIntrospection(res.bodyText)
         if (schema === null) return { ok: false, error: 'Introspection failed or not a GraphQL endpoint' }
-        return { ok: true, schema }
+        return { ok: true, schema, introspection: extractIntrospectionData(res.bodyText) ?? undefined }
       } catch (e) {
         return { ok: false, error: e instanceof Error ? e.message : String(e) }
       }

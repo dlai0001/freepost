@@ -3,7 +3,7 @@
  * supported-flag subset is accepted (PLAN.md §3); any other flag is a
  * ParseError so that unknown constructs are never silently dropped.
  */
-import type { Header, HttpRequestModel, ParseError } from '@shared/model'
+import type { FormField, Header, HttpRequestModel, ParseError } from '@shared/model'
 import type { CommandToken } from './shell'
 
 export type CurlResult = { ok: true; http: HttpRequestModel } | { ok: false; errors: ParseError[] }
@@ -13,11 +13,45 @@ const fail = (line: number, message: string): { ok: false; errors: ParseError[] 
   errors: [{ line, message }],
 })
 
+/**
+ * Parse a curl `-F` argument (`name=value` with optional `;type=`/`;filename=`
+ * modifiers; value may be `@path` for a file upload). frontmatter.form is the
+ * canonical multipart source when present — this exists so files carrying
+ * generated/imported --form flags parse without error.
+ */
+function parseFormArg(text: string): FormField | null {
+  const eq = text.indexOf('=')
+  if (eq <= 0) return null
+  const name = text.slice(0, eq)
+  let rest = text.slice(eq + 1)
+  let filename: string | undefined
+  let contentType: string | undefined
+  const modRe = /;(type|filename)=([^;]*)$/
+  for (let m = modRe.exec(rest); m !== null; m = modRe.exec(rest)) {
+    if (m[1] === 'filename') filename = m[2]
+    else contentType = m[2]
+    rest = rest.slice(0, m.index)
+  }
+  if (rest.startsWith('@') || rest.startsWith('<')) {
+    const field: FormField = { name, type: 'file', value: rest.slice(1) }
+    if (filename !== undefined) field.filename = filename
+    return field
+  }
+  // A literal value tagged application/json round-trips as a json part.
+  if (contentType === 'application/json') {
+    const field: FormField = { name, type: 'json', content: rest }
+    if (filename !== undefined) field.filename = filename
+    return field
+  }
+  return { name, type: 'text', value: rest }
+}
+
 export function mapCurlCommand(argv: CommandToken[]): CurlResult {
   let method: string | undefined
   let url: string | undefined
   const headers: Header[] = []
   let body: HttpRequestModel['body']
+  const form: FormField[] = []
   let user: string | undefined
   let insecure = false
   let followRedirects = false
@@ -64,6 +98,17 @@ export function mapCurlCommand(argv: CommandToken[]): CurlResult {
           : { kind: 'raw', value: v.text }
         break
       }
+      case '-F':
+      case '--form': {
+        const v = takeValue()
+        if (!v) return fail(tok.line, `missing value for ${tok.text}`)
+        const field = parseFormArg(v.text)
+        if (field === null) {
+          return fail(v.line, `malformed form field ${JSON.stringify(v.text)}: expected "name=value"`)
+        }
+        form.push(field)
+        break
+      }
       case '-u':
       case '--user': {
         const v = takeValue()
@@ -106,14 +151,18 @@ export function mapCurlCommand(argv: CommandToken[]): CurlResult {
   if (url === undefined) {
     return fail(argv[0].line, 'missing URL: pass --url <url> or a single positional URL argument')
   }
+  if (body !== undefined && form.length > 0) {
+    return fail(argv[0].line, 'cannot combine --data with --form: choose one body type')
+  }
 
   const http: HttpRequestModel = {
-    method: method ?? (body !== undefined ? 'POST' : 'GET'),
+    method: method ?? (body !== undefined || form.length > 0 ? 'POST' : 'GET'),
     url,
     headers,
     options: {},
   }
   if (body !== undefined) http.body = body
+  if (form.length > 0) http.form = form
   if (user !== undefined) http.options.user = user
   if (insecure) http.options.insecure = true
   if (followRedirects) http.options.followRedirects = true

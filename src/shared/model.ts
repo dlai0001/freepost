@@ -12,6 +12,41 @@ export interface VariableMeta {
   description?: string
 }
 
+/** One typed row of the GraphQL variables table. */
+export interface GqlVariableDef {
+  name: string
+  /** GraphQL type annotation, e.g. "ID!", "Int", "[String]". Empty = untyped. */
+  type: string
+  /** The value as a JSON-encoded string; parsed into the `variables` object. */
+  value: string
+}
+
+/** GraphQL body definition stored in frontmatter. */
+export interface GraphqlBody {
+  query: string
+  /** Derived JSON object sent as the payload's `variables` (from variableDefs). */
+  variables?: Record<string, unknown>
+  /** Endpoint used for introspection; falls back to the request URL when unset. */
+  schemaUrl?: string
+  /** Typed variable rows (editor source of truth); `variables` is derived from these. */
+  variableDefs?: GqlVariableDef[]
+}
+
+/** How a multipart form field supplies its value. */
+export type FormFieldType = 'text' | 'file' | 'json'
+
+/** One part of a multipart/form-data body. */
+export interface FormField {
+  name: string
+  type: FormFieldType
+  /** text: the literal value. file: the source path (relative to the request dir). */
+  value?: string
+  /** json/file: the filename sent in the part's Content-Disposition. */
+  filename?: string
+  /** json: the inline JSON payload (source of truth; sent verbatim as the part body). */
+  content?: string
+}
+
 /**
  * YAML-in-comments frontmatter. Unknown keys MUST be preserved verbatim on
  * rewrite (PLAN.md rewrite contract).
@@ -25,7 +60,13 @@ export interface Frontmatter {
   /** Unchecked-but-kept rows; absent from the executable command. */
   disabled?: { headers?: Record<string, string>; query?: Record<string, string> }
   /** GraphQL source of truth; the command's --data is generated from it. */
-  graphql?: { query: string; variables?: Record<string, unknown> }
+  graphql?: GraphqlBody
+  /**
+   * Multipart form source of truth; the command's --form flags are generated
+   * from it and the executed body is assembled by the engine (json parts carry
+   * their content inline here, so bare curl cannot reproduce them).
+   */
+  form?: FormField[]
   /** WebSocket saved message presets (websocat files only). */
   messages?: Record<string, string>
   /** OAuth2 config for this request (overrides inherited collection/folder auth). */
@@ -54,6 +95,12 @@ export interface HttpRequestModel {
   url: string
   headers: Header[]
   body?: { kind: 'raw' | 'file'; value: string }
+  /**
+   * Parsed multipart fields (curl -F/--form). When frontmatter.form is present
+   * it is canonical and the command's --form flags are regenerated from it
+   * (mirrors the graphql/--data relationship).
+   */
+  form?: FormField[]
   options: {
     insecure?: boolean
     followRedirects?: boolean
@@ -351,5 +398,5 @@ export interface GqlSchemaSummary {
 }
 
 export type GqlIntrospectResult =
-  | { ok: true; schema: GqlSchemaSummary }
+  | { ok: true; schema: GqlSchemaSummary; introspection?: unknown }
   | { ok: false; error: string }

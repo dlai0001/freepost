@@ -19,6 +19,20 @@ beforeAll(async () => {
       res.end(JSON.stringify({ token: 'tok-123' }))
       return
     }
+    if (req.url === '/upload') {
+      const chunks: Buffer[] = []
+      req.on('data', (c: Buffer) => chunks.push(c))
+      req.on('end', () => {
+        res.setHeader('Content-Type', 'application/json')
+        res.end(
+          JSON.stringify({
+            contentType: req.headers['content-type'] ?? '',
+            body: Buffer.concat(chunks).toString('utf8')
+          })
+        )
+      })
+      return
+    }
     if (req.url === '/me') {
       const auth = req.headers['authorization']
       if (auth !== 'Bearer tok-123') {
@@ -101,6 +115,52 @@ describe('executeRequest end-to-end', () => {
     const report = await executeRequest({ root, path: 'Me.curl', session })
     expect(report.errored).toBe(false)
     expect(report.testScript?.tests[0]).toEqual({ name: 'has name', passed: true })
+  })
+
+  it('assembles and sends a multipart/form-data body from frontmatter.form', async () => {
+    writeFileSync(join(root, 'note.txt'), 'file-bytes')
+    writeRequest('Upload.curl', {
+      kind: 'curl',
+      frontmatter: {
+        form: [
+          { name: 'title', type: 'text', value: 'hello ${WHO}' },
+          { name: 'payload', type: 'json', content: '{"k":1}', filename: 'data.json' },
+          { name: 'note', type: 'file', value: './note.txt' }
+        ]
+      },
+      variables: [
+        { name: 'BASE_URL', defaultValue: baseUrl, required: false },
+        { name: 'WHO', defaultValue: 'dave', required: false }
+      ],
+      http: {
+        method: 'POST',
+        url: 'http://${BASE_URL}/upload',
+        // A manual Content-Type must be overridden by the multipart boundary.
+        headers: [{ name: 'Content-Type', value: 'text/plain' }],
+        options: {}
+      },
+      comments: []
+    })
+    const report = await executeRequest({ root, path: 'Upload.curl', session: new Map() })
+    expect(report.errored).toBe(false)
+    expect(report.response?.status).toBe(200)
+    const echoed = JSON.parse(report.response?.bodyText ?? '{}') as {
+      contentType: string
+      body: string
+    }
+    expect(echoed.contentType).toMatch(/^multipart\/form-data; boundary=----freepostFormBoundary/)
+    const boundary = echoed.contentType.split('boundary=')[1]
+    const body = echoed.body
+    expect(body).toContain(`--${boundary}\r\n`)
+    // text part with ${WHO} substituted:
+    expect(body).toContain('Content-Disposition: form-data; name="title"\r\n\r\nhello dave\r\n')
+    // json part with filename + application/json:
+    expect(body).toContain('name="payload"; filename="data.json"')
+    expect(body).toContain('Content-Type: application/json\r\n\r\n{"k":1}\r\n')
+    // file part read from disk, filename defaulted to basename:
+    expect(body).toContain('name="note"; filename="note.txt"')
+    expect(body).toContain('file-bytes')
+    expect(body).toContain(`--${boundary}--\r\n`)
   })
 
   it('blocks send and reports unresolved required variables', async () => {

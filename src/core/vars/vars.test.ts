@@ -15,18 +15,68 @@ describe('resolveVariables', () => {
     expect(unresolved).toEqual([])
   })
 
-  it('environment beats declaration default', () => {
-    const { values } = resolveVariables([decl('BASE_URL', 'default')], {}, { BASE_URL: 'from-env' })
-    expect(values.BASE_URL).toBe('from-env')
+  it('a non-empty Meta value beats environment', () => {
+    const { values } = resolveVariables([decl('BASE_URL', 'from-meta')], {}, { BASE_URL: 'from-env' })
+    expect(values.BASE_URL).toBe('from-meta')
   })
 
-  it('session beats environment and default', () => {
+  it('a non-empty Meta value beats session and environment (highest precedence)', () => {
     const { values } = resolveVariables(
-      [decl('BASE_URL', 'default')],
+      [decl('BASE_URL', 'from-meta')],
       { BASE_URL: 'from-session' },
       { BASE_URL: 'from-env' }
     )
-    expect(values.BASE_URL).toBe('from-session')
+    expect(values.BASE_URL).toBe('from-meta')
+  })
+
+  it('a blank Meta value does not shadow an env/session value', () => {
+    const fromEnv = resolveVariables([decl('BASE_URL', '')], {}, { BASE_URL: 'from-env' })
+    expect(fromEnv.values.BASE_URL).toBe('from-env')
+    const fromSession = resolveVariables([decl('BASE_URL', '')], { BASE_URL: 'from-session' }, {})
+    expect(fromSession.values.BASE_URL).toBe('from-session')
+  })
+
+  it('a blank Meta value stands in as empty when nothing else defines it', () => {
+    const { values } = resolveVariables([decl('BASE_URL', '')], {}, {})
+    expect(values.BASE_URL).toBe('')
+  })
+
+  it('expands ${...} references in a Meta value against env/session (derived values)', () => {
+    const { values } = resolveVariables(
+      [decl('URL', '${env}-${id}')],
+      { id: '42' },
+      { env: 'staging' }
+    )
+    expect(values.URL).toBe('staging-42')
+  })
+
+  it('expands a Meta value that references another Meta value (chained)', () => {
+    const { values } = resolveVariables(
+      [decl('base', 'https://${env}.example.com'), decl('url', '${base}/users/${id}'), decl('env', 'prod')],
+      { id: '7' },
+      {}
+    )
+    expect(values.base).toBe('https://prod.example.com')
+    expect(values.url).toBe('https://prod.example.com/users/7')
+  })
+
+  it('lets a Meta value override the env var it also derives from', () => {
+    // env=staging in the environment, but the Meta row pins env=prod; the
+    // derived URL uses the Meta (highest) value.
+    const { values } = resolveVariables(
+      [decl('env', 'prod'), decl('URL', '${env}.example.com')],
+      {},
+      { env: 'staging' }
+    )
+    expect(values.env).toBe('prod')
+    expect(values.URL).toBe('prod.example.com')
+  })
+
+  it('terminates on a reference cycle instead of hanging', () => {
+    const { values } = resolveVariables([decl('A', '${B}'), decl('B', '${A}')], {}, {})
+    // No concrete value exists; the unresolved refs are left as literals.
+    expect(values.A).toContain('${')
+    expect(values.B).toContain('${')
   })
 
   it('lists required variables with no session/env value as unresolved', () => {
@@ -56,14 +106,14 @@ describe('resolveVariables', () => {
     expect(values).toEqual({ A: '1', CAPTURED: 'tok', EXTRA: 'env' })
   })
 
-  it('treats an empty-string session value as defined (overrides env and default)', () => {
-    const { values, unresolved } = resolveVariables(
-      [decl('X', 'dflt', false), decl('R', undefined, true)],
-      { X: '', R: '' },
-      { X: 'env' }
-    )
-    expect(values.X).toBe('')
+  it('treats an empty-string session value as defined for required-var resolution', () => {
+    const { unresolved } = resolveVariables([decl('R', undefined, true)], { R: '' }, {})
     expect(unresolved).toEqual([])
+  })
+
+  it('a non-empty Meta value wins even over an empty-string session value', () => {
+    const { values } = resolveVariables([decl('X', 'dflt', false)], { X: '' }, { X: 'env' })
+    expect(values.X).toBe('dflt')
   })
 })
 

@@ -229,15 +229,26 @@ for it).
 **Variable resolution (decided — three tiers, deliberately simpler than Postman's
 five scopes):**
 
-1. **Session** — the runtime store. Every request's scripts can write to it
+1. **Request parameters (Meta values)** — the file's own `${VAR:-value}` assignment
+   block, edited on the Meta tab. A *non-empty* value is the **strongest** tier: it
+   overrides session and environment, so a request can pin its own values. Values
+   may reference other variables (`${env}-${id}`) and are expanded against the rest
+   of the resolved set (session, environment, and each other), letting developers
+   define derived, request-scoped values. A *blank* value is a fallback only — it
+   never shadows a session/environment value of the same name — and a *required*
+   (`${VAR:?}`) parameter contributes no value of its own (it must come from
+   session or environment, else the send is blocked).
+2. **Session** — the runtime store. Every request's scripts can write to it
    (`pm.variables.set(...)` and friends), whether the request runs standalone, in
    the collection runner, or in a workflow. Capture a token once, every subsequent
    request sees it. In-memory per app session, inspectable and clearable from a
    Session panel; never written to disk.
-2. **Environment** — the selected `*.env.json`.
-3. **Request parameters** — the file's own `${VAR:-default}` assignment block, the
-   weakest value, used only when neither session nor environment defines the
-   variable (mirroring shell `:-` semantics).
+3. **Environment** — the selected `*.env.json`.
+
+Note: because a non-empty Meta value wins over the session, a variable that is
+driven from data files or captured into the session (e.g. a per-row `USER_ID` or a
+script-set token) must be left blank / required on the Meta tab — a literal Meta
+value would override the runtime value.
 
 Postman-compat shim: `pm.environment.set`, `pm.collectionVariables.set`, and
 `pm.globals.set` in scripts all write to the **session** at runtime (imported

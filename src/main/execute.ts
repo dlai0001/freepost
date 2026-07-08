@@ -2,7 +2,7 @@ import { promises as fs } from 'fs'
 import { appendFileSync, chmodSync, existsSync, readFileSync, writeFileSync } from 'fs'
 import { randomUUID } from 'crypto'
 import { basename, dirname, isAbsolute, join } from 'path'
-import type { ExecutionReport, FormField, Header, HttpResponseModel } from '../shared/model'
+import type { ExecutionReport, FormField, Header, HttpResponseModel, RequestFile } from '../shared/model'
 import { parseRequestFile, requestKindForPath } from '../core/format'
 import { buildMultipartBody, multipartContentType, type MultipartPart } from '../core/format/multipart'
 import { resolveVariables, substitute, substituteModel } from '../core/vars'
@@ -60,6 +60,13 @@ export interface ExecuteArgs {
   path: string // collection-relative
   envPath?: string
   session: Map<string, string>
+  /**
+   * In-memory (possibly unsaved) request model. When provided, it is executed
+   * instead of the on-disk file — so the GUI runs exactly what the editor shows.
+   * `path`/`root` are still used for the directory (relative @file bodies) and
+   * inherited collection/folder config. Disk callers (CLI, workflows) omit it.
+   */
+  model?: RequestFile
 }
 
 /** Full request execution: parse -> pre-script -> resolve -> send -> test-script. */
@@ -77,18 +84,23 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
     return { ...report, errored: true, transportError: 'Not an HTTP request file (.curl)' }
   }
 
-  let raw: string
-  try {
-    raw = await fs.readFile(abs, 'utf8')
-  } catch (e) {
-    return { ...report, errored: true, transportError: `Cannot read file: ${String(e)}` }
+  let file: RequestFile
+  if (args.model !== undefined) {
+    file = args.model
+  } else {
+    let raw: string
+    try {
+      raw = await fs.readFile(abs, 'utf8')
+    } catch (e) {
+      return { ...report, errored: true, transportError: `Cannot read file: ${String(e)}` }
+    }
+    const parsed = parseRequestFile(raw, kind)
+    if (!parsed.ok) {
+      const msgs = parsed.errors.map((e) => `line ${e.line}: ${e.message}`).join('; ')
+      return { ...report, errored: true, transportError: `Parse error: ${msgs}` }
+    }
+    file = parsed.file
   }
-  const parsed = parseRequestFile(raw, kind)
-  if (!parsed.ok) {
-    const msgs = parsed.errors.map((e) => `line ${e.line}: ${e.message}`).join('; ')
-    return { ...report, errored: true, transportError: `Parse error: ${msgs}` }
-  }
-  const file = parsed.file
   const http = file.http
   if (http === undefined) {
     return { ...report, errored: true, transportError: 'File has no HTTP command' }

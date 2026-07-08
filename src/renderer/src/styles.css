@@ -432,6 +432,7 @@ td .var-input.cell-var { width: 100%; }
 }
 .modal-title { font-weight: 700; margin-bottom: 10px; }
 .modal-label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+.modal-message { color: var(--muted); font-size: 13px; line-height: 1.5; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 
 /* ------------------------------ import modal ------------------------------ */

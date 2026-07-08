@@ -1,5 +1,5 @@
-import type { JSX } from 'react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ForwardedRef, JSX } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { buildClientSchema, type GraphQLSchema, type IntrospectionQuery } from 'graphql'
 import type {
   AcquiredToken,
@@ -27,6 +27,7 @@ import CodeEditor from './CodeEditor'
 import VarInput from './VarInput'
 import type { VarLookup } from './varHighlight'
 import { makeVarLookup, useVarSources, type VarDecl } from './varContext'
+import type { TabHandle } from '../state'
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
 const OAUTH_GRANTS: OAuth2Grant[] = ['client_credentials', 'password', 'authorization_code']
@@ -98,7 +99,7 @@ interface Props {
   onMethod: (method: string) => void
 }
 
-export default function RequestTab(props: Props): JSX.Element {
+function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
   const absPath = joinPath(props.root, props.relPath)
 
   const [loading, setLoading] = useState(true)
@@ -498,10 +499,10 @@ export default function RequestTab(props: Props): JSX.Element {
     }
   }
 
-  async function save(): Promise<void> {
+  async function save(): Promise<boolean> {
     setError(null)
     const file = assemble()
-    if (file === null) return
+    if (file === null) return false
     setSaving(true)
     try {
       const { raw: newRaw } = await fp().writeRequest(absPath, file)
@@ -509,22 +510,32 @@ export default function RequestTab(props: Props): JSX.Element {
       fileRef.current = file
       onMethodRef.current(method)
       clean()
+      return true
     } catch (e) {
       setError(errMsg(e))
+      return false
     } finally {
       setSaving(false)
     }
   }
 
+  // Let the shell save this tab when closing it (or the app) with unsaved edits.
+  useImperativeHandle(ref, () => ({ save }))
+
   async function send(): Promise<void> {
     setError(null)
+    // Execute the live editor state (assembled model), not the on-disk file, so
+    // unsaved edits — variable defaults, URL, headers, body — are what runs.
+    const model = assemble()
+    if (model === null) return
     setSending(true)
     setRespOpen(true)
     try {
       const rep = await fp().executeRequest({
         root: props.root,
         path: props.relPath,
-        envPath: props.envPath ?? undefined
+        envPath: props.envPath ?? undefined,
+        model
       })
       setReport(rep)
     } catch (e) {
@@ -1247,7 +1258,7 @@ export default function RequestTab(props: Props): JSX.Element {
                   <thead>
                     <tr>
                       <th>Name</th>
-                      <th>Default</th>
+                      <th>Value</th>
                       <th>Required</th>
                       <th>Secret</th>
                       <th />
@@ -1270,7 +1281,12 @@ export default function RequestTab(props: Props): JSX.Element {
                             value={row.def}
                             type={row.secret ? 'password' : 'text'}
                             disabled={row.required}
-                            title={row.required ? 'Required variables have no default' : undefined}
+                            placeholder={row.required ? '' : 'value or ${OTHER}'}
+                            title={
+                              row.required
+                                ? 'Required variables take their value from the session or environment'
+                                : 'Highest-precedence value for this request. May reference other variables, e.g. ${env}-${id}. Leave blank to fall back to session/environment.'
+                            }
                             onChange={(e) => updateVar(row.id, { def: e.target.value })}
                           />
                         </td>
@@ -1352,6 +1368,8 @@ export default function RequestTab(props: Props): JSX.Element {
     </div>
   )
 }
+
+export default forwardRef(RequestTab)
 
 function GqlSchemaView({
   schema,

@@ -234,6 +234,24 @@ describe('round-trip law: parse(write(f)) deep-equals f', () => {
     expect(text).toContain('# where the API lives')
   })
 
+  it('holds for a derived Meta value that references other variables', () => {
+    roundTrip({
+      kind: 'curl',
+      frontmatter: {},
+      variables: [
+        { name: 'env', required: false, defaultValue: 'prod' },
+        { name: 'url', required: false, defaultValue: 'https://${env}.example.com/${id}' },
+      ],
+      comments: [],
+      http: {
+        method: 'GET',
+        url: '${url}',
+        headers: [],
+        options: {},
+      },
+    })
+  })
+
   it('holds for a file-body (--data @sidecar) model', () => {
     roundTrip({
       kind: 'curl',

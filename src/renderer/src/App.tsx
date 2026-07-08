@@ -2,7 +2,7 @@ import type { JSX } from 'react'
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import type { RequestKind, SearchEntry, TreeNode } from '../../shared/model'
 import { errMsg, fp, hasApi } from './api'
-import { initialState, reducer, type Tab, type TabType } from './state'
+import { initialState, reducer, type Tab, type TabHandle, type TabType } from './state'
 import { displayName, INVALID_NAME, joinPath } from './util'
 import TopBar from './components/TopBar'
 import Sidebar from './components/Sidebar'
@@ -11,6 +11,7 @@ import RequestTab from './components/RequestTab'
 import WebSocketTab from './components/WebSocketTab'
 import WorkflowTab from './components/WorkflowTab'
 import PromptModal from './components/PromptModal'
+import ConfirmModal from './components/ConfirmModal'
 import ImportModal from './components/ImportModal'
 import HistoryPanel from './components/HistoryPanel'
 import EnvironmentManager from './components/EnvironmentManager'
@@ -21,6 +22,8 @@ type ModalSpec =
   | { kind: 'history' }
   | { kind: 'env-manager' }
   | { kind: 'new-item'; folder: string; itemKind: NewItemKind }
+  | { kind: 'close-tab'; id: string }
+  | { kind: 'quit' }
 
 export default function App(): JSX.Element {
   if (!hasApi()) return <NotElectron />
@@ -46,9 +49,49 @@ function Shell(): JSX.Element {
   const [state, dispatch] = useReducer(reducer, initialState)
   const [modal, setModal] = useState<ModalSpec | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
 
   const rootRef = useRef<string | null>(null)
   rootRef.current = state.root
+
+  // Per-tab imperative save handles (request/workflow tabs register themselves),
+  // plus a live mirror of the tab list for the window-close listener below.
+  const tabHandles = useRef(new Map<string, TabHandle>())
+  const tabsRef = useRef<Tab[]>(state.tabs)
+  tabsRef.current = state.tabs
+
+  const setTabHandle = useCallback((id: string, handle: TabHandle | null): void => {
+    if (handle) tabHandles.current.set(id, handle)
+    else tabHandles.current.delete(id)
+  }, [])
+
+  // Closing a tab with unsaved edits prompts first; a clean tab closes at once.
+  const requestCloseTab = useCallback((id: string): void => {
+    const tab = tabsRef.current.find((t) => t.id === id)
+    if (tab?.dirty) setModal({ kind: 'close-tab', id })
+    else dispatch({ type: 'close-tab', id })
+  }, [])
+
+  // Save every dirty tab; returns false if any save failed (so we don't quit).
+  const saveDirtyTabs = useCallback(async (): Promise<boolean> => {
+    let allOk = true
+    for (const tab of tabsRef.current) {
+      if (!tab.dirty) continue
+      const handle = tabHandles.current.get(tab.id)
+      if (handle === undefined) continue
+      if (!(await handle.save())) allOk = false
+    }
+    return allOk
+  }, [])
+
+  // The window-close request is handed to us by main; decide based on unsaved work.
+  useEffect(() => {
+    return fp().onAppBeforeClose(() => {
+      const hasDirty = tabsRef.current.some((t) => t.dirty)
+      if (hasDirty) setModal({ kind: 'quit' })
+      else void fp().confirmAppClose()
+    })
+  }, [])
 
   const loadCollection = useCallback(async (root: string): Promise<void> => {
     const tree = await fp().scanCollection(root)
@@ -200,7 +243,7 @@ function Shell(): JSX.Element {
               tabs={state.tabs}
               activeId={state.activeTabId}
               onActivate={(id) => dispatch({ type: 'activate-tab', id })}
-              onClose={(id) => dispatch({ type: 'close-tab', id })}
+              onClose={requestCloseTab}
             />
           )}
           <div className="tab-panes">
@@ -222,6 +265,7 @@ function Shell(): JSX.Element {
                 >
                   {tab.type === 'request' && (
                     <RequestTab
+                      ref={(h) => setTabHandle(tab.id, h)}
                       root={state.root as string}
                       relPath={tab.path}
                       envPath={state.envPath}
@@ -240,6 +284,7 @@ function Shell(): JSX.Element {
                   )}
                   {tab.type === 'workflow' && (
                     <WorkflowTab
+                      ref={(h) => setTabHandle(tab.id, h)}
                       root={state.root as string}
                       relPath={tab.path}
                       envPath={state.envPath}
@@ -306,6 +351,64 @@ function Shell(): JSX.Element {
           onCancel={() => setModal(null)}
         />
       )}
+      {modal?.kind === 'close-tab' &&
+        (() => {
+          const id = modal.id
+          const name = state.tabs.find((t) => t.id === id)?.name ?? 'this tab'
+          return (
+            <ConfirmModal
+              title="Unsaved changes"
+              message={`"${name}" has unsaved changes. Save before closing?`}
+              confirmText="Save"
+              discardText="Don't Save"
+              busy={saving}
+              onConfirm={() =>
+                void (async () => {
+                  setSaving(true)
+                  const handle = tabHandles.current.get(id)
+                  const ok = handle ? await handle.save() : true
+                  setSaving(false)
+                  setModal(null)
+                  if (ok) dispatch({ type: 'close-tab', id })
+                  else setNotice(`Could not save "${name}" — fix the error in the tab and retry.`)
+                })()
+              }
+              onDiscard={() => {
+                setModal(null)
+                dispatch({ type: 'close-tab', id })
+              }}
+              onCancel={() => setModal(null)}
+            />
+          )
+        })()}
+      {modal?.kind === 'quit' &&
+        (() => {
+          const count = state.tabs.filter((t) => t.dirty).length
+          return (
+            <ConfirmModal
+              title="Unsaved changes"
+              message={`You have unsaved changes in ${count} ${count === 1 ? 'tab' : 'tabs'}. Save before quitting?`}
+              confirmText="Save All"
+              discardText="Discard"
+              busy={saving}
+              onConfirm={() =>
+                void (async () => {
+                  setSaving(true)
+                  const ok = await saveDirtyTabs()
+                  setSaving(false)
+                  setModal(null)
+                  if (ok) await fp().confirmAppClose()
+                  else setNotice('Some tabs could not be saved — fix the errors and try again.')
+                })()
+              }
+              onDiscard={() => {
+                setModal(null)
+                void fp().confirmAppClose()
+              }}
+              onCancel={() => setModal(null)}
+            />
+          )
+        })()}
     </div>
   )
 }

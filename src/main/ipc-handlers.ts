@@ -142,7 +142,7 @@ const STARTERS: Record<RequestKind, RequestFile> = {
     variables: [{ name: 'BASE_URL', defaultValue: 'https://api.example.com', required: false }],
     http: {
       method: 'GET',
-      url: 'https://${BASE_URL}/',
+      url: '${BASE_URL}/',
       headers: [{ name: 'Accept', value: 'application/json' }],
       options: {}
     },

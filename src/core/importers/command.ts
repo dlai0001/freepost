@@ -5,7 +5,7 @@
  * command it can find, tolerates unknown flags (recording them in an
  * import-note), and converts wscat syntax to the websocat model.
  */
-import type { RequestFile, RequestKind, VariableDecl } from '@shared/model'
+import type { ParseCommandResult, ParseError, RequestFile, RequestKind, VariableDecl } from '@shared/model'
 import {
   mapCurlCommand,
   mapWebsocatCommand,
@@ -18,6 +18,33 @@ import { extractVarRefs } from '../vars'
 export type ImportCommandResult =
   | { ok: true; kind: RequestKind; file: RequestFile; suggestedName: string }
   | { ok: false; error: string }
+
+/**
+ * Parse free text into a request model without writing to disk, for in-place
+ * editing (paste-curl-to-fill and the raw-edit pane). `strict` uses the
+ * canonical-file parser (`parseRequestFile`) — which preserves everything and
+ * reports precise line errors — trying `kind` first, then both kinds. Lenient
+ * (default) delegates to `importCommandText`, tolerating a loose pasted command.
+ */
+export function parseCommandFlexible(args: {
+  text: string
+  strict?: boolean
+  kind?: RequestKind
+}): ParseCommandResult {
+  if (args.strict === true) {
+    const kinds: RequestKind[] = args.kind !== undefined ? [args.kind] : ['curl', 'websocat']
+    let errors: ParseError[] = [{ line: 1, message: 'could not parse as a request file' }]
+    for (const kind of kinds) {
+      const parsed = parseRequestFile(args.text, kind)
+      if (parsed.ok) return { ok: true, kind, file: parsed.file }
+      errors = parsed.errors
+    }
+    return { ok: false, errors }
+  }
+  const result = importCommandText(args.text)
+  if (result.ok) return { ok: true, kind: result.kind, file: result.file }
+  return { ok: false, errors: [{ line: 1, message: result.error }] }
+}
 
 const COMMANDS = new Set(['curl', 'websocat', 'wscat'])
 

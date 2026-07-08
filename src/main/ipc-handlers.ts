@@ -15,6 +15,7 @@ import type {
   HistoryEntry,
   HttpResponseModel,
   OAuth2Config,
+  ParseCommandResult,
   RequestFile,
   RequestKind,
   SavedExample,
@@ -34,7 +35,7 @@ import {
   validateReferences
 } from '../core/workflow'
 import { importPostmanCollection } from '../core/importers/postman'
-import { importCommandText } from '../core/importers/command'
+import { importCommandText, parseCommandFlexible } from '../core/importers/command'
 import { importOpenApi } from '../core/importers/openapi'
 import { CODEGEN_TARGETS, generateCode } from '../core/codegen'
 import { parseDataFile } from '../core/data'
@@ -208,6 +209,20 @@ export function registerIpcHandlers(): void {
     await fs.writeFile(abs, raw)
     return { raw }
   })
+
+  // Serialize a model to canonical text without writing — powers the raw-edit
+  // pane's view of unsaved editor state.
+  ipcMain.handle(IPC.requestFormat, (_e, file: RequestFile) => ({
+    raw: writeRequestFile(stripSecretDefaults(file))
+  }))
+
+  // Parse text to a model without writing — powers paste-curl-to-fill (lenient)
+  // and the raw-edit pane's apply step (strict, with the tab's known kind).
+  ipcMain.handle(
+    IPC.commandParse,
+    (_e, args: { text: string; strict?: boolean; kind?: RequestKind }): ParseCommandResult =>
+      parseCommandFlexible(args)
+  )
 
   ipcMain.handle(IPC.requestCreate, async (_e, abs: string, kind: RequestKind) => {
     if (existsSync(abs)) throw new Error('File already exists')

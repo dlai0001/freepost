@@ -147,6 +147,16 @@ export type ParseResult =
   | { ok: true; file: RequestFile }
   | { ok: false; errors: ParseError[] }
 
+/**
+ * Result of parsing free text (a pasted command or an edited canonical file)
+ * into a request model without touching disk. Carries `kind` so the caller can
+ * repopulate the correct editor; lenient parses may drop unknown flags, which
+ * are recorded in `file.frontmatter['import-note']`.
+ */
+export type ParseCommandResult =
+  | { ok: true; kind: RequestKind; file: RequestFile }
+  | { ok: false; errors: ParseError[] }
+
 /* ------------------------------- workflows ------------------------------- */
 
 export interface WorkflowStep {

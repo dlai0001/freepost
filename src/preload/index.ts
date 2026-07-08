@@ -18,6 +18,8 @@ const api = {
 
   readRequest: (p: string) => ipcRenderer.invoke(IPC.requestRead, p),
   writeRequest: (p: string, f: unknown) => ipcRenderer.invoke(IPC.requestWrite, p, f),
+  formatRequest: (f: unknown) => ipcRenderer.invoke(IPC.requestFormat, f),
+  parseCommand: (args: unknown) => ipcRenderer.invoke(IPC.commandParse, args),
   createRequest: (p: string, kind: string) => ipcRenderer.invoke(IPC.requestCreate, p, kind),
   renameRequest: (p: string, n: string) => ipcRenderer.invoke(IPC.requestRename, p, n),
   deleteRequest: (p: string) => ipcRenderer.invoke(IPC.requestDelete, p),

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { INTROSPECTION_QUERY, parseIntrospection, renderTypeRef } from './introspection'
+import { buildClientSchema, getIntrospectionQuery, graphqlSync, buildSchema } from 'graphql'
+import {
+  FULL_INTROSPECTION_QUERY,
+  INTROSPECTION_QUERY,
+  extractIntrospectionData,
+  parseIntrospection,
+  renderTypeRef
+} from './introspection'
 
 describe('renderTypeRef', () => {
   it('renders wrapped types in SDL notation', () => {
@@ -75,5 +82,32 @@ describe('parseIntrospection', () => {
   it('ships a single-line introspection query', () => {
     expect(INTROSPECTION_QUERY).toContain('__schema')
     expect(INTROSPECTION_QUERY).not.toContain('\n')
+  })
+})
+
+describe('extractIntrospectionData', () => {
+  // A real introspection response produced from an SDL schema, so the extracted
+  // data is guaranteed to satisfy graphql's buildClientSchema (editor path).
+  const sdl = buildSchema('type Query { hello: String }')
+  const introspectionResult = graphqlSync({ schema: sdl, source: getIntrospectionQuery() })
+  const responseText = JSON.stringify(introspectionResult)
+
+  it('returns data usable by buildClientSchema', () => {
+    const data = extractIntrospectionData(responseText)
+    expect(data).not.toBeNull()
+    const schema = buildClientSchema(data as never)
+    expect(schema.getQueryType()?.name).toBe('Query')
+  })
+
+  it('accepts a bare __schema and rejects non-introspection', () => {
+    const bare = JSON.stringify({ __schema: (introspectionResult.data as { __schema: unknown }).__schema })
+    expect(extractIntrospectionData(bare)).not.toBeNull()
+    expect(extractIntrospectionData('nope')).toBeNull()
+    expect(extractIntrospectionData(JSON.stringify({ data: {} }))).toBeNull()
+  })
+
+  it('FULL_INTROSPECTION_QUERY is the canonical full query', () => {
+    expect(FULL_INTROSPECTION_QUERY).toContain('IntrospectionQuery')
+    expect(FULL_INTROSPECTION_QUERY).toContain('__schema')
   })
 })

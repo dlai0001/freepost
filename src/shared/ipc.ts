@@ -143,8 +143,17 @@ export interface FreepostApi {
   /** Acquire an OAuth2 token for the request and store it in the session. */
   acquireOAuthToken(args: { root: string; path: string; envPath?: string }): Promise<AcquiredToken>
 
-  /** Run a GraphQL introspection query for schema hints. */
-  introspectGraphql(args: { root: string; path: string; envPath?: string }): Promise<GqlIntrospectResult>
+  /**
+   * Run a GraphQL introspection query for schema hints. `schemaUrl` overrides
+   * the request's saved endpoint (for live editing before save); ${VAR}
+   * references in it are resolved against the request's variables.
+   */
+  introspectGraphql(args: {
+    root: string
+    path: string
+    envPath?: string
+    schemaUrl?: string
+  }): Promise<GqlIntrospectResult>
 
   /** Native file picker for a CSV/JSON data file; returns the chosen path or null. */
   browseDataFile(): Promise<string | null>

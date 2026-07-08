@@ -53,6 +53,8 @@ export interface SendHttpRequest {
   url: string
   headers: Header[]
   bodyText?: string
+  /** Raw request body (e.g. an assembled multipart payload); wins over bodyText. */
+  bodyBuffer?: Buffer
   options?: SendHttpOptions
 }
 
@@ -134,7 +136,7 @@ export function sendHttp(req: SendHttpRequest, jar?: CookieJar): Promise<HttpRes
     function doRequest(
       method: string,
       urlStr: string,
-      body: string | undefined,
+      body: string | Buffer | undefined,
       hop: number,
       bodyDropped: boolean
     ): void {
@@ -296,6 +298,6 @@ export function sendHttp(req: SendHttpRequest, jar?: CookieJar): Promise<HttpRes
       request.end()
     }
 
-    doRequest(req.method.toUpperCase(), req.url, req.bodyText, 0, false)
+    doRequest(req.method.toUpperCase(), req.url, req.bodyBuffer ?? req.bodyText, 0, false)
   })
 }

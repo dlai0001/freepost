@@ -76,6 +76,33 @@ describe('mapCurlCommand', () => {
     })
   })
 
+  it('parses -F/--form fields (text, file, and json via type modifier)', () => {
+    const http = ok(
+      'curl',
+      '--url', 'https://e.com',
+      '--form', 'title=hello',
+      '--form', 'avatar=@./pic.png;filename=me.png',
+      '--form', 'payload={"k":1};type=application/json',
+    )
+    expect(http.method).toBe('POST')
+    expect(http.body).toBeUndefined()
+    expect(http.form).toEqual([
+      { name: 'title', type: 'text', value: 'hello' },
+      { name: 'avatar', type: 'file', value: './pic.png', filename: 'me.png' },
+      { name: 'payload', type: 'json', content: '{"k":1}' },
+    ])
+  })
+
+  it('rejects combining --data with --form', () => {
+    expect(err('curl', '--url', 'https://e.com', '--data', 'x', '--form', 'a=b').message).toMatch(
+      /cannot combine --data with --form/,
+    )
+  })
+
+  it('rejects a malformed form field with no "="', () => {
+    expect(err('curl', '--url', 'https://e.com', '--form', 'nope').message).toMatch(/malformed form field/)
+  })
+
   it('treats --data-raw like --data', () => {
     expect(ok('curl', '--url', 'https://e.com', '--data-raw', '{"a":1}').body).toEqual({
       kind: 'raw',

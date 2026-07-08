@@ -1,14 +1,16 @@
 import type { JSX } from 'react'
 import { useEffect, useRef } from 'react'
-import { Compartment, EditorState } from '@codemirror/state'
+import { Compartment, EditorState, type Extension } from '@codemirror/state'
 import { EditorView, placeholder as cmPlaceholder } from '@codemirror/view'
 import { syntaxHighlighting } from '@codemirror/language'
 import { basicSetup } from 'codemirror'
 import { json } from '@codemirror/lang-json'
 import { javascript } from '@codemirror/lang-javascript'
+import { graphql } from 'cm6-graphql'
+import type { GraphQLSchema } from 'graphql'
 import { oneDarkHighlightStyle } from '@codemirror/theme-one-dark'
 
-export type EditorLanguage = 'json' | 'javascript' | 'text'
+export type EditorLanguage = 'json' | 'javascript' | 'graphql' | 'text'
 
 interface Props {
   value: string
@@ -18,11 +20,14 @@ interface Props {
   /** Visible height in text rows (approx). */
   rows?: number
   readOnly?: boolean
+  /** For language="graphql": schema powering completion, hover, and linting. */
+  graphqlSchema?: GraphQLSchema | null
 }
 
-function languageExtension(lang: EditorLanguage): ReturnType<typeof json> | [] {
+function languageExtension(lang: EditorLanguage, schema?: GraphQLSchema | null): Extension {
   if (lang === 'json') return json()
   if (lang === 'javascript') return javascript()
+  if (lang === 'graphql') return graphql(schema ?? undefined)
   return []
 }
 
@@ -82,7 +87,7 @@ export default function CodeEditor(props: Props): JSX.Element {
       doc: props.value,
       extensions: [
         basicSetup,
-        langComp.current.of(languageExtension(props.language ?? 'text')),
+        langComp.current.of(languageExtension(props.language ?? 'text', props.graphqlSchema)),
         syntaxHighlighting(oneDarkHighlightStyle),
         theme(props.rows ?? 8),
         EditorView.lineWrapping,
@@ -114,11 +119,15 @@ export default function CodeEditor(props: Props): JSX.Element {
     }
   }, [props.value])
 
+  // Reconfigure the language when it changes, or when the GraphQL schema
+  // arrives/updates (schema powers completion + linting for language="graphql").
   useEffect(() => {
     view.current?.dispatch({
-      effects: langComp.current.reconfigure(languageExtension(props.language ?? 'text'))
+      effects: langComp.current.reconfigure(
+        languageExtension(props.language ?? 'text', props.graphqlSchema)
+      )
     })
-  }, [props.language])
+  }, [props.language, props.graphqlSchema])
 
   return <div className="cm-host" ref={host} />
 }

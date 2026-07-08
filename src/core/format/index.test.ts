@@ -416,6 +416,72 @@ describe('writeRequestFile: canonical layout', () => {
     expect(text).toContain(`--data '${JSON.stringify({ query })}'`)
   })
 
+  it('round-trips graphql schemaUrl + variableDefs through write and re-parse', () => {
+    const file: RequestFile = {
+      kind: 'curl',
+      frontmatter: {
+        graphql: {
+          query: 'query($id: ID!) { user(id: $id) { name } }',
+          variables: { id: '123' },
+          variableDefs: [{ name: 'id', type: 'ID!', value: '"123"' }],
+          schemaUrl: 'https://api.example.com/graphql'
+        }
+      },
+      variables: [],
+      comments: [],
+      http: { method: 'POST', url: 'https://api.example.com/graphql', headers: [], options: {} }
+    }
+    const reparsed = parseOk(writeRequestFile(file))
+    expect(reparsed.frontmatter.graphql?.schemaUrl).toBe('https://api.example.com/graphql')
+    expect(reparsed.frontmatter.graphql?.variableDefs).toEqual([
+      { name: 'id', type: 'ID!', value: '"123"' }
+    ])
+    // --data is still generated from query + variables.
+    expect(writeRequestFile(reparsed)).toContain('--data')
+  })
+
+  it('generates --form flags from frontmatter.form and omits --data', () => {
+    const file: RequestFile = {
+      kind: 'curl',
+      frontmatter: {
+        form: [
+          { name: 'title', type: 'text', value: 'hi' },
+          { name: 'avatar', type: 'file', value: './pic.png', filename: 'me.png' },
+          { name: 'payload', type: 'json', content: '{"k":1}', filename: 'data.json' }
+        ]
+      },
+      variables: [],
+      comments: [],
+      http: { method: 'POST', url: 'https://e.com/upload', headers: [], options: {} }
+    }
+    const text = writeRequestFile(file)
+    expect(text).toContain("--form 'title=hi'")
+    expect(text).toContain("--form 'avatar=@./pic.png;filename=me.png'")
+    expect(text).toContain('--form \'payload={"k":1};filename=data.json;type=application/json\'')
+    expect(text).not.toContain('--data')
+  })
+
+  it('round-trips a multipart form through write and re-parse (idempotent)', () => {
+    const file: RequestFile = {
+      kind: 'curl',
+      frontmatter: {
+        form: [
+          { name: 'title', type: 'text', value: 'hi' },
+          { name: 'payload', type: 'json', content: '{"k":1}' }
+        ]
+      },
+      variables: [],
+      comments: [],
+      http: { method: 'POST', url: 'https://e.com/upload', headers: [], options: {} }
+    }
+    const written = writeRequestFile(file)
+    const reparsed = parseOk(written)
+    // Frontmatter.form is canonical and survives a write→parse cycle unchanged,
+    // and a second write is byte-identical (the gofmt fixed point).
+    expect(reparsed.frontmatter.form).toEqual(file.frontmatter.form)
+    expect(writeRequestFile(reparsed)).toBe(written)
+  })
+
   it('single-quotes plain values and double-quotes ${VAR} values', () => {
     const file: RequestFile = {
       kind: 'curl',

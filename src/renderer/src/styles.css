@@ -427,9 +427,24 @@ button { cursor: pointer; }
 .oauth-actions .btn-small { margin-top: 0; }
 .oauth-result { color: var(--teal); font-size: 12px; word-break: break-all; }
 
+/* ------------------------------- body modes ------------------------------ */
+.body-mode-tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+.form-editor { display: flex; flex-direction: column; gap: 12px; }
+.form-field {
+  display: flex; flex-direction: column; gap: 8px;
+  border: 1px solid var(--border); border-radius: 6px; padding: 10px;
+}
+.form-field-head { display: flex; gap: 8px; align-items: center; }
+.form-field-head .cell-input { flex: 1; }
+.form-field-head .method-select { flex: 0 0 auto; }
+.form-field-filename { width: 100%; }
+
 /* --------------------------- graphql introspection ----------------------- */
-.gql-toolbar { display: flex; gap: 8px; margin-bottom: 8px; }
+.gql-toolbar { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
 .gql-toolbar .btn-small { margin-top: 0; }
+.gql-vars-head { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+.gql-vars-head .field-label { margin-bottom: 0; }
+.gql-vars-head .btn-small { margin-top: 0; }
 .gql-schema {
   background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
   padding: 10px; margin-bottom: 10px; max-height: 260px; overflow-y: auto;

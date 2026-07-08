@@ -1,8 +1,10 @@
 import { promises as fs } from 'fs'
 import { appendFileSync, chmodSync, existsSync, readFileSync, writeFileSync } from 'fs'
-import { dirname, isAbsolute, join } from 'path'
-import type { ExecutionReport, Header, HttpResponseModel } from '../shared/model'
+import { randomUUID } from 'crypto'
+import { basename, dirname, isAbsolute, join } from 'path'
+import type { ExecutionReport, FormField, Header, HttpResponseModel } from '../shared/model'
 import { parseRequestFile, requestKindForPath } from '../core/format'
+import { buildMultipartBody, multipartContentType, type MultipartPart } from '../core/format/multipart'
 import { resolveVariables, substitute, substituteModel } from '../core/vars'
 import { runScript } from '../core/sandbox'
 import { mergeRequestHeaders } from '../core/config'
@@ -136,9 +138,42 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
   const resolved = substituteModel(http, values)
   report.resolvedUrl = resolved.url
 
-  // Body: inline raw, or @file relative to the request's directory.
+  // Body: multipart form (frontmatter.form is canonical), else inline raw or
+  // @file relative to the request's directory.
   let bodyText: string | undefined
-  if (resolved.body !== undefined) {
+  let bodyBuffer: Buffer | undefined
+  let multipartType: string | undefined
+  const formFields: FormField[] | undefined = file.frontmatter.form ?? resolved.form
+  if (formFields !== undefined && formFields.length > 0) {
+    const parts: MultipartPart[] = []
+    for (const f of formFields) {
+      if (f.type === 'file') {
+        const p = substitute(f.value ?? '', values)
+        const fileAbs = isAbsolute(p) ? p : join(dirname(abs), p)
+        try {
+          parts.push({
+            name: f.name,
+            filename: f.filename ?? basename(p),
+            content: await fs.readFile(fileAbs)
+          })
+        } catch (e) {
+          return { ...report, errored: true, transportError: `Cannot read form file: ${String(e)}` }
+        }
+      } else if (f.type === 'json') {
+        parts.push({
+          name: f.name,
+          filename: f.filename,
+          contentType: 'application/json',
+          content: substitute(f.content ?? '', values)
+        })
+      } else {
+        parts.push({ name: f.name, content: substitute(f.value ?? '', values) })
+      }
+    }
+    const boundary = `----freepostFormBoundary${randomUUID().replace(/-/g, '')}`
+    bodyBuffer = buildMultipartBody(parts, boundary)
+    multipartType = multipartContentType(boundary)
+  } else if (resolved.body !== undefined) {
     if (resolved.body.kind === 'raw') {
       bodyText = resolved.body.value
     } else {
@@ -157,13 +192,19 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
     name: h.name,
     value: substitute(h.value, values)
   }))
-  const headers: Header[] = mergeRequestHeaders(configHeaders, resolved.headers)
+  let headers: Header[] = mergeRequestHeaders(configHeaders, resolved.headers)
   // GraphQL convenience: generated --data is JSON; default the content type.
   if (
     file.frontmatter.graphql !== undefined &&
     !headers.some((h) => h.name.toLowerCase() === 'content-type')
   ) {
     headers.push({ name: 'Content-Type', value: 'application/json' })
+  }
+  // Multipart owns Content-Type: the boundary must match the assembled body,
+  // so any manually-set content type is replaced.
+  if (multipartType !== undefined) {
+    headers = headers.filter((h) => h.name.toLowerCase() !== 'content-type')
+    headers.push({ name: 'Content-Type', value: multipartType })
   }
 
   // mTLS client cert/key from collection/folder config (paths are collection-relative).
@@ -180,7 +221,12 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
     resolved.url
   )
 
-  report.resolvedRequest = { method: resolved.method, url: resolved.url, headers, body: bodyText }
+  report.resolvedRequest = {
+    method: resolved.method,
+    url: resolved.url,
+    headers,
+    body: bodyBuffer !== undefined ? bodyBuffer.toString('utf8') : bodyText
+  }
 
   // Send.
   let response: HttpResponseModel | undefined
@@ -191,6 +237,7 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
         url: resolved.url,
         headers,
         bodyText,
+        bodyBuffer,
         options: {
           insecure: resolved.options.insecure,
           followRedirects: resolved.options.followRedirects,

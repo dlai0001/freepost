@@ -30,6 +30,8 @@
   },
   "dependencies": {
     "chai": "^6.2.2",
+    "cm6-graphql": "^0.2.1",
+    "graphql": "^16.14.2",
     "js-yaml": "^5.2.1",
     "ws": "^8.18.0"
   },

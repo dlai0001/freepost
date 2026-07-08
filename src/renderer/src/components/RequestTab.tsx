@@ -1,10 +1,15 @@
 import type { JSX } from 'react'
 import { useEffect, useRef, useState } from 'react'
+import { buildClientSchema, type GraphQLSchema, type IntrospectionQuery } from 'graphql'
 import type {
   AcquiredToken,
   ExecutionReport,
+  FormField,
+  FormFieldType,
   Frontmatter,
   GqlSchemaSummary,
+  GqlVariableDef,
+  GraphqlBody,
   Header,
   OAuth2Config,
   OAuth2Grant,
@@ -26,6 +31,12 @@ const DEFAULT_OAUTH_VAR = 'OAUTH_TOKEN'
 
 type Section = 'headers' | 'body' | 'auth' | 'scripts' | 'meta'
 type AuthMode = 'none' | 'basic' | 'bearer' | 'oauth2'
+type BodyMode = 'raw' | 'multipart' | 'graphql'
+const BODY_MODES: { id: BodyMode; label: string }[] = [
+  { id: 'raw', label: 'Raw · JSON' },
+  { id: 'multipart', label: 'Multipart form' },
+  { id: 'graphql', label: 'GraphQL' }
+]
 
 interface HeaderRow {
   id: number
@@ -40,6 +51,40 @@ interface VarRow {
   def: string
   required: boolean
   secret: boolean
+}
+
+/** A row of the multipart form table. */
+interface FormRow {
+  id: number
+  name: string
+  type: FormFieldType
+  /** text: the value. file: the source path. */
+  value: string
+  /** json/file: Content-Disposition filename. */
+  filename: string
+  /** json: the inline JSON payload. */
+  content: string
+}
+
+/** A typed row of the GraphQL variables table. */
+interface GqlVarRow {
+  id: number
+  name: string
+  /** GraphQL type annotation, e.g. "ID!", "Int". Empty = untyped. */
+  type: string
+  /** JSON literal; parsed into the variables object (raw string on parse failure). */
+  value: string
+}
+
+/** Parse a table cell as a JSON literal, falling back to the raw string. */
+function parseGqlValue(raw: string): unknown {
+  const t = raw.trim()
+  if (t === '') return ''
+  try {
+    return JSON.parse(t)
+  } catch {
+    return raw
+  }
 }
 
 interface Props {
@@ -66,9 +111,14 @@ export default function RequestTab(props: Props): JSX.Element {
   const [headerRows, setHeaderRows] = useState<HeaderRow[]>([])
   const [bodyKind, setBodyKind] = useState<'raw' | 'file'>('raw')
   const [bodyText, setBodyText] = useState('')
-  const [gqlOn, setGqlOn] = useState(false)
+  const [bodyMode, setBodyMode] = useState<BodyMode>('raw')
+  const [formRows, setFormRows] = useState<FormRow[]>([])
   const [gqlQuery, setGqlQuery] = useState('')
   const [gqlVars, setGqlVars] = useState('')
+  const [gqlSchemaUrl, setGqlSchemaUrl] = useState('')
+  const [gqlVarRows, setGqlVarRows] = useState<GqlVarRow[]>([])
+  // Variables editor: structured table vs. raw JSON escape hatch.
+  const [gqlVarsJson, setGqlVarsJson] = useState(false)
   const [authMode, setAuthMode] = useState<AuthMode>('none')
   const [authUser, setAuthUser] = useState('')
   const [authPass, setAuthPass] = useState('')
@@ -86,6 +136,7 @@ export default function RequestTab(props: Props): JSX.Element {
   const [oauthResult, setOauthResult] = useState<string | null>(null)
   // GraphQL introspection.
   const [gqlSchema, setGqlSchema] = useState<GqlSchemaSummary | null>(null)
+  const [gqlSchemaObj, setGqlSchemaObj] = useState<GraphQLSchema | null>(null)
   const [gqlSchemaOpen, setGqlSchemaOpen] = useState(false)
   const [gqlBusy, setGqlBusy] = useState(false)
   const [gqlError, setGqlError] = useState<string | null>(null)
@@ -139,15 +190,49 @@ export default function RequestTab(props: Props): JSX.Element {
     setBodyKind(http?.body?.kind ?? 'raw')
     setBodyText(http?.body?.value ?? '')
 
+    // GraphQL + multipart are loaded independently so switching modes restores
+    // each mode's data; the active mode follows precedence graphql > form > raw.
     if (fm.graphql !== undefined) {
-      setGqlOn(true)
       setGqlQuery(fm.graphql.query)
+      setGqlSchemaUrl(fm.graphql.schemaUrl ?? '')
       setGqlVars(
         fm.graphql.variables !== undefined ? JSON.stringify(fm.graphql.variables, null, 2) : ''
       )
-    } else {
-      setGqlOn(false)
+      // Prefer typed variableDefs; fall back to reconstructing rows from the
+      // derived variables object (older files / imports without defs).
+      const defs = fm.graphql.variableDefs
+      if (defs !== undefined && defs.length > 0) {
+        setGqlVarRows(
+          defs.map((d) => ({ id: nextId(), name: d.name, type: d.type, value: d.value }))
+        )
+        setGqlVarsJson(false)
+      } else if (fm.graphql.variables !== undefined) {
+        setGqlVarRows(
+          Object.entries(fm.graphql.variables).map(([name, v]) => ({
+            id: nextId(),
+            name,
+            type: '',
+            value: JSON.stringify(v)
+          }))
+        )
+        setGqlVarsJson(false)
+      } else {
+        setGqlVarRows([])
+      }
     }
+    if (fm.form !== undefined) {
+      setFormRows(
+        fm.form.map((f) => ({
+          id: nextId(),
+          name: f.name,
+          type: f.type,
+          value: f.value ?? '',
+          filename: f.filename ?? '',
+          content: f.content ?? ''
+        }))
+      )
+    }
+    setBodyMode(fm.graphql !== undefined ? 'graphql' : fm.form !== undefined ? 'multipart' : 'raw')
 
     // Auth: frontmatter.auth => oauth2; --user => basic; Bearer header => bearer.
     const user = http?.options.user
@@ -316,20 +401,61 @@ export default function RequestTab(props: Props): JSX.Element {
       delete fm.auth
     }
 
-    // Body / GraphQL.
+    // Body / GraphQL / multipart. Only the active mode's frontmatter is written
+    // (precedence graphql > form > raw), so the loaded mode is unambiguous.
+    delete fm.graphql
+    delete fm.form
     let body: { kind: 'raw' | 'file'; value: string } | undefined
-    if (gqlOn) {
-      const varsText = gqlVars.trim()
+    if (bodyMode === 'multipart') {
+      const fields: FormField[] = formRows
+        .filter((r) => r.name.trim() !== '')
+        .map((r) => {
+          const f: FormField = { name: r.name.trim(), type: r.type }
+          if (r.type === 'json') {
+            f.content = r.content
+            if (r.filename.trim() !== '') f.filename = r.filename.trim()
+          } else if (r.type === 'file') {
+            f.value = r.value
+            if (r.filename.trim() !== '') f.filename = r.filename.trim()
+          } else {
+            f.value = r.value
+          }
+          return f
+        })
+      if (fields.length > 0) fm.form = fields
+      // The writer regenerates --form from frontmatter.form; no --data body.
+      body = undefined
+    } else if (bodyMode === 'graphql') {
       let variables: Record<string, unknown> | undefined
-      if (varsText !== '') {
-        try {
-          variables = JSON.parse(varsText) as Record<string, unknown>
-        } catch {
-          setError('GraphQL variables must be valid JSON.')
-          return null
+      let variableDefs: GqlVariableDef[] | undefined
+      if (gqlVarsJson) {
+        // Raw-JSON escape hatch: the textarea is authoritative.
+        const varsText = gqlVars.trim()
+        if (varsText !== '') {
+          try {
+            variables = JSON.parse(varsText) as Record<string, unknown>
+          } catch {
+            setError('GraphQL variables must be valid JSON.')
+            return null
+          }
+        }
+      } else {
+        const rows = gqlVarRows.filter((r) => r.name.trim() !== '')
+        if (rows.length > 0) {
+          variableDefs = rows.map((r) => ({
+            name: r.name.trim(),
+            type: r.type.trim(),
+            value: r.value
+          }))
+          variables = {}
+          for (const r of rows) variables[r.name.trim()] = parseGqlValue(r.value)
         }
       }
-      fm.graphql = variables !== undefined ? { query: gqlQuery, variables } : { query: gqlQuery }
+      const g: GraphqlBody = { query: gqlQuery }
+      if (variables !== undefined) g.variables = variables
+      if (variableDefs !== undefined) g.variableDefs = variableDefs
+      if (gqlSchemaUrl.trim() !== '') g.schemaUrl = gqlSchemaUrl.trim()
+      fm.graphql = g
       // The writer regenerates --data from frontmatter.graphql.
       body = orig.http?.body
     } else {
@@ -415,29 +541,51 @@ export default function RequestTab(props: Props): JSX.Element {
     }
   }
 
-  async function introspect(): Promise<void> {
+  async function introspect(opts?: { open?: boolean }): Promise<void> {
     setGqlError(null)
     setGqlBusy(true)
     try {
       const result = await fp().introspectGraphql({
         root: props.root,
         path: props.relPath,
-        envPath: props.envPath ?? undefined
+        envPath: props.envPath ?? undefined,
+        schemaUrl: gqlSchemaUrl.trim() === '' ? undefined : gqlSchemaUrl.trim()
       })
       if (result.ok) {
         setGqlSchema(result.schema)
-        setGqlSchemaOpen(true)
+        if (opts?.open !== false) setGqlSchemaOpen(true)
+        // Build the full client schema for editor completion/linting.
+        if (result.introspection !== undefined) {
+          try {
+            setGqlSchemaObj(buildClientSchema(result.introspection as IntrospectionQuery))
+          } catch {
+            setGqlSchemaObj(null)
+          }
+        }
       } else {
         setGqlSchema(null)
+        setGqlSchemaObj(null)
         setGqlError(result.error)
       }
     } catch (e) {
       setGqlSchema(null)
+      setGqlSchemaObj(null)
       setGqlError(errMsg(e))
     } finally {
       setGqlBusy(false)
     }
   }
+
+  // Auto-fetch the schema when the URL settles (debounced), so editor
+  // highlighting/completion becomes available without an explicit click.
+  useEffect(() => {
+    if (bodyMode !== 'graphql') return
+    const url = gqlSchemaUrl.trim()
+    if (url === '') return
+    const t = setTimeout(() => void introspect({ open: false }), 600)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gqlSchemaUrl, bodyMode])
 
   /* ------------------------------ rendering ----------------------------- */
 
@@ -468,6 +616,10 @@ export default function RequestTab(props: Props): JSX.Element {
   }
   const updateVar = (id: number, patch: Partial<VarRow>): void => {
     setVarRows((rows) => rows.map((r) => (r.id === id ? { ...r, ...patch } : r)))
+    touch()
+  }
+  const updateGqlVar = (id: number, patch: Partial<GqlVarRow>): void => {
+    setGqlVarRows((rows) => rows.map((r) => (r.id === id ? { ...r, ...patch } : r)))
     touch()
   }
 
@@ -532,9 +684,11 @@ export default function RequestTab(props: Props): JSX.Element {
                 {s === 'headers'
                   ? 'Headers'
                   : s === 'body'
-                    ? gqlOn
+                    ? bodyMode === 'graphql'
                       ? 'Body (GraphQL)'
-                      : 'Body'
+                      : bodyMode === 'multipart'
+                        ? 'Body (Form)'
+                        : 'Body'
                     : s === 'auth'
                       ? 'Auth'
                       : s === 'scripts'
@@ -606,9 +760,34 @@ export default function RequestTab(props: Props): JSX.Element {
               </div>
             )}
 
-            {section === 'body' &&
-              (gqlOn ? (
+            {section === 'body' && (
+              <div className="body-editor">
+                <div className="body-mode-tabs">
+                  {BODY_MODES.map((m) => (
+                    <button
+                      key={m.id}
+                      className={'section-tab' + (bodyMode === m.id ? ' section-tab-active' : '')}
+                      onClick={() => {
+                        setBodyMode(m.id)
+                        touch()
+                      }}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+                {bodyMode === 'graphql' && (
                 <div className="gql-editor">
+                  <label className="field-label">Schema URL</label>
+                  <input
+                    className="cell-input mono"
+                    value={gqlSchemaUrl}
+                    placeholder="https://api.example.com/graphql (defaults to the request URL)"
+                    onChange={(e) => {
+                      setGqlSchemaUrl(e.target.value)
+                      touch()
+                    }}
+                  />
                   <div className="gql-toolbar">
                     <button
                       className="btn btn-small"
@@ -617,6 +796,9 @@ export default function RequestTab(props: Props): JSX.Element {
                     >
                       {gqlBusy ? 'Introspecting…' : 'Introspect schema'}
                     </button>
+                    {gqlSchemaObj !== null && (
+                      <span className="dim-note">Schema loaded · completion active</span>
+                    )}
                     {gqlSchema !== null && (
                       <button
                         className="btn btn-small"
@@ -645,27 +827,140 @@ export default function RequestTab(props: Props): JSX.Element {
                   )}
                   <label className="field-label">Query</label>
                   <CodeEditor
-                    language="text"
+                    language="graphql"
+                    graphqlSchema={gqlSchemaObj}
                     rows={10}
                     value={gqlQuery}
+                    placeholder="query { }"
                     onChange={(v) => {
                       setGqlQuery(v)
                       touch()
                     }}
                   />
-                  <label className="field-label">Variables (JSON)</label>
-                  <CodeEditor
-                    language="json"
-                    rows={6}
-                    value={gqlVars}
-                    placeholder="{}"
-                    onChange={(v) => {
-                      setGqlVars(v)
-                      touch()
-                    }}
-                  />
+                  <div className="gql-vars-head">
+                    <label className="field-label">Variables</label>
+                    <button
+                      className="btn btn-small"
+                      title="Toggle between the table and raw JSON"
+                      onClick={() => {
+                        // Sync across representations when switching views.
+                        if (gqlVarsJson) {
+                          // JSON -> table: reparse the JSON object into rows.
+                          try {
+                            const obj = gqlVars.trim() === '' ? {} : JSON.parse(gqlVars)
+                            setGqlVarRows(
+                              Object.entries(obj as Record<string, unknown>).map(([name, v]) => ({
+                                id: nextId(),
+                                name,
+                                type: '',
+                                value: JSON.stringify(v)
+                              }))
+                            )
+                            setGqlVarsJson(false)
+                          } catch {
+                            setError('GraphQL variables must be valid JSON to switch to the table.')
+                          }
+                        } else {
+                          // table -> JSON: serialize the current rows.
+                          const obj: Record<string, unknown> = {}
+                          for (const r of gqlVarRows) {
+                            if (r.name.trim() !== '') obj[r.name.trim()] = parseGqlValue(r.value)
+                          }
+                          setGqlVars(JSON.stringify(obj, null, 2))
+                          setGqlVarsJson(true)
+                        }
+                      }}
+                    >
+                      {gqlVarsJson ? 'Table' : 'Raw JSON'}
+                    </button>
+                  </div>
+                  {gqlVarsJson ? (
+                    <CodeEditor
+                      language="json"
+                      rows={6}
+                      value={gqlVars}
+                      placeholder="{}"
+                      onChange={(v) => {
+                        setGqlVars(v)
+                        touch()
+                      }}
+                    />
+                  ) : (
+                    <>
+                      <table className="edit-table">
+                        <thead>
+                          <tr>
+                            <th>Name</th>
+                            <th>Type</th>
+                            <th>Value</th>
+                            <th />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {gqlVarRows.map((row) => (
+                            <tr key={row.id}>
+                              <td>
+                                <input
+                                  className="cell-input mono"
+                                  placeholder="id"
+                                  value={row.name}
+                                  onChange={(e) => updateGqlVar(row.id, { name: e.target.value })}
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  className="cell-input mono"
+                                  placeholder="ID!"
+                                  value={row.type}
+                                  onChange={(e) => updateGqlVar(row.id, { type: e.target.value })}
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  className="cell-input mono"
+                                  placeholder='"123"'
+                                  value={row.value}
+                                  onChange={(e) => updateGqlVar(row.id, { value: e.target.value })}
+                                />
+                              </td>
+                              <td className="cell-check">
+                                <button
+                                  className="icon-btn"
+                                  title="Delete variable"
+                                  onClick={() => {
+                                    setGqlVarRows((rows) => rows.filter((r) => r.id !== row.id))
+                                    touch()
+                                  }}
+                                >
+                                  ×
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <button
+                        className="btn btn-small"
+                        onClick={() => {
+                          setGqlVarRows((rows) => [
+                            ...rows,
+                            { id: nextId(), name: '', type: '', value: '' }
+                          ])
+                          touch()
+                        }}
+                      >
+                        + Add variable
+                      </button>
+                      <div className="dim-note">
+                        Value is a JSON literal (<span className="mono">&quot;text&quot;</span>,{' '}
+                        <span className="mono">42</span>, <span className="mono">true</span>); bare
+                        text is treated as a string.
+                      </div>
+                    </>
+                  )}
                 </div>
-              ) : (
+                )}
+                {bodyMode === 'raw' && (
                 <div>
                   {bodyKind === 'file' && (
                     <div className="dim-note">
@@ -684,7 +979,18 @@ export default function RequestTab(props: Props): JSX.Element {
                     }}
                   />
                 </div>
-              ))}
+                )}
+                {bodyMode === 'multipart' && (
+                  <MultipartEditor
+                    rows={formRows}
+                    onChange={(rows) => {
+                      setFormRows(rows)
+                      touch()
+                    }}
+                  />
+                )}
+              </div>
+            )}
 
             {section === 'auth' && (
               <div className="auth-editor">
@@ -1072,6 +1378,99 @@ function GqlSchemaView({
           ))}
         </div>
       </div>
+    </div>
+  )
+}
+
+const FORM_TYPES: FormFieldType[] = ['text', 'file', 'json']
+
+/** Editor for a multipart/form-data body: one row per field, with a revealed
+ *  filename input + JSON editor for `json` fields. */
+function MultipartEditor({
+  rows,
+  onChange
+}: {
+  rows: FormRow[]
+  onChange: (rows: FormRow[]) => void
+}): JSX.Element {
+  const patch = (id: number, p: Partial<FormRow>): void =>
+    onChange(rows.map((r) => (r.id === id ? { ...r, ...p } : r)))
+  const remove = (id: number): void => onChange(rows.filter((r) => r.id !== id))
+  const add = (): void =>
+    onChange([...rows, { id: nextId(), name: '', type: 'text', value: '', filename: '', content: '' }])
+
+  return (
+    <div className="form-editor">
+      {rows.map((row) => (
+        <div key={row.id} className="form-field">
+          <div className="form-field-head">
+            <input
+              className="cell-input mono"
+              placeholder="Field name"
+              value={row.name}
+              onChange={(e) => patch(row.id, { name: e.target.value })}
+            />
+            <select
+              className="method-select"
+              value={row.type}
+              onChange={(e) => patch(row.id, { type: e.target.value as FormFieldType })}
+            >
+              {FORM_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t === 'text' ? 'Text' : t === 'file' ? 'File' : 'JSON'}
+                </option>
+              ))}
+            </select>
+            {row.type === 'text' && (
+              <input
+                className="cell-input mono"
+                placeholder="Value"
+                value={row.value}
+                onChange={(e) => patch(row.id, { value: e.target.value })}
+              />
+            )}
+            {row.type === 'file' && (
+              <input
+                className="cell-input mono"
+                placeholder="./path/to/file (relative to the request)"
+                value={row.value}
+                onChange={(e) => patch(row.id, { value: e.target.value })}
+              />
+            )}
+            {row.type === 'json' && (
+              <input
+                className="cell-input mono"
+                placeholder="filename, e.g. payload.json"
+                value={row.filename}
+                onChange={(e) => patch(row.id, { filename: e.target.value })}
+              />
+            )}
+            <button className="icon-btn" title="Delete field" onClick={() => remove(row.id)}>
+              ×
+            </button>
+          </div>
+          {row.type === 'file' && (
+            <input
+              className="cell-input mono form-field-filename"
+              placeholder="filename override (optional; defaults to the file's name)"
+              value={row.filename}
+              onChange={(e) => patch(row.id, { filename: e.target.value })}
+            />
+          )}
+          {row.type === 'json' && (
+            <CodeEditor
+              language="json"
+              rows={6}
+              value={row.content}
+              placeholder="{}"
+              onChange={(v) => patch(row.id, { content: v })}
+            />
+          )}
+        </div>
+      ))}
+      <button className="btn btn-small" onClick={add}>
+        + Add field
+      </button>
     </div>
   )
 }

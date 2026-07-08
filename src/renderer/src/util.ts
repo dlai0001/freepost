@@ -57,3 +57,12 @@ let idCounter = 1
 export function nextId(): number {
   return idCounter++
 }
+
+/**
+ * Token-only heuristic: does pasted text look like a curl/websocat/wscat command
+ * (rather than a plain URL)? The command must be the first word of some line.
+ * Deliberately conservative so an ordinary URL paste is never intercepted.
+ */
+export function looksLikeCommand(text: string): boolean {
+  return /(^|\n)\s*(curl|websocat|wscat)\s/.test(text)
+}

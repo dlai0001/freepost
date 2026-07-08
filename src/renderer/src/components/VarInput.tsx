@@ -22,6 +22,12 @@ interface Props {
   title?: string
   /** Display-only: no editing, still highlighted + hoverable. */
   readOnly?: boolean
+  /**
+   * Intercept a paste. Receives the pasted plain text; return true to consume
+   * it (the default insert is suppressed), false to paste normally. Used by the
+   * URL field to detect a pasted curl command and fill the whole request.
+   */
+  onPaste?: (text: string) => boolean
 }
 
 /** Block any edit that would introduce a newline — this is a one-line field. */
@@ -58,6 +64,8 @@ export default function VarInput(props: Props): JSX.Element {
   onChangeRef.current = props.onChange
   const varLookupRef = useRef(props.varLookup)
   varLookupRef.current = props.varLookup
+  const onPasteRef = useRef(props.onPaste)
+  onPasteRef.current = props.onPaste
 
   useEffect(() => {
     if (host.current === null) return
@@ -69,6 +77,16 @@ export default function VarInput(props: Props): JSX.Element {
       singleLine,
       inputTheme,
       variableHighlighting(() => varLookupRef.current ?? null),
+      EditorView.domEventHandlers({
+        paste(event) {
+          const handler = onPasteRef.current
+          if (handler === undefined) return false
+          const text = event.clipboardData?.getData('text') ?? ''
+          if (!handler(text)) return false
+          event.preventDefault()
+          return true
+        }
+      }),
       EditorView.updateListener.of((u) => {
         if (u.docChanged) onChangeRef.current?.(u.state.doc.toString())
       })

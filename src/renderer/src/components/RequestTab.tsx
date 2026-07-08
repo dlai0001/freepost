@@ -19,11 +19,12 @@ import type {
   VariableMeta
 } from '../../../shared/model'
 import { errMsg, fp } from '../api'
-import { joinPath, nextId } from '../util'
+import { joinPath, looksLikeCommand, nextId } from '../util'
 import ResponsePanel from './ResponsePanel'
 import CodegenModal from './CodegenModal'
 import ExamplesModal from './ExamplesModal'
 import CodeEditor from './CodeEditor'
+import ConfirmModal from './ConfirmModal'
 import VarInput from './VarInput'
 import type { VarLookup } from './varHighlight'
 import { makeVarLookup, useVarSources, type VarDecl } from './varContext'
@@ -106,6 +107,10 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
   const [parseErrors, setParseErrors] = useState<ParseError[] | null>(null)
   const [raw, setRaw] = useState('')
   const [error, setError] = useState<string | null>(null)
+  // Non-error notice (e.g. dropped flags after a curl paste).
+  const [notice, setNotice] = useState<string | null>(null)
+  // A parsed pasted command awaiting confirmation before it overwrites fields.
+  const [pendingPaste, setPendingPaste] = useState<RequestFile | null>(null)
   const fileRef = useRef<RequestFile | null>(null)
 
   // Editor state.
@@ -546,6 +551,50 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
     }
   }
 
+  /* --------------------------- paste-curl-to-fill --------------------------- */
+
+  /** Overwrite every field from a parsed request and surface any import notes. */
+  function fillFromParsed(file: RequestFile): void {
+    populate(file)
+    touch()
+    if (file.http !== undefined) onMethodRef.current(file.http.method)
+    const note = file.frontmatter['import-note']
+    setNotice(typeof note === 'string' ? `Imported, dropping: ${note}` : null)
+  }
+
+  /** Parse a pasted command; fill directly if the request is empty, else confirm. */
+  async function applyPastedCommand(text: string): Promise<void> {
+    setError(null)
+    setNotice(null)
+    let res
+    try {
+      res = await fp().parseCommand({ text })
+    } catch (e) {
+      setError(errMsg(e))
+      return
+    }
+    if (!res.ok) {
+      setError(res.errors[0]?.message ?? 'Could not parse the pasted command')
+      return
+    }
+    const tabKind = fileRef.current?.kind ?? 'curl'
+    if (res.kind !== tabKind) {
+      setError(
+        `Pasted a ${res.kind} command into a ${tabKind} request. Use Import to create a new ${res.kind} request instead.`
+      )
+      return
+    }
+    if (url.trim() !== '' || dirtyRef.current) setPendingPaste(res.file)
+    else fillFromParsed(res.file)
+  }
+
+  /** VarInput paste hook: consume the paste only when it is a command. */
+  function handleUrlPaste(text: string): boolean {
+    if (!looksLikeCommand(text)) return false
+    void applyPastedCommand(text)
+    return true
+  }
+
   async function acquireToken(): Promise<void> {
     setOauthResult(null)
     setOauthBusy(true)
@@ -663,6 +712,14 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
           </button>
         </div>
       )}
+      {notice !== null && (
+        <div className="banner banner-warn">
+          {notice}
+          <button className="icon-btn" onClick={() => setNotice(null)}>
+            ×
+          </button>
+        </div>
+      )}
 
       <div className="req-topline">
         <select
@@ -682,8 +739,9 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
         <VarInput
           className="grow"
           value={url}
-          placeholder="https://api.example.com/path"
+          placeholder="https://api.example.com/path — or paste a curl command"
           varLookup={varLookup}
+          onPaste={handleUrlPaste}
           onChange={(v) => {
             setUrl(v)
             touch()
@@ -1363,6 +1421,18 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
           root={props.root}
           relPath={props.relPath}
           onCancel={() => setShowExamples(false)}
+        />
+      )}
+      {pendingPaste !== null && (
+        <ConfirmModal
+          title="Replace request?"
+          message="Replace this request's URL, method, headers, body, and auth with the pasted command?"
+          confirmText="Replace"
+          onConfirm={() => {
+            fillFromParsed(pendingPaste)
+            setPendingPaste(null)
+          }}
+          onCancel={() => setPendingPaste(null)}
         />
       )}
     </div>

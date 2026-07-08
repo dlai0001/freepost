@@ -9,8 +9,10 @@ import type {
   ExecutionReport,
   GqlIntrospectResult,
   HistoryEntry,
+  ParseCommandResult,
   ParseResult,
   RequestFile,
+  RequestKind,
   SavedExample,
   SearchEntry,
   TreeNode,
@@ -27,6 +29,8 @@ export const IPC = {
 
   requestRead: 'request:read', // (absPath) => { raw: string; parsed: ParseResult }
   requestWrite: 'request:write', // (absPath, file: RequestFile) => { raw: string }
+  requestFormat: 'request:format', // (file: RequestFile) => { raw: string } — serialize model to canonical text, no write
+  commandParse: 'command:parse', // ({ text, strict?, kind? }) => ParseCommandResult — parse text to model, no write
   requestCreate: 'request:create', // (absPath, kind) => void
   requestRename: 'request:rename', // (absPath, newAbsPath) => void  (auto-heals workflow refs)
   requestDelete: 'request:delete', // (absPath) => void
@@ -95,6 +99,19 @@ export interface FreepostApi {
 
   readRequest(absPath: string): Promise<{ raw: string; parsed: ParseResult }>
   writeRequest(absPath: string, file: RequestFile): Promise<{ raw: string }>
+  /** Serialize a request model to canonical curl/websocat text without writing to disk. */
+  formatRequest(file: RequestFile): Promise<{ raw: string }>
+  /**
+   * Parse free text into a request model without writing to disk. `strict`
+   * (with `kind`) uses the canonical-file parser and reports parse errors;
+   * lenient (default) accepts a loose pasted curl/websocat/wscat command,
+   * dropping unknown flags into `frontmatter['import-note']`.
+   */
+  parseCommand(args: {
+    text: string
+    strict?: boolean
+    kind?: RequestKind
+  }): Promise<ParseCommandResult>
   createRequest(absPath: string, kind: 'curl' | 'websocat'): Promise<void>
   renameRequest(absPath: string, newAbsPath: string): Promise<void>
   deleteRequest(absPath: string): Promise<void>

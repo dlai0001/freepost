@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { importCommandText } from './command'
-import { writeRequestFile } from '../format'
+import { importCommandText, parseCommandFlexible } from './command'
+import { parseRequestFile, writeRequestFile } from '../format'
 
 describe('importCommandText — curl', () => {
   it('imports a simple one-line curl paste', () => {
@@ -140,5 +140,74 @@ describe('importCommandText — websocat & wscat', () => {
     }
     const bad = importCommandText('wscat -H "a: b"')
     expect(bad.ok).toBe(false)
+  })
+})
+
+describe('parseCommandFlexible', () => {
+  it('lenient parse fills a model from a loose pasted curl (no disk write)', () => {
+    const r = parseCommandFlexible({
+      text: `curl -s -X POST https://api.example.com/users -H 'Accept: application/json' -d '{"a":1}'`
+    })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.kind).toBe('curl')
+    expect(r.file.http?.method).toBe('POST')
+    expect(r.file.http?.body).toEqual({ kind: 'raw', value: '{"a":1}' })
+    // -s is dropped with an import-note, matching import behavior.
+    expect(r.file.frontmatter['import-note']).toContain('-s')
+  })
+
+  it('lenient parse reports a single error for unparseable input', () => {
+    const r = parseCommandFlexible({ text: 'this is not a command' })
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.errors).toHaveLength(1)
+    expect(r.errors[0].line).toBe(1)
+  })
+
+  it('strict round-trips a canonical file through writeRequestFile', () => {
+    // Build a canonical file, serialize it, then parse it back strictly.
+    const src = importCommandText(
+      `curl -X PUT https://api.example.com/v1/items/42 -H 'Content-Type: application/json' -d '{"n":"x"}'`
+    )
+    expect(src.ok).toBe(true)
+    if (!src.ok) return
+    const canonical = writeRequestFile(src.file)
+
+    const r = parseCommandFlexible({ text: canonical, strict: true, kind: 'curl' })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.kind).toBe('curl')
+    // The strict parse equals a direct parseRequestFile — the handler adds no drift.
+    const direct = parseRequestFile(canonical, 'curl')
+    expect(direct.ok).toBe(true)
+    if (!direct.ok) return
+    expect(r.file).toEqual(direct.file)
+    expect(r.file.http?.method).toBe('PUT')
+    expect(r.file.http?.url).toBe('https://api.example.com/v1/items/42')
+  })
+
+  it('strict parse surfaces precise parse errors instead of dropping content', () => {
+    // A malformed canonical curl (bad header) must error, not silently import.
+    const r = parseCommandFlexible({
+      text: 'curl https://x.dev/api \\\n  --header "no-colon-here"',
+      strict: true,
+      kind: 'curl'
+    })
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.errors.length).toBeGreaterThan(0)
+  })
+
+  it('strict without a kind hint tries both curl and websocat', () => {
+    const ws = importCommandText('websocat wss://example.com/socket')
+    expect(ws.ok).toBe(true)
+    if (!ws.ok) return
+    const canonical = writeRequestFile(ws.file)
+    const r = parseCommandFlexible({ text: canonical, strict: true })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.kind).toBe('websocat')
+    expect(r.file.ws?.url).toBe('wss://example.com/socket')
   })
 })

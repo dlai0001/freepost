@@ -328,6 +328,9 @@ button { cursor: pointer; }
 .var-input:focus-within { border-color: var(--blue); }
 /* Table cells give the field a little breathing room like the old inputs. */
 td .var-input.cell-var { width: 100%; }
+/* Display-only variant (e.g. the WebSocket URL) reads as plain text. */
+.var-input.plain { border: none; background: transparent; border-radius: 0; }
+.var-input.plain .cm-content { padding: 0; }
 .field-label { display: block; color: var(--muted); font-size: 12px; font-weight: 600; margin: 10px 0 4px; }
 .section-content .field-label:first-child, .gql-editor .field-label:first-child,
 .scripts-editor .field-label:first-child, .meta-editor .field-label:first-child { margin-top: 0; }

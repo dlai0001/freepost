@@ -4,25 +4,17 @@ import type { VariableDecl } from '../../../shared/model'
 import { errMsg, fp } from '../api'
 import { joinPath } from '../util'
 import VarInput from './VarInput'
+import StreamLog, { streamEntry, type StreamDir, type StreamEntry } from './StreamLog'
 import type { VarLookup } from './varHighlight'
 import { makeVarLookup, useVarSources, type VarDecl } from './varContext'
 
 type ConnState = 'closed' | 'connecting' | 'open'
-
-interface LogEntry {
-  id: number
-  dir: 'sent' | 'recv' | 'info' | 'error'
-  text: string
-  at: string
-}
 
 interface Props {
   root: string
   relPath: string
   envPath: string | null
 }
-
-let logId = 1
 
 /** WebSocket (.ws / websocat) tab. All socket I/O happens in the main process;
  *  the renderer only exchanges IPC messages (zero-network fence). */
@@ -34,11 +26,10 @@ export default function WebSocketTab(props: Props): JSX.Element {
   // Declared variables (with secret flags) for `${VAR}` highlighting in the URL.
   const [varDecls, setVarDecls] = useState<Map<string, VarDecl>>(new Map())
   const [state, setState] = useState<ConnState>('closed')
-  const [log, setLog] = useState<LogEntry[]>([])
+  const [log, setLog] = useState<StreamEntry[]>([])
   const [draft, setDraft] = useState('')
   const [error, setError] = useState<string | null>(null)
   const connIdRef = useRef<string | null>(null)
-  const logEndRef = useRef<HTMLDivElement>(null)
 
   const varSources = useVarSources(props.root, props.envPath)
   const varLookup = useMemo<VarLookup>(
@@ -46,8 +37,8 @@ export default function WebSocketTab(props: Props): JSX.Element {
     [varSources, varDecls]
   )
 
-  function append(dir: LogEntry['dir'], text: string): void {
-    setLog((l) => [...l, { id: logId++, dir, text, at: new Date().toLocaleTimeString() }])
+  function append(dir: StreamDir, text: string): void {
+    setLog((l) => [...l, streamEntry(dir, text)])
   }
 
   useEffect(() => {
@@ -111,10 +102,6 @@ export default function WebSocketTab(props: Props): JSX.Element {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  useEffect(() => {
-    logEndRef.current?.scrollIntoView({ block: 'end' })
-  }, [log])
 
   async function connect(): Promise<void> {
     setError(null)
@@ -198,19 +185,7 @@ export default function WebSocketTab(props: Props): JSX.Element {
         </div>
       )}
 
-      <div className="ws-log">
-        {log.length === 0 && <div className="dim-note">No messages yet.</div>}
-        {log.map((entry) => (
-          <div key={entry.id} className={`ws-msg ws-msg-${entry.dir}`}>
-            <div className="ws-msg-meta">
-              {entry.dir === 'sent' ? '↑ sent' : entry.dir === 'recv' ? '↓ received' : entry.dir}{' '}
-              · {entry.at}
-            </div>
-            <pre className="mono">{entry.text}</pre>
-          </div>
-        ))}
-        <div ref={logEndRef} />
-      </div>
+      <StreamLog entries={log} />
 
       <div className="ws-sendbox">
         <textarea

@@ -458,6 +458,27 @@ describe('writeRequestFile: canonical layout', () => {
     expect(writeRequestFile(reparsed)).toContain('--data')
   })
 
+  it('round-trips graphql subscription endpoint + transport through write and re-parse', () => {
+    const file: RequestFile = {
+      kind: 'curl',
+      frontmatter: {
+        graphql: {
+          query: 'subscription { onMessage { id } }',
+          subscriptionUrl: 'wss://api.example.com/subscriptions',
+          subscriptionTransport: 'sse'
+        }
+      },
+      variables: [],
+      comments: [],
+      http: { method: 'POST', url: 'https://api.example.com/graphql', headers: [], options: {} }
+    }
+    const reparsed = parseOk(writeRequestFile(file))
+    expect(reparsed.frontmatter.graphql?.subscriptionUrl).toBe(
+      'wss://api.example.com/subscriptions'
+    )
+    expect(reparsed.frontmatter.graphql?.subscriptionTransport).toBe('sse')
+  })
+
   it('generates --form flags from frontmatter.form and omits --data', () => {
     const file: RequestFile = {
       kind: 'curl',

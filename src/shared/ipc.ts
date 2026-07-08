@@ -80,6 +80,9 @@ export const IPC = {
   oauthAcquire: 'oauth:acquire', // ({ root, path, envPath? }) => AcquiredToken (stores in session)
 
   gqlIntrospect: 'gql:introspect', // ({ root, path, envPath? }) => { schema: GqlSchemaSummary } | { error }
+  gqlSubscribe: 'gql:subscribe', // ({ root, path, envPath?, query, variables?, url?, transport? }) => { id }
+  gqlUnsubscribe: 'gql:unsubscribe', // (id) => void
+  gqlSubEvent: 'gql:subEvent', // main -> renderer event ({ id, type: 'next'|'error'|'complete', data? })
 
   browseDataFile: 'data:browse', // () => string | null (native file picker for CSV/JSON)
 
@@ -190,6 +193,26 @@ export interface FreepostApi {
     envPath?: string
     schemaUrl?: string
   }): Promise<GqlIntrospectResult>
+
+  /**
+   * Start a GraphQL subscription over WebSocket (graphql-transport-ws) or SSE.
+   * `query`/`variables` are the live editor state (so unsaved edits run). `url`
+   * overrides the endpoint; when unset it derives from the graphql
+   * subscriptionUrl/schemaUrl or the request URL. Streams via `onGqlSubEvent`.
+   */
+  subscribeGraphql(args: {
+    root: string
+    path: string
+    envPath?: string
+    query: string
+    variables?: Record<string, unknown>
+    url?: string
+    transport?: 'ws' | 'sse'
+  }): Promise<{ id: string }>
+  unsubscribeGraphql(id: string): Promise<void>
+  onGqlSubEvent(
+    cb: (e: { id: string; type: 'next' | 'error' | 'complete'; data?: string }) => void
+  ): () => void
 
   /** Native file picker for a CSV/JSON data file; returns the chosen path or null. */
   browseDataFile(): Promise<string | null>

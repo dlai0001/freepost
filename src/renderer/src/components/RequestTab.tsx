@@ -1,5 +1,5 @@
 import type { JSX } from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { buildClientSchema, type GraphQLSchema, type IntrospectionQuery } from 'graphql'
 import type {
   AcquiredToken,
@@ -24,6 +24,8 @@ import ResponsePanel from './ResponsePanel'
 import CodegenModal from './CodegenModal'
 import ExamplesModal from './ExamplesModal'
 import CodeEditor from './CodeEditor'
+import VarInput from './VarInput'
+import type { VarInfo, VarLookup } from './varHighlight'
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
 const OAUTH_GRANTS: OAuth2Grant[] = ['client_credentials', 'password', 'authorization_code']
@@ -148,6 +150,10 @@ export default function RequestTab(props: Props): JSX.Element {
   const [description, setDescription] = useState('')
   const [labelsText, setLabelsText] = useState('')
   const [varRows, setVarRows] = useState<VarRow[]>([])
+
+  // Variable resolution context for `${VAR}` highlighting + hover hints.
+  const [sessionVars, setSessionVars] = useState<Record<string, string>>({})
+  const [envVars, setEnvVars] = useState<Record<string, string>>({})
 
   // Response state.
   const [report, setReport] = useState<ExecutionReport | null>(null)
@@ -304,6 +310,70 @@ export default function RequestTab(props: Props): JSX.Element {
 
   const onMethodRef = useRef(props.onMethod)
   onMethodRef.current = props.onMethod
+
+  /* -------------------------- variable context -------------------------- */
+
+  // Session vars can change out-of-band (Session panel, OAuth acquire), so also
+  // refresh when the window regains focus.
+  useEffect(() => {
+    let cancelled = false
+    const load = async (): Promise<void> => {
+      try {
+        const s = await fp().getSession()
+        if (!cancelled) setSessionVars(s)
+      } catch {
+        /* session store unavailable — treat as empty */
+      }
+    }
+    void load()
+    const onFocus = (): void => void load()
+    window.addEventListener('focus', onFocus)
+    return () => {
+      cancelled = true
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      if (props.envPath === null) {
+        if (!cancelled) setEnvVars({})
+        return
+      }
+      try {
+        const values = await fp().readEnv(joinPath(props.root, props.envPath))
+        if (!cancelled) setEnvVars(values)
+      } catch {
+        if (!cancelled) setEnvVars({})
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [props.root, props.envPath])
+
+  // Secret whenever the active environment is a `.local.env.json` file.
+  const envIsSecret = props.envPath?.toLowerCase().endsWith('.local.env.json') === true
+
+  // Request-declared defaults reflect the live (unsaved) Meta table.
+  const varLookup = useMemo<VarLookup>(() => {
+    const decls = new Map<string, { def: string; required: boolean; secret: boolean }>()
+    for (const r of varRows) {
+      const name = r.name.trim()
+      if (name !== '') decls.set(name, { def: r.def, required: r.required, secret: r.secret })
+    }
+    return (name: string): VarInfo => {
+      if (name in sessionVars) return { name, value: sessionVars[name], source: 'session' }
+      if (name in envVars) return { name, value: envVars[name], source: 'env', secret: envIsSecret }
+      const decl = decls.get(name)
+      if (decl !== undefined) {
+        if (decl.required) return { name, source: 'unresolved', required: true }
+        return { name, value: decl.def, source: 'request', secret: decl.secret }
+      }
+      return { name, source: 'unresolved' }
+    }
+  }, [sessionVars, envVars, varRows, envIsSecret])
 
   /* ------------------------------ assembly ------------------------------ */
 
@@ -649,12 +719,13 @@ export default function RequestTab(props: Props): JSX.Element {
             </option>
           ))}
         </select>
-        <input
-          className="url-input mono"
+        <VarInput
+          className="grow"
           value={url}
           placeholder="https://api.example.com/path"
-          onChange={(e) => {
-            setUrl(e.target.value)
+          varLookup={varLookup}
+          onChange={(v) => {
+            setUrl(v)
             touch()
           }}
         />
@@ -722,11 +793,12 @@ export default function RequestTab(props: Props): JSX.Element {
                           />
                         </td>
                         <td>
-                          <input
-                            className="cell-input mono"
+                          <VarInput
+                            className="cell-var"
                             placeholder="Value"
                             value={row.value}
-                            onChange={(e) => updateHeader(row.id, { value: e.target.value })}
+                            varLookup={varLookup}
+                            onChange={(v) => updateHeader(row.id, { value: v })}
                           />
                         </td>
                         <td className="cell-check">
@@ -832,6 +904,7 @@ export default function RequestTab(props: Props): JSX.Element {
                     rows={10}
                     value={gqlQuery}
                     placeholder="query { }"
+                    varLookup={varLookup}
                     onChange={(v) => {
                       setGqlQuery(v)
                       touch()
@@ -880,6 +953,7 @@ export default function RequestTab(props: Props): JSX.Element {
                       rows={6}
                       value={gqlVars}
                       placeholder="{}"
+                      varLookup={varLookup}
                       onChange={(v) => {
                         setGqlVars(v)
                         touch()
@@ -973,6 +1047,7 @@ export default function RequestTab(props: Props): JSX.Element {
                     rows={14}
                     value={bodyText}
                     placeholder="Request body"
+                    varLookup={varLookup}
                     onChange={(v) => {
                       setBodyText(v)
                       touch()
@@ -983,6 +1058,7 @@ export default function RequestTab(props: Props): JSX.Element {
                 {bodyMode === 'multipart' && (
                   <MultipartEditor
                     rows={formRows}
+                    varLookup={varLookup}
                     onChange={(rows) => {
                       setFormRows(rows)
                       touch()
@@ -1034,12 +1110,13 @@ export default function RequestTab(props: Props): JSX.Element {
                 {authMode === 'bearer' && (
                   <div className="auth-fields">
                     <label className="field-label">Token</label>
-                    <input
-                      className="cell-input mono"
+                    <VarInput
+                      className="cell-var"
                       value={authToken}
                       placeholder="${TOKEN}"
-                      onChange={(e) => {
-                        setAuthToken(e.target.value)
+                      varLookup={varLookup}
+                      onChange={(v) => {
+                        setAuthToken(v)
                         touch()
                       }}
                     />
@@ -1388,9 +1465,11 @@ const FORM_TYPES: FormFieldType[] = ['text', 'file', 'json']
  *  filename input + JSON editor for `json` fields. */
 function MultipartEditor({
   rows,
+  varLookup,
   onChange
 }: {
   rows: FormRow[]
+  varLookup: VarLookup
   onChange: (rows: FormRow[]) => void
 }): JSX.Element {
   const patch = (id: number, p: Partial<FormRow>): void =>
@@ -1422,19 +1501,21 @@ function MultipartEditor({
               ))}
             </select>
             {row.type === 'text' && (
-              <input
-                className="cell-input mono"
+              <VarInput
+                className="cell-var grow"
                 placeholder="Value"
                 value={row.value}
-                onChange={(e) => patch(row.id, { value: e.target.value })}
+                varLookup={varLookup}
+                onChange={(v) => patch(row.id, { value: v })}
               />
             )}
             {row.type === 'file' && (
-              <input
-                className="cell-input mono"
+              <VarInput
+                className="cell-var grow"
                 placeholder="./path/to/file (relative to the request)"
                 value={row.value}
-                onChange={(e) => patch(row.id, { value: e.target.value })}
+                varLookup={varLookup}
+                onChange={(v) => patch(row.id, { value: v })}
               />
             )}
             {row.type === 'json' && (
@@ -1463,6 +1544,7 @@ function MultipartEditor({
               rows={6}
               value={row.content}
               placeholder="{}"
+              varLookup={varLookup}
               onChange={(v) => patch(row.id, { content: v })}
             />
           )}

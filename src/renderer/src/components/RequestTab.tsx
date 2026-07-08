@@ -115,6 +115,11 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
 
   // Editor state.
   const [section, setSection] = useState<Section>('headers')
+  // Raw-edit pane: edit the canonical curl/websocat text directly. rawDraft is
+  // the source of truth while rawMode is on; rawErrors block leaving it invalid.
+  const [rawMode, setRawMode] = useState(false)
+  const [rawDraft, setRawDraft] = useState('')
+  const [rawErrors, setRawErrors] = useState<ParseError[] | null>(null)
   const [method, setMethod] = useState('GET')
   const [url, setUrl] = useState('')
   const [headerRows, setHeaderRows] = useState<HeaderRow[]>([])
@@ -296,6 +301,8 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
         const { raw: rawText, parsed } = await fp().readRequest(absPath)
         if (cancelled) return
         setRaw(rawText)
+        setRawMode(false)
+        setRawErrors(null)
         if (parsed.ok) {
           populate(parsed.file)
           if (parsed.file.http !== undefined) onMethodRef.current(parsed.file.http.method)
@@ -504,16 +511,43 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
     }
   }
 
+  /**
+   * The model for the active view: the raw draft (parsed strictly) when the raw
+   * pane is open, otherwise the assembled form state. Returns null and surfaces
+   * errors (raw parse errors, or an assemble error) when the view is invalid.
+   */
+  async function resolveModel(): Promise<RequestFile | null> {
+    if (rawMode) {
+      const res = await fp().parseCommand({
+        text: rawDraft,
+        strict: true,
+        kind: fileRef.current?.kind
+      })
+      if (!res.ok) {
+        setRawErrors(res.errors)
+        return null
+      }
+      setRawErrors(null)
+      return res.file
+    }
+    return assemble()
+  }
+
   async function save(): Promise<boolean> {
     setError(null)
-    const file = assemble()
+    const file = await resolveModel()
     if (file === null) return false
     setSaving(true)
     try {
       const { raw: newRaw } = await fp().writeRequest(absPath, file)
       setRaw(newRaw)
       fileRef.current = file
-      onMethodRef.current(method)
+      // Keep both views consistent with the canonical text just written.
+      if (rawMode) {
+        populate(file)
+        setRawDraft(newRaw)
+      }
+      onMethodRef.current(file.http?.method ?? method)
       clean()
       return true
     } catch (e) {
@@ -529,9 +563,9 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
 
   async function send(): Promise<void> {
     setError(null)
-    // Execute the live editor state (assembled model), not the on-disk file, so
-    // unsaved edits — variable defaults, URL, headers, body — are what runs.
-    const model = assemble()
+    // Execute the live editor state (assembled model or raw draft), not the
+    // on-disk file, so unsaved edits are what runs.
+    const model = await resolveModel()
     if (model === null) return
     setSending(true)
     setRespOpen(true)
@@ -593,6 +627,33 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
     if (!looksLikeCommand(text)) return false
     void applyPastedCommand(text)
     return true
+  }
+
+  /* ------------------------------ raw-edit pane ----------------------------- */
+
+  /** Toggle Form ⇄ Raw. Form→Raw serializes the live model; Raw→Form parses the
+   *  draft (strictly) and repopulates, blocking the switch on a parse error. */
+  async function toggleRawMode(): Promise<void> {
+    setError(null)
+    if (rawMode) {
+      const file = await resolveModel()
+      if (file === null) return // rawErrors set by resolveModel; stay in Raw
+      populate(file)
+      touch()
+      if (file.http !== undefined) onMethodRef.current(file.http.method)
+      setRawMode(false)
+    } else {
+      const file = assemble()
+      if (file === null) return // assemble surfaced an error (e.g. bad GraphQL JSON)
+      try {
+        const { raw: text } = await fp().formatRequest(file)
+        setRawDraft(text)
+        setRawErrors(null)
+        setRawMode(true)
+      } catch (e) {
+        setError(errMsg(e))
+      }
+    }
   }
 
   async function acquireToken(): Promise<void> {
@@ -753,6 +814,13 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
         <button className="btn" onClick={() => void save()} disabled={saving}>
           {saving ? 'Saving…' : 'Save'}
         </button>
+        <button
+          className={'btn' + (rawMode ? ' btn-toggled' : '')}
+          onClick={() => void toggleRawMode()}
+          title={rawMode ? 'Switch to the form editor' : 'Edit the raw request file as text'}
+        >
+          {rawMode ? 'Form' : 'Raw'}
+        </button>
         <button className="btn" onClick={() => setShowCodegen(true)}>
           Code
         </button>
@@ -763,6 +831,38 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
 
       <div className={'req-split' + (respBelow ? ' req-split-col' : '')}>
         <div className="req-editor">
+          {rawMode ? (
+            <div className="section-content raw-edit">
+              {rawErrors !== null && (
+                <div className="banner banner-danger">
+                  <ul>
+                    {rawErrors.map((pe, i) => (
+                      <li key={i}>
+                        line {pe.line}: {pe.message}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <CodeEditor
+                language="text"
+                rows={22}
+                value={rawDraft}
+                placeholder={'curl https://api.example.com/path \\\n  --header ...'}
+                varLookup={varLookup}
+                onChange={(v) => {
+                  setRawDraft(v)
+                  touch()
+                  if (rawErrors !== null) setRawErrors(null)
+                }}
+              />
+              <div className="dim-note">
+                Editing the canonical request file. Switch back to <b>Form</b> to apply, or{' '}
+                <b>Save</b> to write it. Invalid syntax is reported and blocks the switch.
+              </div>
+            </div>
+          ) : (
+            <>
           <div className="section-tabs">
             {(['headers', 'body', 'auth', 'scripts', 'meta'] as Section[]).map((s) => (
               <button
@@ -1393,6 +1493,8 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
               </div>
             )}
           </div>
+            </>
+          )}
         </div>
 
         {respOpen && (

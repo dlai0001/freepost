@@ -20,6 +20,7 @@ interface Props {
   onNewItem: (folderRelPath: string, kind: NewItemKind) => void
   onEnvChange: (envPath: string | null) => void
   onToggleSession: () => void
+  onManageEnvs: () => void
 }
 
 export default function Sidebar(props: Props): JSX.Element {
@@ -106,6 +107,14 @@ export default function Sidebar(props: Props): JSX.Element {
             </option>
           ))}
         </select>
+        <button
+          className="btn env-manage-btn"
+          title="Manage environments"
+          disabled={root === null}
+          onClick={props.onManageEnvs}
+        >
+          ⚙
+        </button>
         <button
           className={'btn' + (props.sessionOpen ? ' btn-toggled' : '')}
           title="Session variables"

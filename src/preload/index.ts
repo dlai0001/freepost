@@ -25,6 +25,11 @@ const api = {
 
   listEnvs: (root: string) => ipcRenderer.invoke(IPC.envList, root),
   readEnv: (p: string) => ipcRenderer.invoke(IPC.envRead, p),
+  createEnv: (args: unknown) => ipcRenderer.invoke(IPC.envCreate, args),
+  writeEnv: (args: unknown) => ipcRenderer.invoke(IPC.envWrite, args),
+  deleteEnv: (args: unknown) => ipcRenderer.invoke(IPC.envDelete, args),
+  renameEnv: (args: unknown) => ipcRenderer.invoke(IPC.envRename, args),
+  duplicateEnv: (args: unknown) => ipcRenderer.invoke(IPC.envDuplicate, args),
 
   getSession: () => ipcRenderer.invoke(IPC.sessionGet),
   setSessionVar: (n: string, v: string) => ipcRenderer.invoke(IPC.sessionSet, n, v),

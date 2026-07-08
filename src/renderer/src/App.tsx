@@ -13,11 +13,13 @@ import WorkflowTab from './components/WorkflowTab'
 import PromptModal from './components/PromptModal'
 import ImportModal from './components/ImportModal'
 import HistoryPanel from './components/HistoryPanel'
+import EnvironmentManager from './components/EnvironmentManager'
 import type { NewItemKind } from './components/Tree'
 
 type ModalSpec =
   | { kind: 'import' }
   | { kind: 'history' }
+  | { kind: 'env-manager' }
   | { kind: 'new-item'; folder: string; itemKind: NewItemKind }
 
 export default function App(): JSX.Element {
@@ -81,6 +83,17 @@ function Shell(): JSX.Element {
 
   const loadRef = useRef(loadCollection)
   loadRef.current = loadCollection
+
+  const refreshEnvs = useCallback(async (): Promise<void> => {
+    const root = rootRef.current
+    if (root === null) return
+    try {
+      const envs = await fp().listEnvs(root)
+      dispatch({ type: 'set-envs', envs })
+    } catch (e) {
+      setNotice(errMsg(e))
+    }
+  }, [])
 
   useEffect(() => {
     return fp().onCollectionChanged((root) => {
@@ -179,6 +192,7 @@ function Shell(): JSX.Element {
           onNewItem={(folder, kind) => setModal({ kind: 'new-item', folder, itemKind: kind })}
           onEnvChange={(envPath) => dispatch({ type: 'set-env', envPath })}
           onToggleSession={() => dispatch({ type: 'toggle-session' })}
+          onManageEnvs={() => setModal({ kind: 'env-manager' })}
         />
         <main className="main-area">
           {state.tabs.length > 0 && (
@@ -258,6 +272,18 @@ function Shell(): JSX.Element {
             openPath(path, 'request')
           }}
           onCancel={() => setModal(null)}
+        />
+      )}
+      {modal?.kind === 'env-manager' && state.root !== null && (
+        <EnvironmentManager
+          root={state.root}
+          envs={state.envs}
+          activeEnvPath={state.envPath}
+          onSelectEnv={(p) => dispatch({ type: 'set-env', envPath: p })}
+          onChanged={() => {
+            void refreshEnvs()
+          }}
+          onClose={() => setModal(null)}
         />
       )}
       {modal?.kind === 'new-item' && (

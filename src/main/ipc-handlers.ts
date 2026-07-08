@@ -24,6 +24,7 @@ import type {
   WorkflowValidationIssue
 } from '../shared/model'
 import { parseRequestFile, requestKindForPath, writeRequestFile } from '../core/format'
+import { createEnv, deleteEnv, duplicateEnv, renameEnv, writeEnv } from './env-ops'
 import { buildSearchEntry, queryIndex } from '../core/search'
 import {
   healReferences,
@@ -264,6 +265,21 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.envRead, async (_e, abs: string) => {
     return readEnvFile(dirname(abs), abs)
   })
+
+  ipcMain.handle(IPC.envCreate, (_e, args: { root: string; name: string; local: boolean }) =>
+    createEnv(args)
+  )
+  ipcMain.handle(
+    IPC.envWrite,
+    (_e, args: { root: string; path: string; values: Record<string, string> }) => writeEnv(args)
+  )
+  ipcMain.handle(IPC.envDelete, (_e, args: { root: string; path: string }) => deleteEnv(args))
+  ipcMain.handle(IPC.envRename, (_e, args: { root: string; path: string; newName: string }) =>
+    renameEnv(args)
+  )
+  ipcMain.handle(IPC.envDuplicate, (_e, args: { root: string; path: string; newName: string }) =>
+    duplicateEnv(args)
+  )
 
   ipcMain.handle(IPC.sessionGet, () => Object.fromEntries(session))
   ipcMain.handle(IPC.sessionSet, (_e, name: string, value: string) => {

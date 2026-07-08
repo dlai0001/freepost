@@ -34,6 +34,11 @@ export const IPC = {
 
   envList: 'env:list', // (root) => string[]
   envRead: 'env:read', // (absPath) => Record<string,string>
+  envCreate: 'env:create', // ({ root, name, local }) => string (new collection-relative path)
+  envWrite: 'env:write', // ({ root, path, values }) => void
+  envDelete: 'env:delete', // ({ root, path }) => void
+  envRename: 'env:rename', // ({ root, path, newName }) => string (new rel path)
+  envDuplicate: 'env:duplicate', // ({ root, path, newName }) => string (new rel path)
 
   sessionGet: 'session:get', // () => Record<string,string>
   sessionSet: 'session:set', // (name, value) => void
@@ -94,6 +99,11 @@ export interface FreepostApi {
 
   listEnvs(root: string): Promise<string[]>
   readEnv(absPath: string): Promise<Record<string, string>>
+  createEnv(args: { root: string; name: string; local: boolean }): Promise<string>
+  writeEnv(args: { root: string; path: string; values: Record<string, string> }): Promise<void>
+  deleteEnv(args: { root: string; path: string }): Promise<void>
+  renameEnv(args: { root: string; path: string; newName: string }): Promise<string>
+  duplicateEnv(args: { root: string; path: string; newName: string }): Promise<string>
 
   getSession(): Promise<Record<string, string>>
   setSessionVar(name: string, value: string): Promise<void>

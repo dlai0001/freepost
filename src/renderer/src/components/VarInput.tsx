@@ -13,13 +13,15 @@ import { refreshVarsEffect, variableHighlighting, type VarLookup } from './varHi
 
 interface Props {
   value: string
-  onChange: (value: string) => void
+  onChange?: (value: string) => void
   placeholder?: string
   /** `${VAR}` references are highlighted and get a hover hint when set. */
   varLookup?: VarLookup
   /** Extra classes on the wrapper (e.g. "grow" to flex-fill a toolbar). */
   className?: string
   title?: string
+  /** Display-only: no editing, still highlighted + hoverable. */
+  readOnly?: boolean
 }
 
 /** Block any edit that would introduce a newline — this is a one-line field. */
@@ -68,9 +70,12 @@ export default function VarInput(props: Props): JSX.Element {
       inputTheme,
       variableHighlighting(() => varLookupRef.current ?? null),
       EditorView.updateListener.of((u) => {
-        if (u.docChanged) onChangeRef.current(u.state.doc.toString())
+        if (u.docChanged) onChangeRef.current?.(u.state.doc.toString())
       })
     ]
+    if (props.readOnly === true) {
+      extensions.push(EditorState.readOnly.of(true), EditorView.editable.of(false))
+    }
     if (props.placeholder !== undefined) extensions.push(cmPlaceholder(props.placeholder))
     const state = EditorState.create({ doc: props.value, extensions })
     const v = new EditorView({ state, parent: host.current })

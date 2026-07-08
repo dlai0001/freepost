@@ -25,7 +25,8 @@ import CodegenModal from './CodegenModal'
 import ExamplesModal from './ExamplesModal'
 import CodeEditor from './CodeEditor'
 import VarInput from './VarInput'
-import type { VarInfo, VarLookup } from './varHighlight'
+import type { VarLookup } from './varHighlight'
+import { makeVarLookup, useVarSources, type VarDecl } from './varContext'
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']
 const OAUTH_GRANTS: OAuth2Grant[] = ['client_credentials', 'password', 'authorization_code']
@@ -152,8 +153,7 @@ export default function RequestTab(props: Props): JSX.Element {
   const [varRows, setVarRows] = useState<VarRow[]>([])
 
   // Variable resolution context for `${VAR}` highlighting + hover hints.
-  const [sessionVars, setSessionVars] = useState<Record<string, string>>({})
-  const [envVars, setEnvVars] = useState<Record<string, string>>({})
+  const varSources = useVarSources(props.root, props.envPath)
 
   // Response state.
   const [report, setReport] = useState<ExecutionReport | null>(null)
@@ -313,67 +313,16 @@ export default function RequestTab(props: Props): JSX.Element {
 
   /* -------------------------- variable context -------------------------- */
 
-  // Session vars can change out-of-band (Session panel, OAuth acquire), so also
-  // refresh when the window regains focus.
-  useEffect(() => {
-    let cancelled = false
-    const load = async (): Promise<void> => {
-      try {
-        const s = await fp().getSession()
-        if (!cancelled) setSessionVars(s)
-      } catch {
-        /* session store unavailable — treat as empty */
-      }
-    }
-    void load()
-    const onFocus = (): void => void load()
-    window.addEventListener('focus', onFocus)
-    return () => {
-      cancelled = true
-      window.removeEventListener('focus', onFocus)
-    }
-  }, [])
-
-  useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      if (props.envPath === null) {
-        if (!cancelled) setEnvVars({})
-        return
-      }
-      try {
-        const values = await fp().readEnv(joinPath(props.root, props.envPath))
-        if (!cancelled) setEnvVars(values)
-      } catch {
-        if (!cancelled) setEnvVars({})
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [props.root, props.envPath])
-
-  // Secret whenever the active environment is a `.local.env.json` file.
-  const envIsSecret = props.envPath?.toLowerCase().endsWith('.local.env.json') === true
-
-  // Request-declared defaults reflect the live (unsaved) Meta table.
+  // Request-declared defaults reflect the live (unsaved) Meta table; session
+  // and environment come from the shared source hook.
   const varLookup = useMemo<VarLookup>(() => {
-    const decls = new Map<string, { def: string; required: boolean; secret: boolean }>()
+    const decls = new Map<string, VarDecl>()
     for (const r of varRows) {
       const name = r.name.trim()
       if (name !== '') decls.set(name, { def: r.def, required: r.required, secret: r.secret })
     }
-    return (name: string): VarInfo => {
-      if (name in sessionVars) return { name, value: sessionVars[name], source: 'session' }
-      if (name in envVars) return { name, value: envVars[name], source: 'env', secret: envIsSecret }
-      const decl = decls.get(name)
-      if (decl !== undefined) {
-        if (decl.required) return { name, source: 'unresolved', required: true }
-        return { name, value: decl.def, source: 'request', secret: decl.secret }
-      }
-      return { name, source: 'unresolved' }
-    }
-  }, [sessionVars, envVars, varRows, envIsSecret])
+    return makeVarLookup(varSources, decls)
+  }, [varSources, varRows])
 
   /* ------------------------------ assembly ------------------------------ */
 

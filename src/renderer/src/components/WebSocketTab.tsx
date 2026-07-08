@@ -1,7 +1,11 @@
 import type { JSX } from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { VariableDecl } from '../../../shared/model'
 import { errMsg, fp } from '../api'
 import { joinPath } from '../util'
+import VarInput from './VarInput'
+import type { VarLookup } from './varHighlight'
+import { makeVarLookup, useVarSources, type VarDecl } from './varContext'
 
 type ConnState = 'closed' | 'connecting' | 'open'
 
@@ -27,12 +31,20 @@ export default function WebSocketTab(props: Props): JSX.Element {
 
   const [url, setUrl] = useState('')
   const [presets, setPresets] = useState<Record<string, string>>({})
+  // Declared variables (with secret flags) for `${VAR}` highlighting in the URL.
+  const [varDecls, setVarDecls] = useState<Map<string, VarDecl>>(new Map())
   const [state, setState] = useState<ConnState>('closed')
   const [log, setLog] = useState<LogEntry[]>([])
   const [draft, setDraft] = useState('')
   const [error, setError] = useState<string | null>(null)
   const connIdRef = useRef<string | null>(null)
   const logEndRef = useRef<HTMLDivElement>(null)
+
+  const varSources = useVarSources(props.root, props.envPath)
+  const varLookup = useMemo<VarLookup>(
+    () => makeVarLookup(varSources, varDecls),
+    [varSources, varDecls]
+  )
 
   function append(dir: LogEntry['dir'], text: string): void {
     setLog((l) => [...l, { id: logId++, dir, text, at: new Date().toLocaleTimeString() }])
@@ -47,6 +59,16 @@ export default function WebSocketTab(props: Props): JSX.Element {
         if (parsed.ok) {
           setUrl(parsed.file.ws?.url ?? '')
           setPresets(parsed.file.frontmatter.messages ?? {})
+          const meta = parsed.file.frontmatter.variables ?? {}
+          const decls = new Map<string, VarDecl>()
+          for (const d of parsed.file.variables as VariableDecl[]) {
+            decls.set(d.name, {
+              def: d.defaultValue ?? '',
+              required: d.required,
+              secret: meta[d.name]?.secret === true
+            })
+          }
+          setVarDecls(decls)
         } else {
           setError(`File has parse errors (line ${parsed.errors[0]?.line}): ${parsed.errors[0]?.message}`)
         }
@@ -145,9 +167,11 @@ export default function WebSocketTab(props: Props): JSX.Element {
 
       <div className="req-topline">
         <span className={`ws-dot ws-dot-${state}`} title={state} />
-        <span className="ws-url mono" title={url}>
-          {url === '' ? '(no url)' : url}
-        </span>
+        {url === '' ? (
+          <span className="ws-url mono ws-url-empty">(no url)</span>
+        ) : (
+          <VarInput className="ws-url plain grow" value={url} varLookup={varLookup} readOnly />
+        )}
         {state === 'closed' ? (
           <button className="btn btn-accent" onClick={() => void connect()}>
             Connect

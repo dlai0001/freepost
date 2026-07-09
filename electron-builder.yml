@@ -1,0 +1,47 @@
+appId: io.github.dlai0001.freepost
+productName: Freepost
+directories:
+  buildResources: build
+  output: dist
+# electron-vite compiles to out/; ship that plus production deps. Everything
+# below is excluded from the packaged app (source, tests, tooling, docs).
+files:
+  - out/**
+  - package.json
+  - '!**/*.map'
+  - '!src/**'
+  - '!scripts/**'
+  - '!docs/**'
+  - '!examples/**'
+  - '!**/*.test.*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!vite.cli.config.{js,ts,mjs,cjs}'
+  - '!vitest.config.{js,ts,mjs,cjs}'
+  - '!{tsconfig.json,PLAN.md,TEST_PLAN.md}'
+# No auto-update / publish provider: Freepost never phones home, including for
+# update checks. Installers are distributed manually (e.g. GitHub Releases).
+win:
+  executableName: freepost
+  target:
+    - nsis
+nsis:
+  artifactName: ${name}-${version}-setup.${ext}
+  shortcutName: ${productName}
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+dmg:
+  artifactName: ${name}-${version}.${ext}
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Development
+  maintainer: dlaisoft
+appImage:
+  artifactName: ${name}-${version}.${ext}
+npmRebuild: false

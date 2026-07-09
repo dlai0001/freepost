@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as yaml from 'js-yaml'
-import { importOpenApi } from './openapi'
+import { importOpenApi, listOpenApiOperations } from './openapi'
 import type { RequestFile } from '@shared/model'
 
 /* -------------------------- OpenAPI 3.0 fixture -------------------------- */
@@ -187,5 +187,64 @@ describe('importOpenApi — validation', () => {
   it('rejects a document without paths', () => {
     const res = importOpenApi(JSON.stringify({ openapi: '3.0.0' }))
     expect(res.ok).toBe(false)
+  })
+})
+
+/* -------------------------- listOpenApiOperations ------------------------- */
+
+describe('listOpenApiOperations', () => {
+  it('lists one summary per operation with a stable id, method, path, folder', () => {
+    const res = listOpenApiOperations(JSON.stringify(openapi3))
+    if (!res.ok) throw new Error(res.error)
+    expect(res.version).toBe('OpenAPI 3.0.3')
+    expect(res.operations).toEqual([
+      { id: 'GET /users/{id}', method: 'GET', path: '/users/{id}', summary: 'Fetch a user by id', folder: 'users' },
+      { id: 'POST /orders', method: 'POST', path: '/orders', summary: 'Create an order', folder: 'orders' }
+    ])
+  })
+
+  it('does not error on a structurally valid spec with zero operations', () => {
+    const res = listOpenApiOperations(JSON.stringify({ openapi: '3.0.0', paths: {} }))
+    expect(res).toEqual({ ok: true, operations: [], version: 'OpenAPI 3.0.0' })
+  })
+
+  it('rejects a document without a version marker, same as importOpenApi', () => {
+    const res = listOpenApiOperations(JSON.stringify({ paths: {} }))
+    expect(res.ok).toBe(false)
+  })
+})
+
+/* ------------------------------ selectedIds ------------------------------- */
+
+describe('importOpenApi — selectedIds filter', () => {
+  it('omitted opts imports everything, matching current behavior', () => {
+    const withOpts = importOpenApi(JSON.stringify(openapi3), undefined)
+    const noOpts = importOpenApi(JSON.stringify(openapi3))
+    expect(withOpts).toEqual(noOpts)
+    if (!noOpts.ok) throw new Error(noOpts.error)
+    expect(noOpts.files).toHaveLength(2)
+  })
+
+  it('imports only the selected operation', () => {
+    const res = importOpenApi(JSON.stringify(openapi3), { selectedIds: new Set(['POST /orders']) })
+    if (!res.ok) throw new Error(res.error)
+    expect(res.files).toHaveLength(1)
+    expect(res.files[0].relPath).toBe('orders/createOrder.curl')
+  })
+
+  it('selecting an empty set on a non-empty spec yields ok:true with no files (not an error)', () => {
+    const res = importOpenApi(JSON.stringify(openapi3), { selectedIds: new Set() })
+    expect(res).toEqual({ ok: true, files: [], note: expect.stringContaining('Imported 0 operations') })
+  })
+
+  it('a spec with zero total operations is still an error regardless of selection', () => {
+    const res = importOpenApi(JSON.stringify({ openapi: '3.0.0', paths: {} }), { selectedIds: new Set() })
+    expect(res.ok).toBe(false)
+  })
+
+  it('an id absent from the spec is silently ignored', () => {
+    const res = importOpenApi(JSON.stringify(openapi3), { selectedIds: new Set(['DELETE /nonexistent']) })
+    if (!res.ok) throw new Error(res.error)
+    expect(res.files).toHaveLength(0)
   })
 })

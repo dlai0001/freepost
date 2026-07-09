@@ -9,6 +9,7 @@ import type {
   ExecutionReport,
   GqlIntrospectResult,
   HistoryEntry,
+  OpenApiOperationSummary,
   ParseCommandResult,
   ParseResult,
   RequestFile,
@@ -67,6 +68,8 @@ export const IPC = {
   importFile: 'import:file', // ({ root, path, name? }) => { written: string[] } — Postman JSON or shell script
   importCommand: 'import:command', // ({ root, text, name? }) => { written: string[] } — pasted curl/websocat/wscat
   importOpenApi: 'import:openapi', // ({ root, path }) => { written: string[] } — OpenAPI/Swagger
+  importOpenApiListUrl: 'import:openapi-list-url', // ({ url }) => { ok, operations, version, specText } | { ok:false, error } — fetch + list, no writes
+  importOpenApiApplyUrl: 'import:openapi-apply-url', // ({ root, specText, selectedIds, folderPrefix? }) => { written: string[] }
 
   codegenTargets: 'codegen:targets', // () => CodegenTargetInfo[]
   codegenGenerate: 'codegen:generate', // ({ root, path, target, envPath?, resolve? }) => { code: string }
@@ -168,6 +171,24 @@ export interface FreepostApi {
   importCommand(args: { root: string; text: string; name?: string }): Promise<{ written: string[] }>
   /** Import an OpenAPI 3.x / Swagger 2.0 document (JSON or YAML). */
   importOpenApi(args: { root: string; path: string }): Promise<{ written: string[] }>
+  /** Fetch an OpenAPI/Swagger document from a URL and list its operations, without writing anything. */
+  listOpenApiFromUrl(args: { url: string }): Promise<
+    | { ok: true; operations: OpenApiOperationSummary[]; version: string; specText: string }
+    | { ok: false; error: string }
+  >
+  /**
+   * Write only the selected operations from a previously-fetched spec (see
+   * `listOpenApiFromUrl`) as new request files. `folderPrefix`, if given, is
+   * prepended as an extra leading folder segment (sanitized against path
+   * traversal); omitted, each operation lands in its own tag/path-derived
+   * folder at the collection root.
+   */
+  importOpenApiFromUrl(args: {
+    root: string
+    specText: string
+    selectedIds: string[]
+    folderPrefix?: string
+  }): Promise<{ written: string[] }>
 
   codegenTargets(): Promise<CodegenTargetInfo[]>
   generateCode(args: {

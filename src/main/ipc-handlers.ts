@@ -470,6 +470,18 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(
+    IPC.fileBrowse,
+    async (_e, args?: { title?: string; filters?: { name: string; extensions: string[] }[] }) => {
+      const res = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        ...(args?.title !== undefined ? { title: args.title } : {}),
+        filters: args?.filters ?? [{ name: 'All files', extensions: ['*'] }]
+      })
+      return res.canceled || res.filePaths.length === 0 ? null : res.filePaths[0]
+    }
+  )
+
+  ipcMain.handle(
     IPC.importFile,
     async (_e, args: { root: string; path: string; name?: string }) => {
       const text = await fs.readFile(args.path, 'utf8')

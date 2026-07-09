@@ -138,8 +138,9 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
   const [bodyKind, setBodyKind] = useState<'raw' | 'file'>('raw')
   const [bodyText, setBodyText] = useState('')
   const [bodyMode, setBodyMode] = useState<BodyMode>('raw')
-  // Per-request transport options (curl --insecure / -k).
+  // Per-request transport options (curl --insecure / -k, --cacert).
   const [insecure, setInsecure] = useState(false)
+  const [caCert, setCaCert] = useState('')
   const [formRows, setFormRows] = useState<FormRow[]>([])
   const [gqlQuery, setGqlQuery] = useState('')
   const [gqlVars, setGqlVars] = useState('')
@@ -272,6 +273,7 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
     }
     setBodyMode(fm.graphql !== undefined ? 'graphql' : fm.form !== undefined ? 'multipart' : 'raw')
     setInsecure(http?.options.insecure === true)
+    setCaCert(http?.options.caCert ?? '')
 
     // Auth: frontmatter.auth => oauth2; --user => basic; Bearer header => bearer.
     const user = http?.options.user
@@ -420,6 +422,8 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
     delete options.user
     if (insecure) options.insecure = true
     else delete options.insecure
+    if (caCert.trim() !== '') options.caCert = caCert.trim()
+    else delete options.caCert
     if (authMode === 'basic') {
       options.user = `${authUser}:${authPass}`
     }
@@ -538,6 +542,21 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
       variables,
       http: { method, url, headers, body, options },
       comments: orig.comments
+    }
+  }
+
+  /** Pick a CA certificate file via the system dialog, filling the path field. */
+  async function browseCaCert(): Promise<void> {
+    const path = await fp().browseFile({
+      title: 'Select a CA certificate',
+      filters: [
+        { name: 'Certificates', extensions: ['pem', 'crt', 'cer', 'ca', 'ca-bundle'] },
+        { name: 'All files', extensions: ['*'] }
+      ]
+    })
+    if (path !== null) {
+      setCaCert(path)
+      touch()
     }
   }
 
@@ -1588,6 +1607,28 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
                   />
                   Skip HTTPS validation (do not verify the server certificate)
                 </label>
+                <label className="field-label">CA certificate</label>
+                <div className="opt-file">
+                  <VarInput
+                    className="cell-var grow"
+                    value={caCert}
+                    placeholder="/path/to/ca.pem or ${CA_CERT} — blank uses system + bundled roots"
+                    varLookup={varLookup}
+                    onChange={(v) => {
+                      setCaCert(v)
+                      touch()
+                    }}
+                  />
+                  <button className="btn btn-small" onClick={() => void browseCaCert()}>
+                    Browse…
+                  </button>
+                </div>
+                <div className="dim-note">
+                  Trust a self-signed or corporate root for this request (curl{' '}
+                  <span className="mono">--cacert</span>). The path may be absolute or relative to
+                  this request; <span className="mono">${'{'}VAR{'}'}</span> resolves from your
+                  environment.
+                </div>
                 <label className="field-label">Variables</label>
                 <table className="edit-table">
                   <thead>

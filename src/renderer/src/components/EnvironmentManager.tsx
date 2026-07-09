@@ -99,6 +99,8 @@ export default function EnvironmentManager(props: Props): JSX.Element {
   const [bulkText, setBulkText] = useState('')
   const [addName, setAddName] = useState('')
   const [addValue, setAddValue] = useState('')
+  // Right-click "Browse file" menu anchored over a value cell.
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; rowId: number } | null>(null)
 
   // Pending selection while there are unsaved changes.
   const [pendingSelect, setPendingSelect] = useState<string | null | undefined>(undefined)
@@ -201,6 +203,13 @@ export default function EnvironmentManager(props: Props): JSX.Element {
 
   function updateRow(id: number, patch: Partial<Row>): void {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)))
+  }
+
+  /** Pick a file via the system dialog and store its path as the row's value. */
+  async function browseValueFile(rowId: number): Promise<void> {
+    setCtxMenu(null)
+    const path = await fp().browseFile({ title: 'Select a file' })
+    if (path !== null) updateRow(rowId, { value: path })
   }
 
   function removeRow(id: number): void {
@@ -582,7 +591,12 @@ export default function EnvironmentManager(props: Props): JSX.Element {
                           type={revealed.has(r.id) ? 'text' : 'password'}
                           placeholder="value"
                           value={r.value}
+                          title="Right-click to browse for a file"
                           onChange={(e) => updateRow(r.id, { value: e.target.value })}
+                          onContextMenu={(e) => {
+                            e.preventDefault()
+                            setCtxMenu({ x: e.clientX, y: e.clientY, rowId: r.id })
+                          }}
                         />
                         <button
                           className="icon-btn"
@@ -640,6 +654,31 @@ export default function EnvironmentManager(props: Props): JSX.Element {
             Close
           </button>
         </div>
+
+        {ctxMenu !== null && (
+          <>
+            <div
+              className="ctx-menu-backdrop"
+              onMouseDown={(e) => {
+                e.stopPropagation()
+                setCtxMenu(null)
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                setCtxMenu(null)
+              }}
+            />
+            <div className="ctx-menu" style={{ top: ctxMenu.y, left: ctxMenu.x }}>
+              <button
+                className="ctx-menu-item"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={() => void browseValueFile(ctxMenu.rowId)}
+              >
+                Browse file…
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )

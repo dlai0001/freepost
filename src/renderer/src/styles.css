@@ -334,6 +334,8 @@ td .var-input.cell-var { width: 100%; }
 .field-label { display: block; color: var(--muted); font-size: 12px; font-weight: 600; margin: 10px 0 4px; }
 .section-content .field-label:first-child, .gql-editor .field-label:first-child,
 .scripts-editor .field-label:first-child, .meta-editor .field-label:first-child { margin-top: 0; }
+.opt-check { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.opt-check input { margin: 0; }
 .workflow-tab .field-label { margin-left: 12px; margin-right: 12px; }
 .workflow-tab > .cell-input { width: calc(100% - 24px); margin: 0 12px; }
 .auth-fields { max-width: 420px; display: flex; flex-direction: column; }

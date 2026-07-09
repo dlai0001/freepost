@@ -49,8 +49,8 @@ export function shouldBypassProxy(host: string, noProxy: string | undefined): bo
 export interface TunnelOptions {
   /** Skip TLS verification to the target (curl --insecure). */
   insecure?: boolean
-  /** Extra CA to trust for the target TLS handshake. */
-  ca?: string | Buffer
+  /** Extra CA(s) to trust for the target TLS handshake. */
+  ca?: string | Buffer | Array<string | Buffer>
   /** SNI/servername for the target TLS handshake. */
   servername?: string
 }

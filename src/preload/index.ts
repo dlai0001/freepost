@@ -53,6 +53,7 @@ const api = {
 
   importPostman: (args: unknown) => ipcRenderer.invoke(IPC.importPostman, args),
   browseImportFile: () => ipcRenderer.invoke(IPC.importBrowse),
+  browseFile: (args?: unknown) => ipcRenderer.invoke(IPC.fileBrowse, args),
   importFile: (args: unknown) => ipcRenderer.invoke(IPC.importFile, args),
   importCommand: (args: unknown) => ipcRenderer.invoke(IPC.importCommand, args),
   importOpenApi: (args: unknown) => ipcRenderer.invoke(IPC.importOpenApi, args),

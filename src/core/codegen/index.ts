@@ -123,6 +123,7 @@ function genCurl(http: HttpRequestModel): string {
     parts.push(`-H ${shSingle(`${h.name}: ${h.value}`)}`)
   }
   if (http.options.user) parts.push(`-u ${shSingle(http.options.user)}`)
+  if (http.options.caCert) parts.push(`--cacert ${shSingle(http.options.caCert)}`)
   if (http.options.insecure) parts.push('-k')
   if (http.options.followRedirects) parts.push('-L')
   if (typeof http.options.timeoutSeconds === 'number') {

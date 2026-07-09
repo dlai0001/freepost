@@ -56,6 +56,7 @@ export function mapCurlCommand(argv: CommandToken[]): CurlResult {
   let insecure = false
   let followRedirects = false
   let timeoutSeconds: number | undefined
+  let caCert: string | undefined
 
   let i = 1
   const takeValue = (): CommandToken | null => (i + 1 < argv.length ? argv[++i] : null)
@@ -121,6 +122,13 @@ export function mapCurlCommand(argv: CommandToken[]): CurlResult {
       case '--insecure':
         insecure = true
         break
+      case '--cacert': {
+        const v = takeValue()
+        if (!v) return fail(tok.line, 'missing value for --cacert')
+        if (caCert !== undefined) return fail(tok.line, 'duplicate --cacert flag')
+        caCert = v.text
+        break
+      }
       case '-L':
       case '--location':
         followRedirects = true
@@ -167,5 +175,6 @@ export function mapCurlCommand(argv: CommandToken[]): CurlResult {
   if (insecure) http.options.insecure = true
   if (followRedirects) http.options.followRedirects = true
   if (timeoutSeconds !== undefined) http.options.timeoutSeconds = timeoutSeconds
+  if (caCert !== undefined) http.options.caCert = caCert
   return { ok: true, http }
 }

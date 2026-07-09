@@ -140,6 +140,20 @@ button { cursor: pointer; }
 }
 .menu-item:hover { background: rgba(255, 255, 255, 0.08); }
 
+/* Right-click context menu (e.g. env value "Browse file"). Sits above modals. */
+.ctx-menu-backdrop { position: fixed; inset: 0; z-index: 200; }
+.ctx-menu {
+  position: fixed; z-index: 201;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  display: flex; flex-direction: column; min-width: 160px; padding: 4px;
+}
+.ctx-menu-item {
+  background: none; border: none; color: var(--text);
+  text-align: left; padding: 6px 10px; font-size: 13px; border-radius: 4px; cursor: pointer;
+}
+.ctx-menu-item:hover { background: rgba(255, 255, 255, 0.08); }
+
 /* --------------------------------- badges -------------------------------- */
 .badge {
   font-family: ui-monospace, Menlo, monospace;
@@ -336,6 +350,8 @@ td .var-input.cell-var { width: 100%; }
 .scripts-editor .field-label:first-child, .meta-editor .field-label:first-child { margin-top: 0; }
 .opt-check { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
 .opt-check input { margin: 0; }
+.opt-file { display: flex; align-items: center; gap: 8px; }
+.opt-file .cell-var { min-width: 0; }
 .workflow-tab .field-label { margin-left: 12px; margin-right: 12px; }
 .workflow-tab > .cell-input { width: calc(100% - 24px); margin: 0 12px; }
 .auth-fields { max-width: 420px; display: flex; flex-direction: column; }

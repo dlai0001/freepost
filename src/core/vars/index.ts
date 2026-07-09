@@ -123,7 +123,8 @@ export function substituteModel<T extends HttpRequestModel | WsRequestModel>(
             : { ...model.body },
       options: {
         ...model.options,
-        ...(model.options.user !== undefined ? { user: sub(model.options.user) } : {})
+        ...(model.options.user !== undefined ? { user: sub(model.options.user) } : {}),
+        ...(model.options.caCert !== undefined ? { caCert: sub(model.options.caCert) } : {})
       }
     }
     return resolved as T

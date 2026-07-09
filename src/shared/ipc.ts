@@ -63,6 +63,7 @@ export const IPC = {
 
   importPostman: 'import:postman', // ({ root, collectionJsonPath }) => { written: string[] }
   importBrowse: 'import:browse', // () => string | null (native file picker)
+  fileBrowse: 'file:browse', // ({ title?, filters? }) => string | null (generic native file picker)
   importFile: 'import:file', // ({ root, path, name? }) => { written: string[] } — Postman JSON or shell script
   importCommand: 'import:command', // ({ root, text, name? }) => { written: string[] } — pasted curl/websocat/wscat
   importOpenApi: 'import:openapi', // ({ root, path }) => { written: string[] } — OpenAPI/Swagger
@@ -156,6 +157,11 @@ export interface FreepostApi {
   importPostman(args: { root: string; collectionJsonPath: string }): Promise<{ written: string[] }>
   /** Native file picker for import; returns the chosen path or null. */
   browseImportFile(): Promise<string | null>
+  /** Generic native file picker; returns the chosen path or null. */
+  browseFile(args?: {
+    title?: string
+    filters?: { name: string; extensions: string[] }[]
+  }): Promise<string | null>
   /** Import a file: Postman collection JSON, or any shell script containing a curl/websocat/wscat command. */
   importFile(args: { root: string; path: string; name?: string }): Promise<{ written: string[] }>
   /** Import a pasted curl/websocat/wscat command as a new request file. */

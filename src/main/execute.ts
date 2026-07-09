@@ -224,9 +224,16 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
     cfg.clientCert !== undefined ? resolveCertPath(root, substitute(cfg.clientCert, values)) : undefined
   const clientKey =
     cfg.clientKey !== undefined ? resolveCertPath(root, substitute(cfg.clientKey, values)) : undefined
-  // Custom CA (corporate MITM) — PEM or collection-relative path, like the client cert.
+  // Custom CA (self-signed / corporate MITM) — PEM or a path. A request's own
+  // --cacert (resolved relative to the request file) wins over the inherited
+  // collection/folder CA (resolved relative to the collection root).
+  const reqCaCert = resolved.options.caCert
   const caCert =
-    cfg.caCert !== undefined ? resolveCertPath(root, substitute(cfg.caCert, values)) : undefined
+    reqCaCert !== undefined && reqCaCert.trim() !== ''
+      ? resolveCertPath(dirname(abs), reqCaCert)
+      : cfg.caCert !== undefined
+        ? resolveCertPath(root, substitute(cfg.caCert, values))
+        : undefined
   // Proxy: collection/folder config wins, else *_PROXY env vars; NO_PROXY bypasses.
   const proxy = resolveProxy(
     cfg.proxy !== undefined ? substitute(cfg.proxy, values) : undefined,

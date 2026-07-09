@@ -91,6 +91,7 @@ function curlLines(http: HttpRequestModel, frontmatter: Frontmatter): string[] {
   }
   const o = http.options
   if (o.user !== undefined) flags.push(`--user ${quoteShellValue(o.user)}`)
+  if (o.caCert !== undefined) flags.push(`--cacert ${quoteShellValue(o.caCert)}`)
   if (o.insecure) flags.push('--insecure')
   if (o.followRedirects) flags.push('--location')
   if (o.timeoutSeconds !== undefined) flags.push(`--max-time ${o.timeoutSeconds}`)

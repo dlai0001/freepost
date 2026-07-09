@@ -53,6 +53,17 @@ describe('mapCurlCommand', () => {
     expect(http.options).toEqual({ user: 'a:b', insecure: true, followRedirects: true })
   })
 
+  it('parses --cacert as a per-request CA path', () => {
+    const http = ok('curl', '--url', 'https://e.com', '--cacert', '/etc/ssl/corp.pem')
+    expect(http.options.caCert).toBe('/etc/ssl/corp.pem')
+  })
+
+  it('rejects a duplicate --cacert flag', () => {
+    expect(err('curl', 'https://e.com', '--cacert', 'a.pem', '--cacert', 'b.pem').message).toMatch(
+      /duplicate --cacert/
+    )
+  })
+
   it('accepts a positional URL', () => {
     expect(ok('curl', 'https://e.com/x').url).toBe('https://e.com/x')
   })

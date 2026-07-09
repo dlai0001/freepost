@@ -115,6 +115,13 @@ export interface HttpRequestModel {
     timeoutSeconds?: number
     /** --user for basic auth, "user:pass" (may contain ${VAR}). */
     user?: string
+    /**
+     * Extra CA certificate to trust for this request (curl --cacert): a file
+     * path (absolute, or relative to the request) or PEM contents. Supports
+     * ${VAR} so the path can live in an environment. Trusts a self-signed /
+     * corporate root without disabling verification.
+     */
+    caCert?: string
   }
 }
 

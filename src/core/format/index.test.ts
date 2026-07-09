@@ -226,7 +226,13 @@ describe('round-trip law: parse(write(f)) deep-equals f', () => {
           { name: 'Authorization', value: 'Bearer ${TOKEN}' },
         ],
         body: { kind: 'raw', value: '{"name":"O\'Brien","note":"line1\\nline2"}' },
-        options: { insecure: true, followRedirects: true, timeoutSeconds: 30, user: 'admin:${TOKEN}' },
+        options: {
+          insecure: true,
+          followRedirects: true,
+          timeoutSeconds: 30,
+          user: 'admin:${TOKEN}',
+          caCert: '${CA_CERT}',
+        },
       },
     }
     const text = roundTrip(model)

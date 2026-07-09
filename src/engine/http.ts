@@ -12,6 +12,7 @@ import { readFileSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
 import type { ClientRequest, IncomingMessage } from 'node:http'
 import { request as httpsRequest, type RequestOptions } from 'node:https'
+import * as tls from 'node:tls'
 import { createBrotliDecompress, createGunzip, createInflate } from 'node:zlib'
 import type { Header, HttpResponseModel } from '../shared/model'
 import type { CookieJar } from './cookies'
@@ -46,6 +47,31 @@ export interface SendHttpOptions {
 export function loadPem(value: string): Buffer | string {
   if (value.trimStart().startsWith('-----BEGIN')) return value
   return readFileSync(value)
+}
+
+// node:https trusts only Node's bundled Mozilla roots. Enterprise/self-signed
+// roots installed in the OS trust store (common on corporate Windows/macOS) are
+// therefore not honored, and HTTPS requests fail with UNABLE_TO_GET_ISSUER_CERT
+// even though a browser on the same machine succeeds. We merge the system store
+// into the trusted roots so those endpoints work without disabling verification.
+//
+// tls.getCACertificates is Node >=22.15; guarded so older runtimes fall back to
+// the bundled store. Setting `ca` replaces the default, so we keep 'default'
+// (bundled + NODE_EXTRA_CA_CERTS) alongside 'system' to avoid losing either.
+let systemCaCache: string[] | null | undefined
+export function systemTrustStore(): string[] | undefined {
+  if (systemCaCache !== undefined) return systemCaCache ?? undefined
+  const get = (tls as { getCACertificates?: (type: string) => string[] }).getCACertificates
+  if (typeof get !== 'function') {
+    systemCaCache = null
+    return undefined
+  }
+  try {
+    systemCaCache = [...get('default'), ...get('system')]
+  } catch {
+    systemCaCache = null
+  }
+  return systemCaCache ?? undefined
 }
 
 export interface SendHttpRequest {
@@ -176,7 +202,17 @@ export function sendHttp(req: SendHttpRequest, jar?: CookieJar): Promise<HttpRes
         headers: hopHeaders,
         ...(isHttps && opts.insecure ? { rejectUnauthorized: false } : {})
       }
-      const ca = opts.caCert !== undefined ? loadPem(opts.caCert) : undefined
+      // Trusted roots: OS store (when available) plus any caller-supplied CA.
+      // undefined means "use node's bundled default" (older runtimes only).
+      let ca: string | Buffer | Array<string | Buffer> | undefined
+      const userCa = opts.caCert !== undefined ? loadPem(opts.caCert) : undefined
+      if (isHttps && !opts.insecure) {
+        const system = systemTrustStore()
+        if (system !== undefined) ca = userCa !== undefined ? [...system, userCa] : system
+        else ca = userCa
+      } else {
+        ca = userCa
+      }
       // TLS material — https only; ignored for plain http targets.
       if (isHttps) {
         if (opts.clientCert !== undefined) requestOptions.cert = loadPem(opts.clientCert)

@@ -138,6 +138,8 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
   const [bodyKind, setBodyKind] = useState<'raw' | 'file'>('raw')
   const [bodyText, setBodyText] = useState('')
   const [bodyMode, setBodyMode] = useState<BodyMode>('raw')
+  // Per-request transport options (curl --insecure / -k).
+  const [insecure, setInsecure] = useState(false)
   const [formRows, setFormRows] = useState<FormRow[]>([])
   const [gqlQuery, setGqlQuery] = useState('')
   const [gqlVars, setGqlVars] = useState('')
@@ -269,6 +271,7 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
       )
     }
     setBodyMode(fm.graphql !== undefined ? 'graphql' : fm.form !== undefined ? 'multipart' : 'raw')
+    setInsecure(http?.options.insecure === true)
 
     // Auth: frontmatter.auth => oauth2; --user => basic; Bearer header => bearer.
     const user = http?.options.user
@@ -415,6 +418,8 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
       .map((r) => ({ name: r.name.trim(), value: r.value }))
     const options = { ...(orig.http?.options ?? {}) }
     delete options.user
+    if (insecure) options.insecure = true
+    else delete options.insecure
     if (authMode === 'basic') {
       options.user = `${authUser}:${authPass}`
     }
@@ -1571,6 +1576,18 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
                     touch()
                   }}
                 />
+                <label className="field-label">Options</label>
+                <label className="opt-check" title="curl --insecure / -k">
+                  <input
+                    type="checkbox"
+                    checked={insecure}
+                    onChange={(e) => {
+                      setInsecure(e.target.checked)
+                      touch()
+                    }}
+                  />
+                  Skip HTTPS validation (do not verify the server certificate)
+                </label>
                 <label className="field-label">Variables</label>
                 <table className="edit-table">
                   <thead>

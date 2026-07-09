@@ -15,6 +15,7 @@ import type {
   HistoryEntry,
   HttpResponseModel,
   OAuth2Config,
+  OpenApiOperationSummary,
   ParseCommandResult,
   RequestFile,
   RequestKind,
@@ -34,9 +35,9 @@ import {
   serializeWorkflow,
   validateReferences
 } from '../core/workflow'
-import { importPostmanCollection } from '../core/importers/postman'
+import { importPostmanCollection, sanitizePathSegment } from '../core/importers/postman'
 import { importCommandText, parseCommandFlexible } from '../core/importers/command'
-import { importOpenApi } from '../core/importers/openapi'
+import { dedupeRelPath, importOpenApi, listOpenApiOperations } from '../core/importers/openapi'
 import { CODEGEN_TARGETS, generateCode } from '../core/codegen'
 import { parseDataFile } from '../core/data'
 import {
@@ -515,6 +516,49 @@ export function registerIpcHandlers(): void {
     return importOpenApiText(args.root, await fs.readFile(args.path, 'utf8'))
   })
 
+  ipcMain.handle(
+    IPC.importOpenApiListUrl,
+    async (
+      _e,
+      args: { url: string }
+    ): Promise<
+      | { ok: true; operations: OpenApiOperationSummary[]; version: string; specText: string }
+      | { ok: false; error: string }
+    > => {
+      let specText: string
+      try {
+        const res = await sendHttp({
+          method: 'GET',
+          url: args.url,
+          headers: [{ name: 'Accept', value: 'application/json, application/yaml, text/yaml, */*' }],
+          options: { timeoutSeconds: 20 }
+        })
+        if (res.status < 200 || res.status >= 300) {
+          return { ok: false, error: `fetch failed: HTTP ${res.status} ${res.statusText}`.trim() }
+        }
+        specText = res.bodyText
+      } catch (e) {
+        return { ok: false, error: `failed to fetch spec: ${e instanceof Error ? e.message : String(e)}` }
+      }
+      const listed = listOpenApiOperations(specText)
+      if (!listed.ok) return listed
+      return { ok: true, operations: listed.operations, version: listed.version, specText }
+    }
+  )
+
+  ipcMain.handle(
+    IPC.importOpenApiApplyUrl,
+    async (
+      _e,
+      args: { root: string; specText: string; selectedIds: string[]; folderPrefix?: string }
+    ) => {
+      return importOpenApiText(args.root, args.specText, {
+        selectedIds: new Set(args.selectedIds),
+        folderPrefix: args.folderPrefix
+      })
+    }
+  )
+
   // ---- code generation ----
   ipcMain.handle(IPC.codegenTargets, () => CODEGEN_TARGETS)
   ipcMain.handle(
@@ -740,15 +784,37 @@ export function registerIpcHandlers(): void {
   )
 }
 
-async function importOpenApiText(root: string, text: string): Promise<{ written: string[] }> {
-  const result = importOpenApi(text)
+/**
+ * Sanitize a user-typed destination-folder prefix into safe path segments:
+ * splits on slashes, drops empty/"."/".." segments, sanitizes what remains.
+ * Returns undefined when nothing usable is left (no prefix applied).
+ */
+function sanitizeFolderPrefix(raw: string | undefined): string | undefined {
+  if (raw === undefined || raw.trim() === '') return undefined
+  const segments = raw
+    .split(/[\\/]+/)
+    .map((s) => s.trim())
+    .filter((s) => s !== '' && s !== '.' && s !== '..')
+    .map((s) => sanitizePathSegment(s))
+  return segments.length > 0 ? segments.join('/') : undefined
+}
+
+async function importOpenApiText(
+  root: string,
+  text: string,
+  opts?: { selectedIds?: Set<string>; folderPrefix?: string }
+): Promise<{ written: string[] }> {
+  const result = importOpenApi(text, opts?.selectedIds !== undefined ? { selectedIds: opts.selectedIds } : undefined)
   if (!result.ok) throw new Error(result.error)
+  const prefix = sanitizeFolderPrefix(opts?.folderPrefix)
   const written: string[] = []
   for (const f of result.files) {
-    const abs = join(root, f.relPath)
+    const candidate = prefix !== undefined ? `${prefix}/${f.relPath}` : f.relPath
+    const relPath = dedupeRelPath(candidate, (p) => existsSync(join(root, p)))
+    const abs = join(root, relPath)
     await fs.mkdir(dirname(abs), { recursive: true })
     await fs.writeFile(abs, writeRequestFile(f.file))
-    written.push(f.relPath)
+    written.push(relPath)
   }
   return { written }
 }

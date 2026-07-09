@@ -16,6 +16,7 @@ import type {
   Frontmatter,
   Header,
   HttpRequestModel,
+  OpenApiOperationSummary,
   RequestFile,
   VariableDecl
 } from '@shared/model'
@@ -24,6 +25,10 @@ import * as yaml from 'js-yaml'
 
 export type ImportResult =
   | { ok: true; files: { relPath: string; file: RequestFile }[]; note?: string }
+  | { ok: false; error: string }
+
+export type ListOpenApiResult =
+  | { ok: true; operations: OpenApiOperationSummary[]; version: string }
   | { ok: false; error: string }
 
 /* ------------------------------ spec shapes ------------------------------ */
@@ -215,6 +220,21 @@ function templatizePath(path: string, refs: Set<string>): string {
 /** Case-insensitive header presence check. */
 function hasHeader(headers: Header[], name: string): boolean {
   return headers.some((h) => h.name.toLowerCase() === name.toLowerCase())
+}
+
+/** Stable per-operation selection key shared by `listOpenApiOperations` and `importOpenApi`'s filter. */
+function operationId(method: string, path: string): string {
+  return `${method.toUpperCase()} ${path}`
+}
+
+/** Suffix a candidate relPath with " (2)", " (3)", ... until `isTaken` returns false. */
+export function dedupeRelPath(relPath: string, isTaken: (candidate: string) => boolean): string {
+  if (!isTaken(relPath)) return relPath
+  const ext = relPath.endsWith('.curl') ? '.curl' : ''
+  const stem = ext ? relPath.slice(0, -ext.length) : relPath
+  let n = 2
+  while (isTaken(`${stem} (${n})${ext}`)) n++
+  return `${stem} (${n})${ext}`
 }
 
 /* ------------------------------- conversion ------------------------------ */
@@ -455,11 +475,8 @@ function resolveBaseUrl(doc: SpecDoc, isSwagger2: boolean): string {
   return raw.replace(/\{([^{}]+)\}/g, (_m, _name: string) => `${_name}`)
 }
 
-/**
- * Import an OpenAPI 3.x or Swagger 2.0 document (JSON or YAML) into in-memory
- * RequestFile models with collection-relative paths.
- */
-export function importOpenApi(text: string): ImportResult {
+/** Parse + validate the document shape shared by `importOpenApi` and `listOpenApiOperations`. */
+function parseSpecDoc(text: string): { ok: true; doc: SpecDoc; isSwagger2: boolean } | { ok: false; error: string } {
   const data = parseDocument(text)
   if (typeof data !== 'object' || data === null || Array.isArray(data)) {
     return { ok: false, error: 'document root must be a JSON/YAML object' }
@@ -474,6 +491,54 @@ export function importOpenApi(text: string): ImportResult {
   if (!doc.paths || typeof doc.paths !== 'object' || Array.isArray(doc.paths)) {
     return { ok: false, error: 'not a valid spec: missing "paths" object' }
   }
+  return { ok: true, doc, isSwagger2 }
+}
+
+/**
+ * Enumerate every operation (path x method) in a spec without converting it —
+ * cheap (no schema deref / example synthesis), for previewing a spec before
+ * committing to a full import. A structurally valid spec with zero operations
+ * returns `ok: true, operations: []` (an empty list is a legitimate display
+ * state here, unlike `importOpenApi`'s stricter "nothing to import" error).
+ */
+export function listOpenApiOperations(text: string): ListOpenApiResult {
+  const parsed = parseSpecDoc(text)
+  if (!parsed.ok) return parsed
+  const { doc, isSwagger2 } = parsed
+
+  const operations: OpenApiOperationSummary[] = []
+  for (const [path, pathItem] of Object.entries(doc.paths ?? {})) {
+    if (!pathItem || typeof pathItem !== 'object') continue
+    for (const method of HTTP_METHODS) {
+      const op = (pathItem as Record<string, unknown>)[method] as OperationObject | undefined
+      if (!op || typeof op !== 'object') continue
+      operations.push({
+        id: operationId(method, path),
+        method: method.toUpperCase(),
+        path,
+        summary: op.summary ?? op.description,
+        folder: sanitizePathSegment(op.tags?.[0] ?? firstPathSegment(path))
+      })
+    }
+  }
+
+  const version = isSwagger2 ? 'Swagger 2.0' : `OpenAPI ${doc.openapi}`
+  return { ok: true, operations, version }
+}
+
+/**
+ * Import an OpenAPI 3.x or Swagger 2.0 document (JSON or YAML) into in-memory
+ * RequestFile models with collection-relative paths. When `opts.selectedIds`
+ * is given, only operations whose `${METHOD} ${path}` id is in the set are
+ * converted/written; omitted entirely, every operation is imported (existing
+ * behavior). Selecting an empty set still yields `ok: true, files: []` as
+ * long as the spec itself defines at least one operation.
+ */
+export function importOpenApi(text: string, opts?: { selectedIds?: Set<string> }): ImportResult {
+  const parsed = parseSpecDoc(text)
+  if (!parsed.ok) return parsed
+  const { doc, isSwagger2 } = parsed
+  const selectedIds = opts?.selectedIds
 
   doc.__baseUrlDefault = resolveBaseUrl(doc, isSwagger2)
 
@@ -487,13 +552,14 @@ export function importOpenApi(text: string): ImportResult {
   let operationCount = 0
 
   try {
-    for (const [path, pathItem] of Object.entries(doc.paths)) {
+    for (const [path, pathItem] of Object.entries(doc.paths ?? {})) {
       if (!pathItem || typeof pathItem !== 'object') continue
       const inheritedParams = Array.isArray(pathItem.parameters) ? pathItem.parameters : []
       for (const method of HTTP_METHODS) {
         const op = (pathItem as Record<string, unknown>)[method]
         if (!op || typeof op !== 'object') continue
         operationCount++
+        if (selectedIds !== undefined && !selectedIds.has(operationId(method, path))) continue
         const converted = convertOperation(
           method,
           path,
@@ -502,14 +568,7 @@ export function importOpenApi(text: string): ImportResult {
           { root: doc, isSwagger2, globalSecurity, securitySchemes }
         )
         // De-duplicate collision-prone relPaths (missing operationId, etc.).
-        let relPath = converted.relPath
-        if (usedPaths.has(relPath)) {
-          const ext = relPath.endsWith('.curl') ? '.curl' : ''
-          const stem = ext ? relPath.slice(0, -ext.length) : relPath
-          let n = 2
-          while (usedPaths.has(`${stem} (${n})${ext}`)) n++
-          relPath = `${stem} (${n})${ext}`
-        }
+        const relPath = dedupeRelPath(converted.relPath, (p) => usedPaths.has(p))
         usedPaths.add(relPath)
         files.push({ relPath, file: converted.file })
       }

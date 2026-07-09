@@ -262,6 +262,19 @@ export interface ExecutionReport {
   errored: boolean
 }
 
+/* ------------------------------ openapi import ---------------------------- */
+
+/** One operation (path x method) discovered while listing an OpenAPI/Swagger spec. */
+export interface OpenApiOperationSummary {
+  /** Stable selection key: `${method} ${path}` (method upper-cased, path as written in the spec). */
+  id: string
+  method: string
+  path: string
+  summary?: string
+  /** Sanitized folder this operation will be written under (first tag, else first path segment). */
+  folder: string
+}
+
 /* ------------------------------ collections ------------------------------ */
 
 export interface TreeNode {

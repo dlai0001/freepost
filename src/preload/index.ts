@@ -69,6 +69,12 @@ const api = {
   saveExample: (args: unknown) => ipcRenderer.invoke(IPC.exampleSave, args),
   listExamples: (args: unknown) => ipcRenderer.invoke(IPC.exampleList, args),
   deleteExample: (args: unknown) => ipcRenderer.invoke(IPC.exampleDelete, args),
+  setActiveExample: (args: unknown) => ipcRenderer.invoke(IPC.exampleSetActive, args),
+
+  startMock: (args: unknown) => ipcRenderer.invoke(IPC.mockStart, args),
+  stopMock: (args: unknown) => ipcRenderer.invoke(IPC.mockStop, args),
+  mockStatus: (args: unknown) => ipcRenderer.invoke(IPC.mockStatus, args),
+  onMockLog: (cb: (e: unknown) => void) => on(IPC.mockLog, cb as (...args: unknown[]) => void),
 
   acquireOAuthToken: (args: unknown) => ipcRenderer.invoke(IPC.oauthAcquire, args),
   authorizeOAuthStart: (args: unknown) => ipcRenderer.invoke(IPC.oauthAuthorizeStart, args),

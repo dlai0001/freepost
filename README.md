@@ -6,9 +6,10 @@ An open-source Postman alternative for REST, GraphQL, and WebSocket testing —
 built for developers behind corporate firewalls.
 
 - **No account. No cloud. No registration.** Ever.
-- **Zero network calls** except the requests you send. No telemetry, no crash
-  reporting, no update checks. The request engine is the only module in the
-  codebase allowed to open a socket, and CI enforces it.
+- **No unsolicited network calls.** The only sockets ever opened are ones you
+  explicitly initiate — a request you send, or a mock server you start. No
+  telemetry, no crash reporting, no update checks. The request engine is the
+  only module in the codebase allowed to open a socket, and CI enforces it.
 - **Your requests are curl.** Collections are folders on disk you choose; every
   request is a pretty-printed, *runnable* curl command (websocat for WebSocket)
   with YAML-in-comments frontmatter. `bash` runs it, `git diff` reviews it, any

@@ -19,7 +19,6 @@ import type {
   ParseCommandResult,
   RequestFile,
   RequestKind,
-  SavedExample,
   SearchEntry,
   WorkflowFile,
   WorkflowRunReport,
@@ -47,6 +46,7 @@ import {
 } from '../core/graphql/introspection'
 import {
   acquireToken,
+  MockServer,
   sendHttp,
   startAuthorizationCodeFlow,
   subscribeGraphql,
@@ -54,9 +54,11 @@ import {
   type GqlTransport
 } from '../engine'
 import { writeCachedToken } from './oauth-cache'
+import { buildRoutesForCollection } from './mock'
 import { resolveConfigChain } from './config-resolve'
 import { resolveVariables, substitute, substituteModel } from '../core/vars'
 import { ensureFreepostDir, listFiles, scanCollection } from './collection'
+import { exampleFilePath, readExamples } from './examples'
 import { executeRequest, jarFor, readEnvFile } from './execute'
 import { getLastRoot, setLastRoot } from './settings'
 import { trackedSecrets } from './security'
@@ -73,6 +75,8 @@ const gqlSubs = new Map<string, () => void>()
 let oauthFlowCounter = 0
 /** Pending interactive authorization_code flows by id → cancel fn. */
 const oauthFlows = new Map<string, () => void>()
+/** One running mock server per collection root. */
+const mockServers = new Map<string, MockServer>()
 
 /** Map an http(s) endpoint to its ws(s) equivalent for the WebSocket transport. */
 function toWsUrl(url: string): string {
@@ -649,6 +653,49 @@ export function registerIpcHandlers(): void {
       else await fs.writeFile(file, JSON.stringify(filtered, null, 2) + '\n')
     }
   )
+  // Mark one example active for the mock server; at most one per file.
+  ipcMain.handle(
+    IPC.exampleSetActive,
+    async (_e, args: { root: string; path: string; name: string }) => {
+      const file = exampleFilePath(args.root, args.path)
+      const existing = await readExamples(file)
+      let changed = false
+      const next = existing.map((e) => {
+        const active = e.name === args.name
+        if (active !== (e.active === true)) changed = true
+        return { ...e, active }
+      })
+      if (changed) await fs.writeFile(file, JSON.stringify(next, null, 2) + '\n')
+    }
+  )
+
+  // ---- mock server (one listener per collection root) ----
+  ipcMain.handle(IPC.mockStart, async (_e, args: { root: string; port?: number }) => {
+    const existing = mockServers.get(args.root)
+    if (existing !== undefined && existing.state === 'listening') {
+      // Idempotent: rebuild routes and report the already-bound port.
+      const routes = await buildRoutesForCollection(args.root)
+      return { port: existing.port ?? 0, routes: routes.length }
+    }
+    const routes = await buildRoutesForCollection(args.root)
+    const server = new MockServer()
+    server.on('request', (entry) => broadcast(IPC.mockLog, { root: args.root, entry }))
+    const { port } = await server.start({ routes, port: args.port })
+    mockServers.set(args.root, server)
+    return { port, routes: routes.length }
+  })
+  ipcMain.handle(IPC.mockStop, async (_e, args: { root: string }) => {
+    const server = mockServers.get(args.root)
+    if (server !== undefined) {
+      await server.stop()
+      mockServers.delete(args.root)
+    }
+  })
+  ipcMain.handle(IPC.mockStatus, (_e, args: { root: string }) => {
+    const server = mockServers.get(args.root)
+    if (server === undefined || server.state !== 'listening') return { running: false }
+    return { running: true, port: server.port }
+  })
 
   // ---- OAuth2 token acquisition ----
   ipcMain.handle(
@@ -878,20 +925,6 @@ async function importOpenApiText(
     written.push(relPath)
   }
   return { written }
-}
-
-function exampleFilePath(root: string, relPath: string): string {
-  // Name.curl -> Name.examples.json alongside the request.
-  const base = relPath.replace(/\.(curl|ws)$/i, '')
-  return join(root, `${base}.examples.json`)
-}
-
-async function readExamples(file: string): Promise<SavedExample[]> {
-  try {
-    return JSON.parse(await fs.readFile(file, 'utf8')) as SavedExample[]
-  } catch {
-    return []
-  }
 }
 
 /** Resolve ${VAR} against values, then raw session/env, for scalar config fields. */

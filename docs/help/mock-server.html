@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock server — Freepost Help</title>
+<meta name="description" content="Run a local mock server from your saved response examples: mark an active example, override with a query or header, and serve routes offline or in CI.">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="topbar-logo" href="../index.html">$ freepost</a>
+    <span class="topbar-crumb">Help / Mock server</span>
+    <div class="topbar-spacer"></div>
+    <a class="topbar-link" href="../index.html">Website</a>
+    <a class="topbar-link" href="https://github.com/dlai0001/freepost">GitHub</a>
+  </div>
+</header>
+
+<div class="docs-shell">
+  <nav class="docs-nav">
+    <div class="docs-nav-title">Guides</div>
+    <a href="./index.html">Overview</a>
+    <a href="./creating-requests.html">Creating requests</a>
+    <a href="./importing.html">Importing</a>
+    <a href="./organizing.html">Saving &amp; organizing</a>
+    <a href="./workflows.html">Workflows</a>
+    <a href="./authentication.html">Authentication</a>
+    <a class="active" href="./mock-server.html">Mock server</a>
+    <a href="./cli.html">Command line</a>
+    <a href="./scripting.html">Scripting (pm.*)</a>
+  </nav>
+
+  <article class="docs-article">
+    <h1>Mock server</h1>
+    <p class="lede">
+      The mock server turns a collection's <strong>saved response examples</strong> into a live
+      local HTTP server. Point your app at it to develop against canned responses — offline, with
+      no real backend, and no data ever leaving your machine.
+    </p>
+
+    <h2>How routes are built</h2>
+    <p>
+      Every <code>.curl</code> request that has at least one
+      <a href="./organizing.html">saved example</a> becomes a route. The method and URL path come
+      from the request; a <code>${VAR}</code> in a path segment (e.g.
+      <code>/users/${id}</code>) becomes a wildcard that matches any value there. Literal routes
+      win over wildcard ones at the same shape, so <code>/users/me</code> is served before
+      <code>/users/${id}</code>. The host and query string are ignored for matching.
+    </p>
+
+    <h2>Choosing which example to serve</h2>
+    <p>A request can have several examples (a 200, a 404, …). The mock picks one, in this order:</p>
+    <ol>
+      <li><strong>An explicit override</strong> on the incoming request — the
+        <code>?__example=NAME</code> query parameter, or the
+        <code>X-Freepost-Mock-Example: NAME</code> header. Handy for demoing an error path in a
+        test without touching files.</li>
+      <li><strong>The active example</strong> — open a request's <em>Examples</em> list and select
+        the <strong>Mock</strong> radio next to one. At most one example per request is active.</li>
+      <li><strong>Otherwise the first example</strong> in the file, in saved order.</li>
+    </ol>
+
+    <h2>Starting it</h2>
+    <p>
+      In the app, click <strong>Mock Server</strong> in the top bar, then <strong>Start</strong>.
+      Freepost binds a local port (shown with a copy button) and streams a live request log. From a
+      terminal (great for CI or scripting):
+    </p>
+    <pre><code>freepost mock ./my-collection --port 8080</code></pre>
+    <p>
+      It serves until you press Ctrl-C. See the <a href="./cli.html">command-line guide</a> for
+      details. Omit <code>--port</code> to let the OS pick a free one.
+    </p>
+
+    <div class="callout callout-note">
+      <div class="callout-title">Unmatched requests never leave your machine</div>
+      A request that matches no route returns <strong>404</strong> with a JSON body listing the
+      available routes — the mock never proxies through to a real server. That keeps the
+      offline-first, zero-surprise-network guarantee intact: the only socket the mock opens is the
+      local listener you explicitly started.
+    </div>
+
+    <footer class="docs-footer">
+      Next: <a href="./cli.html">Run headlessly with the command line →</a>
+    </footer>
+  </article>
+</div>
+
+</body>
+</html>

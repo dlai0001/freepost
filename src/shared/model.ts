@@ -395,6 +395,24 @@ export interface SavedExample {
   savedAt: string
   request: { method: string; url: string; headers: Header[]; body?: string }
   response: HttpResponseModel
+  /**
+   * Mock server: the example the mock serves by default for its route. At most
+   * one example per file should be active. Optional/back-compat — files saved
+   * before this field simply have it undefined (treated as "not active", so the
+   * mock falls back to first-in-file order).
+   */
+  active?: boolean
+}
+
+/** One line of the mock server's request log. */
+export interface MockRequestLogEntry {
+  method: string
+  path: string
+  status: number
+  matched: boolean
+  exampleName?: string
+  sourcePath?: string
+  at: string
 }
 
 /* ------------------------------ code generation -------------------------- */

@@ -9,6 +9,7 @@ import type {
   ExecutionReport,
   GqlIntrospectResult,
   HistoryEntry,
+  MockRequestLogEntry,
   OpenApiOperationSummary,
   ParseCommandResult,
   ParseResult,
@@ -80,6 +81,12 @@ export const IPC = {
   exampleSave: 'example:save', // ({ root, path, name }) => void — snapshots last response
   exampleList: 'example:list', // ({ root, path }) => SavedExample[]
   exampleDelete: 'example:delete', // ({ root, path, name }) => void
+  exampleSetActive: 'example:set-active', // ({ root, path, name }) => void — mock default (clears siblings)
+
+  mockStart: 'mock:start', // ({ root, port? }) => { port; routes } (idempotent per root)
+  mockStop: 'mock:stop', // ({ root }) => void
+  mockStatus: 'mock:status', // ({ root }) => { running; port?; routes? }
+  mockLog: 'mock:log', // main -> renderer event ({ root, entry: MockRequestLogEntry })
 
   oauthAcquire: 'oauth:acquire', // ({ root, path, envPath? }) => AcquiredToken (stores in session)
   oauthAuthorizeStart: 'oauth:authorize-start', // ({ root, path, envPath? }) => { id } — interactive authorization_code
@@ -208,6 +215,14 @@ export interface FreepostApi {
   saveExample(args: { root: string; path: string; name: string }): Promise<void>
   listExamples(args: { root: string; path: string }): Promise<SavedExample[]>
   deleteExample(args: { root: string; path: string; name: string }): Promise<void>
+  /** Mark one example as the mock server's default for its route (clears siblings). */
+  setActiveExample(args: { root: string; path: string; name: string }): Promise<void>
+
+  /** Start (or return the already-running) mock server for a collection. */
+  startMock(args: { root: string; port?: number }): Promise<{ port: number; routes: number }>
+  stopMock(args: { root: string }): Promise<void>
+  mockStatus(args: { root: string }): Promise<{ running: boolean; port?: number; routes?: number }>
+  onMockLog(cb: (e: { root: string; entry: MockRequestLogEntry }) => void): () => void
 
   /** Acquire an OAuth2 token for the request and store it in the session. */
   acquireOAuthToken(args: { root: string; path: string; envPath?: string }): Promise<AcquiredToken>

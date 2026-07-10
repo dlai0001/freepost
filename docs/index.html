@@ -367,6 +367,30 @@
         </div>
       </div>
       <div class="card">
+        <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A mock server: an app calls a local port and gets back a saved 200 example; an unmatched path gets a 404.">
+          <rect width="400" height="200" fill="#0a0d12"/>
+          <rect x="24" y="40" width="96" height="120" rx="8" fill="#0d1117" stroke="#30363d"/>
+          <text x="72" y="106" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#8b949e" text-anchor="middle">your app</text>
+          <rect x="280" y="40" width="96" height="120" rx="8" fill="#0d1117" stroke="#30363d"/>
+          <text x="328" y="98" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#8b949e" text-anchor="middle">mock</text>
+          <text x="328" y="116" font-family="ui-monospace, Menlo, monospace" font-size="10" fill="#58a6ff" text-anchor="middle">:8080</text>
+          <g font-family="ui-monospace, Menlo, monospace" font-size="10.5">
+            <path d="M124 74 L276 74" stroke="#3fb950" stroke-width="1.5"/>
+            <path d="M276 74 l-8 -4 v8 z" fill="#3fb950"/>
+            <text x="200" y="68" fill="#3fb950" text-anchor="middle">GET /users/42</text>
+            <path d="M276 100 L124 100" stroke="#8b949e" stroke-width="1.5"/>
+            <path d="M124 100 l8 -4 v8 z" fill="#8b949e"/>
+            <text x="200" y="116" fill="#e6edf3" text-anchor="middle">200 · saved example</text>
+            <path d="M124 134 L276 134" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4 3"/>
+            <text x="200" y="152" fill="#f85149" text-anchor="middle">/nope → 404 (never proxied)</text>
+          </g>
+        </svg>
+        <div class="card-body">
+          <h3><span class="ico">🧩</span>Mock server from your examples</h3>
+          <p>Serve your saved response examples over a local HTTP port — no real backend needed. Mark an example active, or force one with a query param. Unmatched paths return 404 and never proxy out, so it stays fully offline. Runs from the app or <code>freepost mock</code> in CI.</p>
+        </div>
+      </div>
+      <div class="card">
         <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A four-step workflow: login, create order, an expected-to-fail charge, and fetch receipt.">
           <rect width="400" height="200" fill="#0a0d12"/>
           <g font-family="-apple-system, Segoe UI, sans-serif" font-size="13.5">

@@ -44,6 +44,15 @@ export default function ExamplesModal(props: Props): JSX.Element {
     }
   }
 
+  async function setActive(name: string): Promise<void> {
+    try {
+      await fp().setActiveExample({ root: props.root, path: props.relPath, name })
+      await load()
+    } catch (e) {
+      setMessage(errMsg(e))
+    }
+  }
+
   if (viewing !== null) {
     return <ExampleModal example={viewing} onCancel={() => setViewing(null)} />
   }
@@ -55,6 +64,12 @@ export default function ExamplesModal(props: Props): JSX.Element {
 
         {message !== null && <div className="banner banner-danger">{message}</div>}
 
+        {examples.length > 0 && (
+          <div className="dim-note">
+            The <strong>Mock</strong> radio picks which example the mock server serves for this
+            route by default.
+          </div>
+        )}
         <div className="example-list">
           {loading && <div className="dim-note">Loading…</div>}
           {!loading && examples.length === 0 && (
@@ -68,6 +83,15 @@ export default function ExamplesModal(props: Props): JSX.Element {
               s >= 200 && s < 300 ? 'status-ok' : s >= 400 ? 'status-err' : 'status-other'
             return (
               <div key={ex.name} className="example-row">
+                <label className="example-active" title="Serve this example from the mock server">
+                  <input
+                    type="radio"
+                    name="mock-active-example"
+                    checked={ex.active === true}
+                    onChange={() => void setActive(ex.name)}
+                  />
+                  Mock
+                </label>
                 <span className={'status-pill ' + statusCls}>{s}</span>
                 <button className="example-name" onClick={() => setViewing(ex)}>
                   {ex.name}

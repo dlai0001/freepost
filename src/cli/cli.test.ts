@@ -107,7 +107,8 @@ describe('cli run', () => {
     const o = io()
     const code = await run(['--help'], o)
     expect(code).toBe(0)
-    expect(o.out()).toContain('Usage: freepost run')
+    expect(o.out()).toContain('freepost run <collection>')
+    expect(o.out()).toContain('freepost mock <collection>')
   })
 
   it('errors on an unknown option', async () => {
@@ -115,5 +116,70 @@ describe('cli run', () => {
     const code = await run(['run', root, '--nope'], o)
     expect(code).toBe(2)
     expect(o.out()).toContain('Unknown option: --nope')
+  })
+})
+
+describe('cli mock', () => {
+  function waitFor(pred: () => boolean, ms = 2000): Promise<void> {
+    const start = Date.now()
+    return new Promise((resolve, reject) => {
+      const tick = (): void => {
+        if (pred()) resolve()
+        else if (Date.now() - start > ms) reject(new Error('timeout'))
+        else setTimeout(tick, 10)
+      }
+      tick()
+    })
+  }
+
+  it('serves saved examples over HTTP and stops on SIGINT', async () => {
+    writeReq('Mock.curl', `curl --request GET --url 'http://${base}/anything'\n`)
+    writeFileSync(
+      join(root, 'Mock.examples.json'),
+      JSON.stringify([
+        {
+          name: 'ok',
+          savedAt: '2026-01-01T00:00:00Z',
+          request: { method: 'GET', url: 'http://x/', headers: [] },
+          response: {
+            status: 200,
+            statusText: 'OK',
+            headers: [{ name: 'Content-Type', value: 'application/json' }],
+            bodyText: '{"mock":true}',
+            timeMs: 1,
+            sizeBytes: 13
+          }
+        }
+      ])
+    )
+    let buf = ''
+    let sigint: () => void = () => undefined
+    const o: CliIo = {
+      cwd: root,
+      color: false,
+      write: (s) => (buf += s),
+      onSigint: (cb) => {
+        sigint = cb
+      }
+    }
+    const done = run(['mock', root], o)
+    await waitFor(() => /listening on http:\/\/127\.0\.0\.1:(\d+)/.test(buf))
+    const port = Number(buf.match(/listening on http:\/\/127\.0\.0\.1:(\d+)/)![1])
+    const res = await fetch(`http://127.0.0.1:${port}/anything`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ mock: true })
+    sigint()
+    const code = await done
+    expect(code).toBe(0)
+    expect(buf).toContain('Mock server stopped')
+  })
+
+  it('exits 2 when the collection has no examples', async () => {
+    const empty = mkdtempSync(join(tmpdir(), 'freepost-mock-empty-'))
+    let buf = ''
+    const code = await run(['mock', empty], { cwd: empty, color: false, write: (s) => (buf += s) })
+    expect(code).toBe(2)
+    expect(buf).toContain('No routes')
+    rmSync(empty, { recursive: true, force: true })
   })
 })

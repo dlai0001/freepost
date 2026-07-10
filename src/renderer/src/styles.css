@@ -607,6 +607,10 @@ td .var-input.cell-var { width: 100%; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .example-name:hover { text-decoration: underline; }
+.example-active {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; color: var(--muted); white-space: nowrap; cursor: pointer;
+}
 .example-content { max-height: 55vh; overflow: auto; padding: 10px 0; }
 .example-req-line { color: var(--text); font-size: 12px; margin-bottom: 8px; word-break: break-all; }
 

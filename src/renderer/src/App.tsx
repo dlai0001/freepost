@@ -14,12 +14,14 @@ import PromptModal from './components/PromptModal'
 import ConfirmModal from './components/ConfirmModal'
 import ImportModal from './components/ImportModal'
 import HistoryPanel from './components/HistoryPanel'
+import MockServerModal from './components/MockServerModal'
 import EnvironmentManager from './components/EnvironmentManager'
 import type { NewItemKind } from './components/Tree'
 
 type ModalSpec =
   | { kind: 'import' }
   | { kind: 'history' }
+  | { kind: 'mock' }
   | { kind: 'env-manager' }
   | { kind: 'new-item'; folder: string; itemKind: NewItemKind }
   | { kind: 'close-tab'; id: string }
@@ -220,6 +222,7 @@ function Shell(): JSX.Element {
         onDismissNotice={() => setNotice(null)}
         onImport={() => setModal({ kind: 'import' })}
         onHistory={() => setModal({ kind: 'history' })}
+        onMock={() => setModal({ kind: 'mock' })}
       />
       <div className="app-body">
         <Sidebar
@@ -318,6 +321,9 @@ function Shell(): JSX.Element {
           }}
           onCancel={() => setModal(null)}
         />
+      )}
+      {modal?.kind === 'mock' && state.root !== null && (
+        <MockServerModal root={state.root} onCancel={() => setModal(null)} />
       )}
       {modal?.kind === 'env-manager' && state.root !== null && (
         <EnvironmentManager

@@ -183,3 +183,17 @@ describe('cli mock', () => {
     rmSync(empty, { recursive: true, force: true })
   })
 })
+
+describe('cli run: multi-protocol skipping', () => {
+  it('skips MQTT subscribe and websocket files with a per-kind note', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'freepost-cli-skip-'))
+    writeFileSync(join(dir, 'Live.ws'), "websocat 'wss://example.com/s'\n")
+    writeFileSync(join(dir, 'Watch.mqtt'), "mosquitto_sub -h 'localhost' -t 'sensors/#'\n")
+    let buf = ''
+    const code = await run(['run', dir], { cwd: dir, color: false, write: (s) => (buf += s) })
+    expect(code).toBe(0) // nothing runnable, nothing failed
+    expect(buf).toContain('1 websocket')
+    expect(buf).toContain('1 MQTT subscribe')
+    rmSync(dir, { recursive: true, force: true })
+  })
+})

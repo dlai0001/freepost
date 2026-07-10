@@ -22,7 +22,7 @@
 import { existsSync, readFileSync } from 'fs'
 import { isAbsolute, resolve } from 'path'
 import type { ExecutionReport, TestResult, WorkflowStepResult } from '../shared/model'
-import { requestKindForPath } from '../core/format'
+import { parseRequestFile, requestKindForPath } from '../core/format'
 import { parseWorkflow, runWorkflow, validateReferences } from '../core/workflow'
 import { executeRequest } from '../main/execute'
 import { listFiles } from '../main/collection'
@@ -293,13 +293,28 @@ export async function run(argv: string[], io: CliIo): Promise<number> {
       if (report.halted && opts.bail) break
     }
   } else {
-    // Request mode: every runnable HTTP request, path-sorted, shared session.
+    // Request mode: every one-shot-runnable request, path-sorted, shared
+    // session. Runnable: HTTP (.curl), gRPC unary (.grpc), MQTT publish (.mqtt).
+    // Not one-shot (skipped, like websocket): MQTT subscribe. gRPC
+    // server-streaming can't be told apart without loading the proto, so it
+    // runs and surfaces a clear "use the streaming client" error.
     const files = (await listFiles(root)).sort()
-    let skippedWs = 0
+    const skipped: { websocket: number; mqttSubscribe: number } = { websocket: 0, mqttSubscribe: 0 }
     for (const rel of files) {
       const kind = requestKindForPath(rel)
       if (kind === null) continue
-      if (kind !== 'curl') { skippedWs++; continue } // websocket requests aren't one-shot runnable
+      if (kind === 'websocat') {
+        skipped.websocket++
+        continue
+      }
+      if (kind === 'mqtt') {
+        // Subscribe files are long-lived, not one-shot.
+        const parsed = parseRequestFile(readFileSync(resolve(root, rel), 'utf8'), 'mqtt')
+        if (parsed.ok && parsed.file.mqtt?.mode === 'subscribe') {
+          skipped.mqttSubscribe++
+          continue
+        }
+      }
       if (opts.filters.length > 0 && !opts.filters.some((f) => rel.toLowerCase().includes(f.toLowerCase()))) {
         continue
       }
@@ -308,8 +323,13 @@ export async function run(argv: string[], io: CliIo): Promise<number> {
       else reportRequest(io, rel, report, totals)
       if (report.errored && opts.bail) break
     }
-    if (skippedWs > 0 && opts.reporter === 'cli') {
-      io.write(c.dim(`\n(${skippedWs} websocket request(s) skipped — not one-shot runnable)\n`))
+    if (opts.reporter === 'cli') {
+      const notes: string[] = []
+      if (skipped.websocket > 0) notes.push(`${skipped.websocket} websocket`)
+      if (skipped.mqttSubscribe > 0) notes.push(`${skipped.mqttSubscribe} MQTT subscribe`)
+      if (notes.length > 0) {
+        io.write(c.dim(`\n(${notes.join(', ')} request(s) skipped — not one-shot runnable)\n`))
+      }
     }
   }
 

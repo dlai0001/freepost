@@ -2,14 +2,23 @@ import { promises as fs } from 'fs'
 import { appendFileSync, chmodSync, existsSync, readFileSync, writeFileSync } from 'fs'
 import { randomUUID } from 'crypto'
 import { basename, dirname, isAbsolute, join } from 'path'
-import type { ExecutionReport, FormField, Header, HttpResponseModel, RequestFile } from '../shared/model'
+import type {
+  AcquiredToken,
+  ExecutionReport,
+  FormField,
+  Header,
+  HttpResponseModel,
+  OAuth2Config,
+  RequestFile
+} from '../shared/model'
 import { parseRequestFile, requestKindForPath } from '../core/format'
 import { buildMultipartBody, multipartContentType, type MultipartPart } from '../core/format/multipart'
 import { resolveVariables, substitute, substituteModel } from '../core/vars'
 import { runScript } from '../core/sandbox'
 import { mergeRequestHeaders } from '../core/config'
-import { sendHttp, CookieJar, shouldBypassProxy } from '../engine'
+import { sendHttp, CookieJar, refreshToken, shouldBypassProxy } from '../engine'
 import { ensureFreepostDir } from './collection'
+import { isExpired, readCachedToken, writeCachedToken } from './oauth-cache'
 import { resolveConfigChain } from './config-resolve'
 
 /** One in-memory cookie jar per collection root. */
@@ -141,6 +150,33 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
     if (pre.error !== undefined) report.errored = true
   }
   if (preOutcomes.length > 0) report.preScript = mergeOutcomes(preOutcomes)
+
+  // OAuth2 authorization_code: this grant needs an interactive browser sign-in,
+  // which only the desktop app can do. Here (and in the CLI) we can only reuse a
+  // token a prior sign-in cached under .freepost/, refreshing it if expired.
+  const oauth = file.frontmatter.auth ?? cfg.auth
+  if (oauth !== undefined && oauth.grant === 'authorization_code') {
+    const sessionVar = oauth.sessionVar ?? 'OAUTH_TOKEN'
+    if (sessionObj[sessionVar] === undefined) {
+      // Resolve auth-config values with the same precedence the IPC sign-in
+      // handler uses (request values > session > env) so the on-disk token
+      // cache key matches what the interactive flow wrote.
+      const pre = resolveVariables(file.variables, sessionObj, env)
+      const merged = { ...env, ...sessionObj, ...pre.values }
+      const resolveScalar = (s: string): string => substitute(s, merged)
+      try {
+        const tok = await ensureAuthorizationCodeToken(root, oauth, resolveScalar)
+        session.set(sessionVar, tok.accessToken)
+        sessionObj[sessionVar] = tok.accessToken
+      } catch (e) {
+        return {
+          ...report,
+          errored: true,
+          transportError: e instanceof Error ? e.message : String(e)
+        }
+      }
+    }
+  }
 
   // Resolve variables: session > env > request defaults.
   const { values, unresolved } = resolveVariables(file.variables, sessionObj, env)
@@ -365,6 +401,35 @@ function resolveProxy(configProxy: string | undefined, targetUrl: string): strin
     ? (env.HTTPS_PROXY ?? env.https_proxy)
     : (env.HTTP_PROXY ?? env.http_proxy)
   return scheme ?? env.ALL_PROXY ?? env.all_proxy
+}
+
+/**
+ * Reuse (and if needed refresh) a cached authorization_code token. There is no
+ * headless interactive login: if no valid token is cached and it can't be
+ * refreshed, this throws a message telling the user to sign in via the app.
+ */
+async function ensureAuthorizationCodeToken(
+  root: string,
+  oauth: OAuth2Config,
+  resolveScalar: (s: string) => string
+): Promise<AcquiredToken> {
+  const cached = await readCachedToken(root, oauth, resolveScalar)
+  if (cached !== undefined && !isExpired(cached)) return cached
+  if (cached?.refreshToken !== undefined) {
+    try {
+      const refreshed = await refreshToken(oauth, cached.refreshToken, resolveScalar)
+      // Providers may omit a new refresh_token; keep the previous one.
+      if (refreshed.refreshToken === undefined) refreshed.refreshToken = cached.refreshToken
+      await writeCachedToken(root, oauth, resolveScalar, refreshed)
+      return refreshed
+    } catch {
+      /* fall through to the sign-in-required error */
+    }
+  }
+  throw new Error(
+    'No valid OAuth token cached for this request. Sign in via the Auth tab in the ' +
+      'desktop app — authorization_code tokens cannot be acquired headlessly.'
+  )
 }
 
 /** pm.sendRequest delegate — goes through the engine like everything else. */

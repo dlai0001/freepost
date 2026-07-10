@@ -222,6 +222,6 @@ describe('acquireToken', () => {
         },
         identity
       )
-    ).rejects.toThrow('authorization_code grant requires an interactive flow; not yet supported')
+    ).rejects.toThrow('authorization_code grant requires an interactive flow; use startAuthorizationCodeFlow')
   })
 })

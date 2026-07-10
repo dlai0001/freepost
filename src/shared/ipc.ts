@@ -82,6 +82,9 @@ export const IPC = {
   exampleDelete: 'example:delete', // ({ root, path, name }) => void
 
   oauthAcquire: 'oauth:acquire', // ({ root, path, envPath? }) => AcquiredToken (stores in session)
+  oauthAuthorizeStart: 'oauth:authorize-start', // ({ root, path, envPath? }) => { id } — interactive authorization_code
+  oauthAuthorizeCancel: 'oauth:authorize-cancel', // (id) => void
+  oauthAuthorizeEvent: 'oauth:authorize-event', // main -> renderer: { id, ok:true, token } | { id, ok:false, error }
 
   gqlIntrospect: 'gql:introspect', // ({ root, path, envPath? }) => { schema: GqlSchemaSummary } | { error }
   gqlSubscribe: 'gql:subscribe', // ({ root, path, envPath?, query, variables?, url?, transport? }) => { id }
@@ -208,6 +211,19 @@ export interface FreepostApi {
 
   /** Acquire an OAuth2 token for the request and store it in the session. */
   acquireOAuthToken(args: { root: string; path: string; envPath?: string }): Promise<AcquiredToken>
+
+  /**
+   * Start the interactive authorization_code flow: opens the system browser and
+   * waits for the loopback redirect. Resolves with a flow id; the terminal
+   * outcome arrives via `onOAuthAuthorizeEvent`.
+   */
+  authorizeOAuthStart(args: { root: string; path: string; envPath?: string }): Promise<{ id: string }>
+  /** Cancel a pending interactive authorization_code flow. */
+  authorizeOAuthCancel(id: string): Promise<void>
+  /** Terminal outcome of an interactive authorization_code flow. */
+  onOAuthAuthorizeEvent(
+    cb: (e: { id: string; ok: true; token: AcquiredToken } | { id: string; ok: false; error: string }) => void
+  ): () => void
 
   /**
    * Run a GraphQL introspection query for schema hints. `schemaUrl` overrides

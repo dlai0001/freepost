@@ -71,6 +71,10 @@ const api = {
   deleteExample: (args: unknown) => ipcRenderer.invoke(IPC.exampleDelete, args),
 
   acquireOAuthToken: (args: unknown) => ipcRenderer.invoke(IPC.oauthAcquire, args),
+  authorizeOAuthStart: (args: unknown) => ipcRenderer.invoke(IPC.oauthAuthorizeStart, args),
+  authorizeOAuthCancel: (id: string) => ipcRenderer.invoke(IPC.oauthAuthorizeCancel, id),
+  onOAuthAuthorizeEvent: (cb: (e: unknown) => void) =>
+    on(IPC.oauthAuthorizeEvent, cb as (...args: unknown[]) => void),
   introspectGraphql: (args: unknown) => ipcRenderer.invoke(IPC.gqlIntrospect, args),
   subscribeGraphql: (args: unknown) => ipcRenderer.invoke(IPC.gqlSubscribe, args),
   unsubscribeGraphql: (id: string) => ipcRenderer.invoke(IPC.gqlUnsubscribe, id),

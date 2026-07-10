@@ -5,7 +5,14 @@
 
 export { sendHttp, loadPem } from './http'
 export type { SendHttpRequest, SendHttpOptions } from './http'
-export { acquireToken } from './oauth'
+export {
+  acquireToken,
+  refreshToken,
+  startAuthorizationCodeFlow,
+  generatePkce,
+  buildAuthorizeUrl
+} from './oauth'
+export type { AuthorizeFlowArgs, AuthorizeResult } from './oauth'
 export { CookieJar } from './cookies'
 export type { StoredCookie } from './cookies'
 export { WsClient } from './ws'

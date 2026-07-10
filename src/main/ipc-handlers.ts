@@ -2,7 +2,7 @@
  * Main-process IPC: wires the pure core modules (format, vars, search,
  * sandbox, workflow, importers) and the engine to the renderer.
  */
-import { BrowserWindow, dialog, ipcMain } from 'electron'
+import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { promises as fs } from 'fs'
 import { existsSync, watch, type FSWatcher } from 'fs'
 import { dirname, isAbsolute, join, relative, sep } from 'path'
@@ -45,7 +45,15 @@ import {
   extractIntrospectionData,
   parseIntrospection
 } from '../core/graphql/introspection'
-import { acquireToken, sendHttp, subscribeGraphql, WsClient, type GqlTransport } from '../engine'
+import {
+  acquireToken,
+  sendHttp,
+  startAuthorizationCodeFlow,
+  subscribeGraphql,
+  WsClient,
+  type GqlTransport
+} from '../engine'
+import { writeCachedToken } from './oauth-cache'
 import { resolveConfigChain } from './config-resolve'
 import { resolveVariables, substitute, substituteModel } from '../core/vars'
 import { ensureFreepostDir, listFiles, scanCollection } from './collection'
@@ -62,6 +70,9 @@ const wsClients = new Map<string, WsClient>()
 let gqlSubCounter = 0
 /** Active GraphQL subscriptions by id → dispose fn. */
 const gqlSubs = new Map<string, () => void>()
+let oauthFlowCounter = 0
+/** Pending interactive authorization_code flows by id → cancel fn. */
+const oauthFlows = new Map<string, () => void>()
 
 /** Map an http(s) endpoint to its ws(s) equivalent for the WebSocket transport. */
 function toWsUrl(url: string): string {
@@ -658,9 +669,59 @@ export function registerIpcHandlers(): void {
       const token = await acquireToken(oauth, resolve)
       const varName = oauth.sessionVar ?? 'OAUTH_TOKEN'
       session.set(varName, token.accessToken)
+      // Persist so the CLI and later app sessions can reuse/refresh it.
+      await writeCachedToken(args.root, oauth, resolve, token).catch(() => undefined)
       return token
     }
   )
+
+  // ---- OAuth2 interactive authorization_code flow ----
+  ipcMain.handle(
+    IPC.oauthAuthorizeStart,
+    async (_e, args: { root: string; path: string; envPath?: string }): Promise<{ id: string }> => {
+      const kind = requestKindForPath(args.path)
+      if (kind === null) throw new Error('Not a request file')
+      const raw = await fs.readFile(join(args.root, args.path), 'utf8')
+      const parsed = parseRequestFile(raw, kind)
+      if (!parsed.ok) throw new Error('Cannot parse request file')
+      const { config } = await resolveConfigChain(args.root, args.path)
+      const oauth: OAuth2Config | undefined = parsed.file.frontmatter.auth ?? config.auth
+      if (oauth === undefined) throw new Error('No OAuth2 config on this request or its folders')
+      if (oauth.grant !== 'authorization_code') {
+        throw new Error('This request is not configured for the authorization_code grant')
+      }
+      const env = readEnvFile(args.root, args.envPath)
+      const { values } = resolveVariables(parsed.file.variables, Object.fromEntries(session), env)
+      const resolve = (s: string): string => substituteScalar(s, values, Object.fromEntries(session), env)
+
+      const id = `oauth${++oauthFlowCounter}`
+      const flow = await startAuthorizationCodeFlow({
+        config: oauth,
+        resolve,
+        openUrl: (url) => void shell.openExternal(url).catch(() => undefined),
+        onSettled: (result) => {
+          oauthFlows.delete(id)
+          if (result.ok) {
+            const varName = oauth.sessionVar ?? 'OAUTH_TOKEN'
+            session.set(varName, result.token.accessToken)
+            void writeCachedToken(args.root, oauth, resolve, result.token).catch(() => undefined)
+            broadcast(IPC.oauthAuthorizeEvent, { id, ok: true, token: result.token })
+          } else {
+            broadcast(IPC.oauthAuthorizeEvent, { id, ok: false, error: result.error })
+          }
+        }
+      })
+      oauthFlows.set(id, flow.cancel)
+      return { id }
+    }
+  )
+  ipcMain.handle(IPC.oauthAuthorizeCancel, (_e, id: string) => {
+    const cancel = oauthFlows.get(id)
+    if (cancel !== undefined) {
+      cancel()
+      oauthFlows.delete(id)
+    }
+  })
 
   // ---- GraphQL introspection ----
   ipcMain.handle(

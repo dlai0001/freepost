@@ -86,6 +86,10 @@ const api = {
   unsubscribeGraphql: (id: string) => ipcRenderer.invoke(IPC.gqlUnsubscribe, id),
   onGqlSubEvent: (cb: (e: unknown) => void) =>
     on(IPC.gqlSubEvent, cb as (...args: unknown[]) => void),
+  startGrpcStream: (args: unknown) => ipcRenderer.invoke(IPC.grpcStreamStart, args),
+  cancelGrpcStream: (id: string) => ipcRenderer.invoke(IPC.grpcStreamCancel, id),
+  onGrpcStreamEvent: (cb: (e: unknown) => void) =>
+    on(IPC.grpcStreamEvent, cb as (...args: unknown[]) => void),
   browseDataFile: () => ipcRenderer.invoke(IPC.browseDataFile),
 
   onAppBeforeClose: (cb: () => void) => on(IPC.appBeforeClose, cb as (...args: unknown[]) => void),

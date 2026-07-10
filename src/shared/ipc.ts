@@ -93,6 +93,10 @@ export const IPC = {
   oauthAuthorizeCancel: 'oauth:authorize-cancel', // (id) => void
   oauthAuthorizeEvent: 'oauth:authorize-event', // main -> renderer: { id, ok:true, token } | { id, ok:false, error }
 
+  grpcStreamStart: 'grpc:stream-start', // ({ root, path, envPath?, model? }) => { id } — server-streaming
+  grpcStreamCancel: 'grpc:stream-cancel', // (id) => void
+  grpcStreamEvent: 'grpc:stream-event', // main -> renderer event ({ id, type: 'data'|'error'|'end', data? })
+
   gqlIntrospect: 'gql:introspect', // ({ root, path, envPath? }) => { schema: GqlSchemaSummary } | { error }
   gqlSubscribe: 'gql:subscribe', // ({ root, path, envPath?, query, variables?, url?, transport? }) => { id }
   gqlUnsubscribe: 'gql:unsubscribe', // (id) => void
@@ -129,7 +133,7 @@ export interface FreepostApi {
     strict?: boolean
     kind?: RequestKind
   }): Promise<ParseCommandResult>
-  createRequest(absPath: string, kind: 'curl' | 'websocat'): Promise<void>
+  createRequest(absPath: string, kind: 'curl' | 'websocat' | 'grpc'): Promise<void>
   renameRequest(absPath: string, newAbsPath: string): Promise<void>
   deleteRequest(absPath: string): Promise<void>
   executeRequest(args: {
@@ -270,6 +274,18 @@ export interface FreepostApi {
   unsubscribeGraphql(id: string): Promise<void>
   onGqlSubEvent(
     cb: (e: { id: string; type: 'next' | 'error' | 'complete'; data?: string }) => void
+  ): () => void
+
+  /** Start a server-streaming gRPC call. Streams via `onGrpcStreamEvent`. */
+  startGrpcStream(args: {
+    root: string
+    path: string
+    envPath?: string
+    model?: RequestFile
+  }): Promise<{ id: string }>
+  cancelGrpcStream(id: string): Promise<void>
+  onGrpcStreamEvent(
+    cb: (e: { id: string; type: 'data' | 'error' | 'end'; data?: string }) => void
   ): () => void
 
   /** Native file picker for a CSV/JSON data file; returns the chosen path or null. */

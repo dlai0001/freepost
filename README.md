@@ -2,8 +2,8 @@
 
 **The API client that never phones home.**
 
-An open-source Postman alternative for REST, GraphQL, and WebSocket testing —
-built for developers behind corporate firewalls.
+An open-source Postman alternative for REST, GraphQL, WebSocket, and gRPC
+testing — built for developers behind corporate firewalls.
 
 - **No account. No cloud. No registration.** Ever.
 - **No unsolicited network calls.** The only sockets ever opened are ones you

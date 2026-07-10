@@ -391,6 +391,28 @@
         </div>
       </div>
       <div class="card">
+        <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A gRPC call: a grpcurl-style command invokes a package.Service/Method and streams reply messages back.">
+          <rect width="400" height="200" fill="#0a0d12"/>
+          <g font-family="ui-monospace, Menlo, monospace" font-size="11.5">
+            <text x="24" y="40" fill="#8b949e">$ <tspan fill="#e6edf3">grpcurl -plaintext \</tspan></text>
+            <text x="44" y="60" fill="#a5d6ff">-d '{"name":"world"}' \</text>
+            <text x="44" y="80" fill="#e6edf3">localhost:50051 \</text>
+            <text x="44" y="100" fill="#39c5cf">helloworld.Greeter/SayHello</text>
+          </g>
+          <line x1="24" y1="118" x2="376" y2="118" stroke="#30363d"/>
+          <g font-family="ui-monospace, Menlo, monospace" font-size="11.5">
+            <text x="24" y="140" fill="#3fb950">&#8592; {"message":"Hello world"}</text>
+            <text x="24" y="162" fill="#8b949e">stream · #1 #2 #3 · <tspan fill="#3fb950">OK</tspan></text>
+          </g>
+          <rect x="300" y="128" width="76" height="20" rx="10" fill="#238636" stroke="#3fb950"/>
+          <text x="338" y="142" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">gRPC</text>
+        </svg>
+        <div class="card-body">
+          <h3><span class="ico">🔌</span>gRPC, the curl way</h3>
+          <p>Call unary and server-streaming gRPC methods with a grpcurl-style <code>.grpc</code> file. Bring your <code>.proto</code> files, edit the request as JSON, and read the reply (or a live stream) — schema stays local, so it works fully offline.</p>
+        </div>
+      </div>
+      <div class="card">
         <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A four-step workflow: login, create order, an expected-to-fail charge, and fetch receipt.">
           <rect width="400" height="200" fill="#0a0d12"/>
           <g font-family="-apple-system, Segoe UI, sans-serif" font-size="13.5">

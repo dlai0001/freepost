@@ -10,6 +10,7 @@ import TabBar from './components/TabBar'
 import RequestTab from './components/RequestTab'
 import WebSocketTab from './components/WebSocketTab'
 import WorkflowTab from './components/WorkflowTab'
+import GrpcTab from './components/GrpcTab'
 import PromptModal from './components/PromptModal'
 import ConfirmModal from './components/ConfirmModal'
 import ImportModal from './components/ImportModal'
@@ -176,7 +177,9 @@ function Shell(): JSX.Element {
         ? 'workflow'
         : kind === 'websocat' || path.toLowerCase().endsWith('.ws')
           ? 'websocket'
-          : 'request'
+          : kind === 'grpc' || path.toLowerCase().endsWith('.grpc')
+            ? 'grpc'
+            : 'request'
     const tab: Tab = { id: path, path, name: displayName(path), type: tabType, dirty: false }
     dispatch({ type: 'open-tab', tab })
   }
@@ -197,7 +200,14 @@ function Shell(): JSX.Element {
       setNotice('Invalid name: cannot contain < > : " / \\ | ? *')
       return
     }
-    const ext = itemKind === 'curl' ? '.curl' : itemKind === 'websocat' ? '.ws' : '.workflow.json'
+    const ext =
+      itemKind === 'curl'
+        ? '.curl'
+        : itemKind === 'websocat'
+          ? '.ws'
+          : itemKind === 'grpc'
+            ? '.grpc'
+            : '.workflow.json'
     const folderRel = folder === '.' ? '' : folder
     const rel = folderRel === '' ? `${name}${ext}` : `${folderRel}/${name}${ext}`
     const abs = joinPath(root, rel)
@@ -294,6 +304,15 @@ function Shell(): JSX.Element {
                       onDirty={(dirty) => dispatch({ type: 'set-dirty', id: tab.id, dirty })}
                     />
                   )}
+                  {tab.type === 'grpc' && (
+                    <GrpcTab
+                      ref={(h) => setTabHandle(tab.id, h)}
+                      root={state.root as string}
+                      relPath={tab.path}
+                      envPath={state.envPath}
+                      onDirty={(dirty) => dispatch({ type: 'set-dirty', id: tab.id, dirty })}
+                    />
+                  )}
                 </div>
               ))}
           </div>
@@ -344,7 +363,9 @@ function Shell(): JSX.Element {
               ? 'New Request'
               : modal.itemKind === 'websocat'
                 ? 'New WebSocket'
-                : 'New Workflow'
+                : modal.itemKind === 'grpc'
+                  ? 'New gRPC'
+                  : 'New Workflow'
           }
           label={`Name (becomes the filename${modal.folder !== '' && modal.folder !== '.' ? ` in ${modal.folder}` : ''})`}
           placeholder={modal.itemKind === 'workflow' ? 'Signup smoke test' : 'Get user by id'}

@@ -3,8 +3,8 @@
  * process, and the renderer. See PLAN.md for the format specification.
  */
 
-/** Request file type, discriminated by extension: .curl | .ws */
-export type RequestKind = 'curl' | 'websocat'
+/** Request file type, discriminated by extension: .curl | .ws | .grpc */
+export type RequestKind = 'curl' | 'websocat' | 'grpc'
 
 /** Optional per-variable metadata carried in frontmatter `variables`. */
 export interface VariableMeta {
@@ -132,6 +132,28 @@ export interface WsRequestModel {
   protocol?: string
 }
 
+/** Parsed grpcurl command (supported-flag subset; see core/format/grpc.ts). */
+export interface GrpcRequestModel {
+  /** host:port (may contain ${VAR}). */
+  target: string
+  /** Fully-qualified method, e.g. "helloworld.Greeter/SayHello". */
+  fullMethod: string
+  /** -plaintext: connect without TLS. */
+  plaintext?: boolean
+  /** -insecure: TLS without certificate verification. */
+  insecure?: boolean
+  /** -d: request message as JSON text (may contain ${VAR}). */
+  data?: string
+  /** -H metadata entries. */
+  metadata: Header[]
+  /** -proto files (collection-relative or absolute; may contain ${VAR}). */
+  protoFiles: string[]
+  /** -import-path directories for proto resolution. */
+  importPaths: string[]
+  /** -max-time seconds. */
+  maxTimeSeconds?: number
+}
+
 /** Standalone comment line in the body, preserved on rewrite. */
 export interface BodyComment {
   /** Index of the statement (assignment or command) this comment precedes;
@@ -150,6 +172,8 @@ export interface RequestFile {
   http?: HttpRequestModel
   /** Present when kind === 'websocat'. */
   ws?: WsRequestModel
+  /** Present when kind === 'grpc'. */
+  grpc?: GrpcRequestModel
   comments: BodyComment[]
 }
 

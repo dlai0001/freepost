@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Creating requests — Freepost Help</title>
-<meta name="description" content="How to create REST, GraphQL, and WebSocket requests in Freepost, send them, and read the response.">
+<meta name="description" content="How to create REST, GraphQL, WebSocket, and gRPC requests in Freepost, send them, and read the response.">
 <link rel="stylesheet" href="./style.css">
 </head>
 <body>
@@ -240,12 +240,37 @@
       </svg>
     </figure>
 
+    <h2>gRPC requests</h2>
+    <p>
+      A gRPC request is stored as an annotated <a href="https://github.com/fullstorydev/grpcurl">grpcurl</a>
+      command (<code>.grpc</code> file). Point it at a server address
+      (<code>host:50051</code>), name the method as
+      <code>package.Service/Method</code>, and give it the schema by listing one or more
+      <code>.proto</code> files (with import paths if they reference each other). The request
+      message is JSON, and <code>${VAR}</code> works in the target, message, and metadata just
+      like everywhere else.
+    </p>
+    <ul>
+      <li><strong>Unary</strong> calls use <strong>Send</strong> — the response JSON and the gRPC
+        status code come back in the response panel, and <a href="./scripting.html">test
+        scripts</a> can assert on them.</li>
+      <li><strong>Server-streaming</strong> methods use <strong>Stream</strong> — each message
+        appends to a live log until the server ends the stream (or you press <strong>Stop</strong>).</li>
+      <li><strong>plaintext</strong> connects without TLS (typical for local dev);
+        <strong>insecure TLS</strong> uses TLS but skips certificate verification.</li>
+    </ul>
+    <p>
+      Schema comes from local <code>.proto</code> files (server reflection isn't used), so the
+      files travel with your collection and everything stays offline. Client-streaming and
+      bidirectional methods aren't supported yet.
+    </p>
+
     <h2>Sending &amp; the response</h2>
     <p>
       Click <strong>Send</strong> (or the keyboard shortcut shown on hover). The response
       panel shows status code and reason, timing, size, headers, and a pretty-printed body.
-      For GraphQL subscriptions and WebSocket connections, the equivalent panel is a live,
-      auto-scrolling message log instead of a single response.
+      For GraphQL subscriptions, WebSocket connections, and gRPC server-streaming, the
+      equivalent panel is a live, auto-scrolling message log instead of a single response.
     </p>
 
     <div class="callout callout-tip">

@@ -16,7 +16,7 @@ import { buildMultipartBody, multipartContentType, type MultipartPart } from '..
 import { resolveVariables, substitute, substituteModel } from '../core/vars'
 import { runScript } from '../core/sandbox'
 import { mergeRequestHeaders } from '../core/config'
-import { sendHttp, CookieJar, refreshToken, shouldBypassProxy } from '../engine'
+import { sendHttp, sendGrpcUnary, CookieJar, refreshToken, shouldBypassProxy } from '../engine'
 import { ensureFreepostDir } from './collection'
 import { isExpired, readCachedToken, writeCachedToken } from './oauth-cache'
 import { resolveConfigChain } from './config-resolve'
@@ -89,8 +89,8 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
     errored: false
   }
 
-  if (kind !== 'curl') {
-    return { ...report, errored: true, transportError: 'Not an HTTP request file (.curl)' }
+  if (kind !== 'curl' && kind !== 'grpc') {
+    return { ...report, errored: true, transportError: 'Not a one-shot request file (.curl/.grpc)' }
   }
 
   let file: RequestFile
@@ -110,6 +110,9 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
     }
     file = parsed.file
   }
+
+  if (kind === 'grpc') return executeGrpc(args, file, report)
+
   const http = file.http
   if (http === undefined) {
     return { ...report, errored: true, transportError: 'File has no HTTP command' }
@@ -353,6 +356,137 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
     url: resolved.url,
     status: response?.status,
     timeMs: response?.timeMs,
+    errored: report.errored
+  })
+  return report
+}
+
+/** Resolve a proto path: absolute untouched, else relative to the request dir. */
+function resolveProtoPath(requestDir: string, p: string): string {
+  return isAbsolute(p) ? p : join(requestDir, p)
+}
+
+/**
+ * Execute a unary gRPC (.grpc) request: pre-scripts -> resolve -> invoke ->
+ * test-scripts. The gRPC response is mapped onto the same HttpResponseModel /
+ * ExecutionReport shape the rest of the app uses (OK -> 200, error -> 500 with
+ * the status code name in statusText), so pm.* scripts, history, and the CLI
+ * reporter all work uniformly. Server-streaming methods aren't one-shot and are
+ * handled by the streaming client (IPC), not here.
+ */
+async function executeGrpc(
+  args: ExecuteArgs,
+  file: RequestFile,
+  report: ExecutionReport
+): Promise<ExecutionReport> {
+  const { root, path, session } = args
+  const abs = join(root, path)
+  const grpcModel = file.grpc
+  if (grpcModel === undefined) {
+    return { ...report, errored: true, transportError: 'File has no grpcurl command' }
+  }
+  const env = readEnvFile(root, args.envPath)
+  const sessionObj = Object.fromEntries(session)
+  const requestName = path.split('/').pop() ?? path
+  const { config: cfg } = await resolveConfigChain(root, path)
+
+  // Pre-request scripts (request shape: method=fullMethod, url=target).
+  const preScripts = [
+    ...cfg.preScripts,
+    ...(file.frontmatter.scripts?.['pre-request']
+      ? [{ source: file.frontmatter.scripts['pre-request'], origin: requestName }]
+      : [])
+  ]
+  const preOutcomes: import('../shared/model').ScriptOutcome[] = []
+  for (const s of preScripts) {
+    if (s.source.trim() === '') continue
+    const pre = await runScript({
+      source: s.source,
+      phase: 'pre-request',
+      request: { method: grpcModel.fullMethod, url: grpcModel.target, headers: grpcModel.metadata },
+      session: sessionObj,
+      env,
+      requestName,
+      sendRequest: (r) => sandboxSend(r, args)
+    })
+    preOutcomes.push(pre)
+    for (const [k, v] of Object.entries(pre.sessionWrites)) {
+      session.set(k, v)
+      sessionObj[k] = v
+    }
+    if (pre.error !== undefined) report.errored = true
+  }
+  if (preOutcomes.length > 0) report.preScript = mergeOutcomes(preOutcomes)
+
+  const { values, unresolved } = resolveVariables(file.variables, sessionObj, env)
+  if (unresolved.length > 0) return { ...report, unresolved, errored: true }
+
+  const requestDir = dirname(abs)
+  const target = substitute(grpcModel.target, values)
+  const fullMethod = substitute(grpcModel.fullMethod, values)
+  const data = grpcModel.data !== undefined ? substitute(grpcModel.data, values) : undefined
+  const metadata = grpcModel.metadata.map((h) => ({ name: h.name, value: substitute(h.value, values) }))
+  const protoFiles = grpcModel.protoFiles.map((p) => resolveProtoPath(requestDir, substitute(p, values)))
+  const importPaths = grpcModel.importPaths.map((p) => resolveProtoPath(requestDir, substitute(p, values)))
+  report.resolvedUrl = `${target} ${fullMethod}`
+  report.resolvedRequest = { method: fullMethod, url: target, headers: metadata, body: data }
+
+  const grpcRes = await sendGrpcUnary({
+    target,
+    fullMethod,
+    data,
+    metadata,
+    protoFiles,
+    importPaths,
+    plaintext: grpcModel.plaintext,
+    insecure: grpcModel.insecure,
+    deadlineMs: grpcModel.maxTimeSeconds !== undefined ? grpcModel.maxTimeSeconds * 1000 : undefined
+  })
+
+  const response: HttpResponseModel = {
+    status: grpcRes.code === 0 ? 200 : 500,
+    statusText: grpcRes.codeName,
+    headers: grpcRes.metadata,
+    bodyText: grpcRes.message,
+    timeMs: grpcRes.timeMs,
+    sizeBytes: Buffer.byteLength(grpcRes.message)
+  }
+  report.response = response
+  if (grpcRes.code !== 0) report.errored = true
+
+  // Test scripts (request's own first, then inherited).
+  const testScripts = [
+    ...(file.frontmatter.scripts?.test
+      ? [{ source: file.frontmatter.scripts.test, origin: requestName }]
+      : []),
+    ...cfg.testScripts
+  ]
+  const testOutcomes: import('../shared/model').ScriptOutcome[] = []
+  for (const s of testScripts) {
+    if (s.source.trim() === '') continue
+    const test = await runScript({
+      source: s.source,
+      phase: 'test',
+      request: { method: fullMethod, url: target, headers: metadata },
+      response,
+      session: sessionObj,
+      env,
+      requestName,
+      sendRequest: (r) => sandboxSend(r, args)
+    })
+    testOutcomes.push(test)
+    for (const [k, v] of Object.entries(test.sessionWrites)) session.set(k, v)
+    if (test.error !== undefined || test.tests.some((t) => !t.passed)) report.errored = true
+  }
+  if (testOutcomes.length > 0) report.testScript = mergeOutcomes(testOutcomes)
+
+  appendHistory(root, {
+    at: new Date().toISOString(),
+    path,
+    method: fullMethod,
+    url: target,
+    status: response.status,
+    timeMs: response.timeMs,
     errored: report.errored
   })
   return report

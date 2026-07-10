@@ -693,3 +693,20 @@ td .var-input.cell-var { width: 100%; }
 .wf-iterations { margin: 8px 12px 0; padding: 8px 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; }
 .wf-iterations-title { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 4px; }
 .wf-iteration { font-size: 12px; padding: 2px 0; color: var(--text); }
+
+/* ------------------------------- gRPC tab -------------------------------- */
+.grpc-tab { display: flex; flex-direction: column; gap: 8px; padding: 12px; overflow-y: auto; height: 100%; }
+.grpc-bar { display: flex; gap: 8px; align-items: center; }
+.grpc-target { flex: 1; }
+.grpc-method { flex: 1.4; }
+.grpc-opts { display: flex; gap: 16px; align-items: center; font-size: 12px; color: var(--muted); }
+.grpc-opts label { display: inline-flex; align-items: center; gap: 4px; }
+.grpc-maxtime .cell-input { width: 70px; margin-left: 6px; }
+.grpc-data { width: 100%; resize: vertical; }
+.grpc-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+.grpc-grid textarea { width: 100%; resize: vertical; }
+.grpc-response { margin-top: 6px; }
+.grpc-response-body {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+  padding: 8px 10px; max-height: 40vh; overflow: auto; white-space: pre-wrap; font-size: 12px;
+}

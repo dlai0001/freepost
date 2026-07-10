@@ -46,6 +46,7 @@ import {
 } from '../core/graphql/introspection'
 import {
   acquireToken,
+  GrpcStreamClient,
   MockServer,
   sendHttp,
   startAuthorizationCodeFlow,
@@ -77,6 +78,9 @@ let oauthFlowCounter = 0
 const oauthFlows = new Map<string, () => void>()
 /** One running mock server per collection root. */
 const mockServers = new Map<string, MockServer>()
+let grpcStreamCounter = 0
+/** Active server-streaming gRPC calls by id → client. */
+const grpcStreams = new Map<string, GrpcStreamClient>()
 
 /** Map an http(s) endpoint to its ws(s) equivalent for the WebSocket transport. */
 function toWsUrl(url: string): string {
@@ -180,6 +184,21 @@ const STARTERS: Record<RequestKind, RequestFile> = {
     frontmatter: { messages: { ping: '{"op":"ping"}' } },
     variables: [{ name: 'WS_URL', defaultValue: 'ws://localhost:8080', required: false }],
     ws: { url: '${WS_URL}', headers: [] },
+    comments: []
+  },
+  grpc: {
+    kind: 'grpc',
+    frontmatter: { description: '' },
+    variables: [{ name: 'GRPC_TARGET', defaultValue: 'localhost:50051', required: false }],
+    grpc: {
+      target: '${GRPC_TARGET}',
+      fullMethod: 'package.Service/Method',
+      plaintext: true,
+      data: '{}',
+      metadata: [],
+      protoFiles: [],
+      importPaths: []
+    },
     comments: []
   }
 }
@@ -462,6 +481,61 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.wsClose, (_e, id: string) => {
     wsClients.get(id)?.close()
     wsClients.delete(id)
+  })
+
+  // ---- gRPC server-streaming ----
+  ipcMain.handle(
+    IPC.grpcStreamStart,
+    async (_e, args: { root: string; path: string; envPath?: string; model?: RequestFile }) => {
+      const abs = join(args.root, args.path)
+      let file: RequestFile
+      if (args.model !== undefined) {
+        file = args.model
+      } else {
+        const raw = await fs.readFile(abs, 'utf8')
+        const parsed = parseRequestFile(raw, 'grpc')
+        if (!parsed.ok) throw new Error('Cannot parse gRPC request file')
+        file = parsed.file
+      }
+      const g = file.grpc
+      if (g === undefined) throw new Error('File has no grpcurl command')
+      const env = readEnvFile(args.root, args.envPath)
+      const { values, unresolved } = resolveVariables(file.variables, Object.fromEntries(session), env)
+      if (unresolved.length > 0) throw new Error(`Unresolved required variables: ${unresolved.join(', ')}`)
+      const dir = dirname(abs)
+      const resolveProto = (p: string): string =>
+        isAbsolute(substitute(p, values)) ? substitute(p, values) : join(dir, substitute(p, values))
+
+      const id = `grpc${++grpcStreamCounter}`
+      const client = new GrpcStreamClient()
+      grpcStreams.set(id, client)
+      client
+        .on('data', (data: string) => broadcast(IPC.grpcStreamEvent, { id, type: 'data', data }))
+        .on('error', (err: Error) => {
+          broadcast(IPC.grpcStreamEvent, { id, type: 'error', data: err.message })
+          grpcStreams.delete(id)
+        })
+        .on('end', () => {
+          broadcast(IPC.grpcStreamEvent, { id, type: 'end' })
+          grpcStreams.delete(id)
+        })
+      client.start({
+        target: substitute(g.target, values),
+        fullMethod: substitute(g.fullMethod, values),
+        data: g.data !== undefined ? substitute(g.data, values) : undefined,
+        metadata: g.metadata.map((h) => ({ name: h.name, value: substitute(h.value, values) })),
+        protoFiles: g.protoFiles.map(resolveProto),
+        importPaths: g.importPaths.map(resolveProto),
+        plaintext: g.plaintext,
+        insecure: g.insecure,
+        deadlineMs: g.maxTimeSeconds !== undefined ? g.maxTimeSeconds * 1000 : undefined
+      })
+      return { id }
+    }
+  )
+  ipcMain.handle(IPC.grpcStreamCancel, (_e, id: string) => {
+    grpcStreams.get(id)?.cancel()
+    grpcStreams.delete(id)
   })
 
   ipcMain.handle(

@@ -34,6 +34,8 @@
     "verify": "npm run typecheck && npm run test && npm run fence && npm run build && npm run build:cli"
   },
   "dependencies": {
+    "@grpc/grpc-js": "^1.14.4",
+    "@grpc/proto-loader": "^0.7.15",
     "chai": "^6.2.2",
     "cm6-graphql": "^0.2.1",
     "graphql": "^16.14.2",

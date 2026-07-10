@@ -12,6 +12,7 @@ import type {
   BodyComment,
   FormField,
   Frontmatter,
+  GrpcRequestModel,
   HttpRequestModel,
   RequestFile,
   VariableDecl,
@@ -107,6 +108,21 @@ function websocatLines(ws: WsRequestModel): string[] {
   return commandBlock(`websocat ${quoteShellValue(ws.url)}`, flags)
 }
 
+function grpcLines(grpc: GrpcRequestModel): string[] {
+  const flags: string[] = []
+  if (grpc.plaintext) flags.push('-plaintext')
+  if (grpc.insecure) flags.push('-insecure')
+  for (const p of grpc.importPaths) flags.push(`-import-path ${quoteShellValue(p)}`)
+  for (const f of grpc.protoFiles) flags.push(`-proto ${quoteShellValue(f)}`)
+  for (const h of grpc.metadata) flags.push(`-H ${quoteShellValue(`${h.name}: ${h.value}`)}`)
+  if (grpc.data !== undefined) flags.push(`-d ${quoteShellValue(grpc.data)}`)
+  if (grpc.maxTimeSeconds !== undefined) flags.push(`-max-time ${grpc.maxTimeSeconds}`)
+  // Positionals last: target address, then the fully-qualified method.
+  flags.push(quoteShellValue(grpc.target))
+  flags.push(quoteShellValue(grpc.fullMethod))
+  return commandBlock('grpcurl', flags)
+}
+
 export function writeRequestFile(file: RequestFile): string {
   const out: string[] = ['#!/usr/bin/env bash']
 
@@ -139,6 +155,9 @@ export function writeRequestFile(file: RequestFile): string {
   if (file.kind === 'curl') {
     if (!file.http) throw new Error('writeRequestFile: kind "curl" requires the http model')
     out.push(...curlLines(file.http, file.frontmatter))
+  } else if (file.kind === 'grpc') {
+    if (!file.grpc) throw new Error('writeRequestFile: kind "grpc" requires the grpc model')
+    out.push(...grpcLines(file.grpc))
   } else {
     if (!file.ws) throw new Error('writeRequestFile: kind "websocat" requires the ws model')
     out.push(...websocatLines(file.ws))

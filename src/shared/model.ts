@@ -3,8 +3,8 @@
  * process, and the renderer. See PLAN.md for the format specification.
  */
 
-/** Request file type, discriminated by extension: .curl | .ws | .grpc */
-export type RequestKind = 'curl' | 'websocat' | 'grpc'
+/** Request file type, discriminated by extension: .curl | .ws | .grpc | .mqtt */
+export type RequestKind = 'curl' | 'websocat' | 'grpc' | 'mqtt'
 
 /** Optional per-variable metadata carried in frontmatter `variables`. */
 export interface VariableMeta {
@@ -154,6 +154,34 @@ export interface GrpcRequestModel {
   maxTimeSeconds?: number
 }
 
+/** Publish or subscribe, inferred from mosquitto_pub / mosquitto_sub. */
+export type MqttMode = 'publish' | 'subscribe'
+
+/** Parsed mosquitto_pub / mosquitto_sub command (supported-flag subset). */
+export interface MqttRequestModel {
+  mode: MqttMode
+  /** Broker host (-h). May contain ${VAR}. */
+  host: string
+  /** Broker port (-p). Default 1883. */
+  port?: number
+  /** Topic (-t). Publish: exact; subscribe: may use +/# wildcards. */
+  topic: string
+  /** QoS 0|1|2 (-q). */
+  qos?: number
+  /** -r retain (publish). */
+  retain?: boolean
+  /** Message payload (-m), publish only. May contain ${VAR}. */
+  message?: string
+  /** Client id (-i). */
+  clientId?: string
+  /** Username (-u). */
+  username?: string
+  /** Password (-P). */
+  password?: string
+  /** --cafile: trust this CA (enables TLS). May contain ${VAR}. */
+  caFile?: string
+}
+
 /** Standalone comment line in the body, preserved on rewrite. */
 export interface BodyComment {
   /** Index of the statement (assignment or command) this comment precedes;
@@ -174,6 +202,8 @@ export interface RequestFile {
   ws?: WsRequestModel
   /** Present when kind === 'grpc'. */
   grpc?: GrpcRequestModel
+  /** Present when kind === 'mqtt'. */
+  mqtt?: MqttRequestModel
   comments: BodyComment[]
 }
 

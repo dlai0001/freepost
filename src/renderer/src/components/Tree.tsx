@@ -3,7 +3,7 @@ import { useState } from 'react'
 import type { TreeNode } from '../../../shared/model'
 import MethodBadge from './MethodBadge'
 
-export type NewItemKind = 'curl' | 'websocat' | 'grpc' | 'workflow'
+export type NewItemKind = 'curl' | 'websocat' | 'grpc' | 'mqtt' | 'workflow'
 
 interface TreeCtx {
   methods: Record<string, string>
@@ -129,6 +129,15 @@ function FolderView({
               }}
             >
               New gRPC (.grpc)
+            </button>
+            <button
+              className="menu-item"
+              onClick={() => {
+                ctx.setMenuPath(null)
+                ctx.onNewItem(node.path, 'mqtt')
+              }}
+            >
+              New MQTT (.mqtt)
             </button>
             <button
               className="menu-item"

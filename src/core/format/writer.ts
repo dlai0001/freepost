@@ -14,6 +14,7 @@ import type {
   Frontmatter,
   GrpcRequestModel,
   HttpRequestModel,
+  MqttRequestModel,
   RequestFile,
   VariableDecl,
   WsRequestModel,
@@ -123,6 +124,23 @@ function grpcLines(grpc: GrpcRequestModel): string[] {
   return commandBlock('grpcurl', flags)
 }
 
+function mqttLines(mqtt: MqttRequestModel): string[] {
+  const flags: string[] = [`-h ${quoteShellValue(mqtt.host)}`]
+  if (mqtt.port !== undefined) flags.push(`-p ${mqtt.port}`)
+  flags.push(`-t ${quoteShellValue(mqtt.topic)}`)
+  if (mqtt.qos !== undefined) flags.push(`-q ${mqtt.qos}`)
+  if (mqtt.retain) flags.push('-r')
+  if (mqtt.clientId !== undefined) flags.push(`-i ${quoteShellValue(mqtt.clientId)}`)
+  if (mqtt.username !== undefined) flags.push(`-u ${quoteShellValue(mqtt.username)}`)
+  if (mqtt.password !== undefined) flags.push(`-P ${quoteShellValue(mqtt.password)}`)
+  if (mqtt.caFile !== undefined) flags.push(`--cafile ${quoteShellValue(mqtt.caFile)}`)
+  if (mqtt.mode === 'publish' && mqtt.message !== undefined) {
+    flags.push(`-m ${quoteShellValue(mqtt.message)}`)
+  }
+  const cmd = mqtt.mode === 'publish' ? 'mosquitto_pub' : 'mosquitto_sub'
+  return commandBlock(cmd, flags)
+}
+
 export function writeRequestFile(file: RequestFile): string {
   const out: string[] = ['#!/usr/bin/env bash']
 
@@ -158,6 +176,9 @@ export function writeRequestFile(file: RequestFile): string {
   } else if (file.kind === 'grpc') {
     if (!file.grpc) throw new Error('writeRequestFile: kind "grpc" requires the grpc model')
     out.push(...grpcLines(file.grpc))
+  } else if (file.kind === 'mqtt') {
+    if (!file.mqtt) throw new Error('writeRequestFile: kind "mqtt" requires the mqtt model')
+    out.push(...mqttLines(file.mqtt))
   } else {
     if (!file.ws) throw new Error('writeRequestFile: kind "websocat" requires the ws model')
     out.push(...websocatLines(file.ws))

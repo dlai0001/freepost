@@ -48,6 +48,8 @@ import {
   acquireToken,
   GrpcStreamClient,
   MockServer,
+  MqttSubscribeClient,
+  mqttConnectArgs,
   sendHttp,
   startAuthorizationCodeFlow,
   subscribeGraphql,
@@ -81,6 +83,9 @@ const mockServers = new Map<string, MockServer>()
 let grpcStreamCounter = 0
 /** Active server-streaming gRPC calls by id → client. */
 const grpcStreams = new Map<string, GrpcStreamClient>()
+let mqttSubCounter = 0
+/** Active MQTT subscriptions by id → client. */
+const mqttSubs = new Map<string, MqttSubscribeClient>()
 
 /** Map an http(s) endpoint to its ws(s) equivalent for the WebSocket transport. */
 function toWsUrl(url: string): string {
@@ -198,6 +203,19 @@ const STARTERS: Record<RequestKind, RequestFile> = {
       metadata: [],
       protoFiles: [],
       importPaths: []
+    },
+    comments: []
+  },
+  mqtt: {
+    kind: 'mqtt',
+    frontmatter: { description: '' },
+    variables: [{ name: 'MQTT_HOST', defaultValue: 'localhost', required: false }],
+    mqtt: {
+      mode: 'publish',
+      host: '${MQTT_HOST}',
+      port: 1883,
+      topic: 'freepost/demo',
+      message: 'hello'
     },
     comments: []
   }
@@ -536,6 +554,54 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.grpcStreamCancel, (_e, id: string) => {
     grpcStreams.get(id)?.cancel()
     grpcStreams.delete(id)
+  })
+
+  // ---- MQTT subscribe ----
+  ipcMain.handle(
+    IPC.mqttSubscribe,
+    async (_e, args: { root: string; path: string; envPath?: string; model?: RequestFile }) => {
+      let file: RequestFile
+      if (args.model !== undefined) {
+        file = args.model
+      } else {
+        const raw = await fs.readFile(join(args.root, args.path), 'utf8')
+        const parsed = parseRequestFile(raw, 'mqtt')
+        if (!parsed.ok) throw new Error('Cannot parse MQTT request file')
+        file = parsed.file
+      }
+      const m = file.mqtt
+      if (m === undefined) throw new Error('File has no mosquitto command')
+      const env = readEnvFile(args.root, args.envPath)
+      const { values, unresolved } = resolveVariables(file.variables, Object.fromEntries(session), env)
+      if (unresolved.length > 0) throw new Error(`Unresolved required variables: ${unresolved.join(', ')}`)
+
+      const id = `mqtt${++mqttSubCounter}`
+      const client = new MqttSubscribeClient()
+      mqttSubs.set(id, client)
+      client
+        .on('open', () => broadcast(IPC.mqttEvent, { id, type: 'open' }))
+        .on('message', (msg: { topic: string; payload: string }) =>
+          broadcast(IPC.mqttEvent, { id, type: 'message', topic: msg.topic, data: msg.payload })
+        )
+        .on('error', (err: Error) => broadcast(IPC.mqttEvent, { id, type: 'error', data: err.message }))
+        .on('close', () => {
+          broadcast(IPC.mqttEvent, { id, type: 'close' })
+          mqttSubs.delete(id)
+        })
+      client.connect({
+        ...mqttConnectArgs(m),
+        host: substitute(m.host, values),
+        username: m.username !== undefined ? substitute(m.username, values) : undefined,
+        password: m.password !== undefined ? substitute(m.password, values) : undefined,
+        topic: substitute(m.topic, values),
+        qos: m.qos
+      })
+      return { id }
+    }
+  )
+  ipcMain.handle(IPC.mqttUnsubscribe, (_e, id: string) => {
+    mqttSubs.get(id)?.close()
+    mqttSubs.delete(id)
   })
 
   ipcMain.handle(

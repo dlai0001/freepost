@@ -97,6 +97,10 @@ export const IPC = {
   grpcStreamCancel: 'grpc:stream-cancel', // (id) => void
   grpcStreamEvent: 'grpc:stream-event', // main -> renderer event ({ id, type: 'data'|'error'|'end', data? })
 
+  mqttSubscribe: 'mqtt:subscribe', // ({ root, path, envPath?, model? }) => { id }
+  mqttUnsubscribe: 'mqtt:unsubscribe', // (id) => void
+  mqttEvent: 'mqtt:event', // main -> renderer event ({ id, type: 'open'|'message'|'error'|'close', topic?, data? })
+
   gqlIntrospect: 'gql:introspect', // ({ root, path, envPath? }) => { schema: GqlSchemaSummary } | { error }
   gqlSubscribe: 'gql:subscribe', // ({ root, path, envPath?, query, variables?, url?, transport? }) => { id }
   gqlUnsubscribe: 'gql:unsubscribe', // (id) => void
@@ -133,7 +137,7 @@ export interface FreepostApi {
     strict?: boolean
     kind?: RequestKind
   }): Promise<ParseCommandResult>
-  createRequest(absPath: string, kind: 'curl' | 'websocat' | 'grpc'): Promise<void>
+  createRequest(absPath: string, kind: 'curl' | 'websocat' | 'grpc' | 'mqtt'): Promise<void>
   renameRequest(absPath: string, newAbsPath: string): Promise<void>
   deleteRequest(absPath: string): Promise<void>
   executeRequest(args: {
@@ -286,6 +290,23 @@ export interface FreepostApi {
   cancelGrpcStream(id: string): Promise<void>
   onGrpcStreamEvent(
     cb: (e: { id: string; type: 'data' | 'error' | 'end'; data?: string }) => void
+  ): () => void
+
+  /** Subscribe to an MQTT topic. Streams via `onMqttEvent`. */
+  subscribeMqtt(args: {
+    root: string
+    path: string
+    envPath?: string
+    model?: RequestFile
+  }): Promise<{ id: string }>
+  unsubscribeMqtt(id: string): Promise<void>
+  onMqttEvent(
+    cb: (e: {
+      id: string
+      type: 'open' | 'message' | 'error' | 'close'
+      topic?: string
+      data?: string
+    }) => void
   ): () => void
 
   /** Native file picker for a CSV/JSON data file; returns the chosen path or null. */

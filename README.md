@@ -2,8 +2,8 @@
 
 **The API client that never phones home.**
 
-An open-source Postman alternative for REST, GraphQL, WebSocket, and gRPC
-testing — built for developers behind corporate firewalls.
+An open-source Postman alternative for REST, GraphQL, WebSocket, gRPC, and
+MQTT testing — built for developers behind corporate firewalls.
 
 - **No account. No cloud. No registration.** Ever.
 - **No unsolicited network calls.** The only sockets ever opened are ones you
@@ -18,6 +18,9 @@ testing — built for developers behind corporate firewalls.
   API and Chai assertions.
 - **Workflows.** Ordered request runs with expect-error steps and reference
   validation.
+- **Run headlessly in CI.** `freepost run ./collection` executes the same files
+  with the same engine — the Newman analog. `freepost mock ./collection` serves
+  your saved examples as a local server. See [the CLI guide](https://dlai0001.github.io/freepost/help/cli.html).
 - **Builds from source on Windows and macOS.** Node is the only prerequisite.
 
 ## An example request file

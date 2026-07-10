@@ -24,3 +24,12 @@ export { MockServer } from './mock-server'
 export type { MockState, MockStartArgs, MockServerEvents } from './mock-server'
 export { sendGrpcUnary, GrpcStreamClient } from './grpc'
 export type { GrpcCallArgs, GrpcResponse, GrpcStreamState, GrpcStreamEvents } from './grpc'
+export { publishMqtt, MqttSubscribeClient, mqttConnectArgs } from './mqtt'
+export type {
+  MqttPublishArgs,
+  MqttPublishResult,
+  MqttSubscribeArgs,
+  MqttSubState,
+  MqttSubEvents,
+  MqttMessage
+} from './mqtt'

@@ -11,6 +11,7 @@ import { parseBody } from './shell'
 import { mapCurlCommand } from './curl'
 import { mapWebsocatCommand } from './websocat'
 import { mapGrpcurlCommand } from './grpc'
+import { mapMosquittoCommand } from './mqtt'
 
 export { writeRequestFile, quoteShellValue } from './writer'
 export { extractFrontmatter, serializeFrontmatter } from './frontmatter'
@@ -18,6 +19,7 @@ export { parseBody, tokenizeCommandText } from './shell'
 export { mapCurlCommand } from './curl'
 export { mapWebsocatCommand } from './websocat'
 export { mapGrpcurlCommand } from './grpc'
+export { mapMosquittoCommand } from './mqtt'
 
 const stripCr = (s: string): string => (s.endsWith('\r') ? s.slice(0, -1) : s)
 
@@ -26,12 +28,25 @@ export function requestKindForPath(path: string): RequestKind | null {
   if (path.endsWith('.curl')) return 'curl'
   if (path.endsWith('.ws')) return 'websocat'
   if (path.endsWith('.grpc')) return 'grpc'
+  if (path.endsWith('.mqtt')) return 'mqtt'
   return null
 }
 
-/** The command name expected at the head of a request body for each kind. */
-function expectedCommand(kind: RequestKind): string {
-  return kind === 'curl' ? 'curl' : kind === 'websocat' ? 'websocat' : 'grpcurl'
+/**
+ * Head command(s) allowed for each kind. MQTT accepts two (pub/sub); the
+ * mapper picks the mode from whichever is present.
+ */
+function allowedCommands(kind: RequestKind): string[] {
+  switch (kind) {
+    case 'curl':
+      return ['curl']
+    case 'websocat':
+      return ['websocat']
+    case 'grpc':
+      return ['grpcurl']
+    case 'mqtt':
+      return ['mosquitto_pub', 'mosquitto_sub']
+  }
 }
 
 export function parseRequestFile(raw: string, kind: RequestKind): ParseResult {
@@ -48,15 +63,15 @@ export function parseRequestFile(raw: string, kind: RequestKind): ParseResult {
   if (!body.ok) return body
   const { argv, variables, comments } = body.body
 
-  const expected = expectedCommand(kind)
+  const allowed = allowedCommands(kind)
   const head = argv[0]
-  if (head.text !== expected) {
+  if (!allowed.includes(head.text)) {
     return {
       ok: false,
       errors: [
         {
           line: head.line,
-          message: `command "${head.text}" does not match the file kind: expected a ${expected} invocation`,
+          message: `command "${head.text}" does not match the file kind: expected a ${allowed.join(' or ')} invocation`,
         },
       ],
     }
@@ -73,6 +88,13 @@ export function parseRequestFile(raw: string, kind: RequestKind): ParseResult {
     const mapped = mapGrpcurlCommand(argv)
     if (!mapped.ok) return mapped
     const file: RequestFile = { kind, frontmatter: fm.frontmatter, variables, comments, grpc: mapped.grpc }
+    return { ok: true, file }
+  }
+
+  if (kind === 'mqtt') {
+    const mapped = mapMosquittoCommand(argv)
+    if (!mapped.ok) return mapped
+    const file: RequestFile = { kind, frontmatter: fm.frontmatter, variables, comments, mqtt: mapped.mqtt }
     return { ok: true, file }
   }
 

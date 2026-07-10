@@ -16,7 +16,15 @@ import { buildMultipartBody, multipartContentType, type MultipartPart } from '..
 import { resolveVariables, substitute, substituteModel } from '../core/vars'
 import { runScript } from '../core/sandbox'
 import { mergeRequestHeaders } from '../core/config'
-import { sendHttp, sendGrpcUnary, CookieJar, refreshToken, shouldBypassProxy } from '../engine'
+import {
+  sendHttp,
+  sendGrpcUnary,
+  publishMqtt,
+  mqttConnectArgs,
+  CookieJar,
+  refreshToken,
+  shouldBypassProxy
+} from '../engine'
 import { ensureFreepostDir } from './collection'
 import { isExpired, readCachedToken, writeCachedToken } from './oauth-cache'
 import { resolveConfigChain } from './config-resolve'
@@ -89,8 +97,8 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
     errored: false
   }
 
-  if (kind !== 'curl' && kind !== 'grpc') {
-    return { ...report, errored: true, transportError: 'Not a one-shot request file (.curl/.grpc)' }
+  if (kind !== 'curl' && kind !== 'grpc' && kind !== 'mqtt') {
+    return { ...report, errored: true, transportError: 'Not a one-shot request file (.curl/.grpc/.mqtt)' }
   }
 
   let file: RequestFile
@@ -112,6 +120,7 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
   }
 
   if (kind === 'grpc') return executeGrpc(args, file, report)
+  if (kind === 'mqtt') return executeMqtt(args, file, report)
 
   const http = file.http
   if (http === undefined) {
@@ -485,6 +494,139 @@ async function executeGrpc(
     path,
     method: fullMethod,
     url: target,
+    status: response.status,
+    timeMs: response.timeMs,
+    errored: report.errored
+  })
+  return report
+}
+
+/**
+ * Execute a one-shot MQTT publish (.mqtt in publish mode): pre-scripts ->
+ * resolve -> publish -> test-scripts. The publish result is mapped onto the
+ * shared ExecutionReport (success -> 200, failure -> 500). Subscribe-mode files
+ * are long-lived and handled by the streaming client (IPC), not here.
+ */
+async function executeMqtt(
+  args: ExecuteArgs,
+  file: RequestFile,
+  report: ExecutionReport
+): Promise<ExecutionReport> {
+  const { root, path, session } = args
+  const abs = join(root, path)
+  const m = file.mqtt
+  if (m === undefined) {
+    return { ...report, errored: true, transportError: 'File has no mosquitto command' }
+  }
+  if (m.mode !== 'publish') {
+    return {
+      ...report,
+      errored: true,
+      transportError: 'MQTT subscribe is not one-shot runnable; connect from the app instead'
+    }
+  }
+  const env = readEnvFile(root, args.envPath)
+  const sessionObj = Object.fromEntries(session)
+  const requestName = path.split('/').pop() ?? path
+  const { config: cfg } = await resolveConfigChain(root, path)
+
+  const preScripts = [
+    ...cfg.preScripts,
+    ...(file.frontmatter.scripts?.['pre-request']
+      ? [{ source: file.frontmatter.scripts['pre-request'], origin: requestName }]
+      : [])
+  ]
+  const preOutcomes: import('../shared/model').ScriptOutcome[] = []
+  for (const s of preScripts) {
+    if (s.source.trim() === '') continue
+    const pre = await runScript({
+      source: s.source,
+      phase: 'pre-request',
+      request: { method: 'PUBLISH', url: `${m.host}/${m.topic}`, headers: [] },
+      session: sessionObj,
+      env,
+      requestName,
+      sendRequest: (r) => sandboxSend(r, args)
+    })
+    preOutcomes.push(pre)
+    for (const [k, v] of Object.entries(pre.sessionWrites)) {
+      session.set(k, v)
+      sessionObj[k] = v
+    }
+    if (pre.error !== undefined) report.errored = true
+  }
+  if (preOutcomes.length > 0) report.preScript = mergeOutcomes(preOutcomes)
+
+  const { values, unresolved } = resolveVariables(file.variables, sessionObj, env)
+  if (unresolved.length > 0) return { ...report, unresolved, errored: true }
+
+  const host = substitute(m.host, values)
+  const topic = substitute(m.topic, values)
+  const message = m.message !== undefined ? substitute(m.message, values) : ''
+  const caFile =
+    m.caFile !== undefined ? resolveCertPath(dirname(abs), substitute(m.caFile, values)) : undefined
+  report.resolvedUrl = `${host}/${topic}`
+  report.resolvedRequest = { method: 'PUBLISH', url: `${host}/${topic}`, headers: [], body: message }
+
+  const result = await publishMqtt({
+    ...mqttConnectArgs(m),
+    host,
+    caFile,
+    username: m.username !== undefined ? substitute(m.username, values) : undefined,
+    password: m.password !== undefined ? substitute(m.password, values) : undefined,
+    topic,
+    message,
+    qos: m.qos,
+    retain: m.retain
+  })
+
+  const bodyText = result.ok
+    ? JSON.stringify({ published: true, topic }, null, 2)
+    : JSON.stringify({ error: result.error }, null, 2)
+  const response: HttpResponseModel = {
+    status: result.ok ? 200 : 500,
+    statusText: result.ok ? 'PUBLISHED' : 'ERROR',
+    headers: [],
+    bodyText,
+    timeMs: result.timeMs,
+    sizeBytes: Buffer.byteLength(bodyText)
+  }
+  report.response = response
+  if (!result.ok) {
+    report.errored = true
+    report.transportError = result.error
+  }
+
+  const testScripts = [
+    ...(file.frontmatter.scripts?.test
+      ? [{ source: file.frontmatter.scripts.test, origin: requestName }]
+      : []),
+    ...cfg.testScripts
+  ]
+  const testOutcomes: import('../shared/model').ScriptOutcome[] = []
+  for (const s of testScripts) {
+    if (s.source.trim() === '') continue
+    const test = await runScript({
+      source: s.source,
+      phase: 'test',
+      request: { method: 'PUBLISH', url: `${host}/${topic}`, headers: [] },
+      response,
+      session: sessionObj,
+      env,
+      requestName,
+      sendRequest: (r) => sandboxSend(r, args)
+    })
+    testOutcomes.push(test)
+    for (const [k, v] of Object.entries(test.sessionWrites)) session.set(k, v)
+    if (test.error !== undefined || test.tests.some((t) => !t.passed)) report.errored = true
+  }
+  if (testOutcomes.length > 0) report.testScript = mergeOutcomes(testOutcomes)
+
+  appendHistory(root, {
+    at: new Date().toISOString(),
+    path,
+    method: 'PUBLISH',
+    url: `${host}/${topic}`,
     status: response.status,
     timeMs: response.timeMs,
     errored: report.errored

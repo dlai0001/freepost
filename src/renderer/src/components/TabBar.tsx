@@ -12,7 +12,8 @@ const TYPE_ICON: Record<Tab['type'], string> = {
   request: '',
   websocket: 'WS ',
   workflow: '▶ ',
-  grpc: 'gRPC '
+  grpc: 'gRPC ',
+  mqtt: 'MQTT '
 }
 
 export default function TabBar(props: Props): JSX.Element {

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Creating requests — Freepost Help</title>
-<meta name="description" content="How to create REST, GraphQL, WebSocket, and gRPC requests in Freepost, send them, and read the response.">
+<meta name="description" content="How to create REST, GraphQL, WebSocket, gRPC, and MQTT requests in Freepost, send them, and read the response.">
 <link rel="stylesheet" href="./style.css">
 </head>
 <body>
@@ -265,12 +265,33 @@
       bidirectional methods aren't supported yet.
     </p>
 
+    <h2>MQTT requests</h2>
+    <p>
+      An MQTT request is stored as an annotated <code>mosquitto_pub</code> /
+      <code>mosquitto_sub</code> command (<code>.mqtt</code> file). The mode toggle picks between
+      the two:
+    </p>
+    <ul>
+      <li><strong>Publish</strong> — set the broker host/port, topic, QoS, optional retain flag,
+        and a message payload, then <strong>Publish</strong>. This is one-shot, so it also runs in
+        <a href="./cli.html"><code>freepost run</code></a>.</li>
+      <li><strong>Subscribe</strong> — set a topic (wildcards <code>+</code> and <code>#</code>
+        allowed) and <strong>Subscribe</strong>; matching messages append to a live log until you
+        disconnect. Subscriptions are long-lived, so the CLI skips them.</li>
+    </ul>
+    <p>
+      Username/password and a client id are optional; pointing <code>--cafile</code> at a CA
+      certificate switches the connection to TLS. As always, <code>${VAR}</code> works in the host,
+      topic, and message.
+    </p>
+
     <h2>Sending &amp; the response</h2>
     <p>
       Click <strong>Send</strong> (or the keyboard shortcut shown on hover). The response
       panel shows status code and reason, timing, size, headers, and a pretty-printed body.
-      For GraphQL subscriptions, WebSocket connections, and gRPC server-streaming, the
-      equivalent panel is a live, auto-scrolling message log instead of a single response.
+      For GraphQL subscriptions, WebSocket connections, gRPC server-streaming, and MQTT
+      subscriptions, the equivalent panel is a live, auto-scrolling message log instead of a
+      single response.
     </p>
 
     <div class="callout callout-tip">

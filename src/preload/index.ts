@@ -90,6 +90,9 @@ const api = {
   cancelGrpcStream: (id: string) => ipcRenderer.invoke(IPC.grpcStreamCancel, id),
   onGrpcStreamEvent: (cb: (e: unknown) => void) =>
     on(IPC.grpcStreamEvent, cb as (...args: unknown[]) => void),
+  subscribeMqtt: (args: unknown) => ipcRenderer.invoke(IPC.mqttSubscribe, args),
+  unsubscribeMqtt: (id: string) => ipcRenderer.invoke(IPC.mqttUnsubscribe, id),
+  onMqttEvent: (cb: (e: unknown) => void) => on(IPC.mqttEvent, cb as (...args: unknown[]) => void),
   browseDataFile: () => ipcRenderer.invoke(IPC.browseDataFile),
 
   onAppBeforeClose: (cb: () => void) => on(IPC.appBeforeClose, cb as (...args: unknown[]) => void),

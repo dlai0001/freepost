@@ -34,12 +34,15 @@
     "verify": "npm run typecheck && npm run test && npm run fence && npm run build && npm run build:cli"
   },
   "dependencies": {
+    "@grpc/grpc-js": "^1.14.4",
+    "@grpc/proto-loader": "^0.7.15",
     "chai": "^6.2.2",
     "cm6-graphql": "^0.2.1",
     "graphql": "^16.14.2",
     "graphql-sse": "^2.6.0",
     "graphql-ws": "^6.0.8",
     "js-yaml": "^5.2.1",
+    "mqtt": "^5.15.2",
     "ws": "^8.18.0"
   },
   "devDependencies": {
@@ -56,6 +59,7 @@
     "@types/react-dom": "^19.2.3",
     "@types/ws": "^8.5.13",
     "@vitejs/plugin-react": "^5.2.0",
+    "aedes": "^0.51.3",
     "codemirror": "^6.0.2",
     "electron": "^43.0.0",
     "electron-builder": "^25.1.8",

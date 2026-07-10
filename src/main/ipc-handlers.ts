@@ -2,7 +2,7 @@
  * Main-process IPC: wires the pure core modules (format, vars, search,
  * sandbox, workflow, importers) and the engine to the renderer.
  */
-import { BrowserWindow, dialog, ipcMain } from 'electron'
+import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { promises as fs } from 'fs'
 import { existsSync, watch, type FSWatcher } from 'fs'
 import { dirname, isAbsolute, join, relative, sep } from 'path'
@@ -19,7 +19,6 @@ import type {
   ParseCommandResult,
   RequestFile,
   RequestKind,
-  SavedExample,
   SearchEntry,
   WorkflowFile,
   WorkflowRunReport,
@@ -45,10 +44,24 @@ import {
   extractIntrospectionData,
   parseIntrospection
 } from '../core/graphql/introspection'
-import { acquireToken, sendHttp, subscribeGraphql, WsClient, type GqlTransport } from '../engine'
+import {
+  acquireToken,
+  GrpcStreamClient,
+  MockServer,
+  MqttSubscribeClient,
+  mqttConnectArgs,
+  sendHttp,
+  startAuthorizationCodeFlow,
+  subscribeGraphql,
+  WsClient,
+  type GqlTransport
+} from '../engine'
+import { writeCachedToken } from './oauth-cache'
+import { buildRoutesForCollection } from './mock'
 import { resolveConfigChain } from './config-resolve'
 import { resolveVariables, substitute, substituteModel } from '../core/vars'
 import { ensureFreepostDir, listFiles, scanCollection } from './collection'
+import { exampleFilePath, readExamples } from './examples'
 import { executeRequest, jarFor, readEnvFile } from './execute'
 import { getLastRoot, setLastRoot } from './settings'
 import { trackedSecrets } from './security'
@@ -62,6 +75,17 @@ const wsClients = new Map<string, WsClient>()
 let gqlSubCounter = 0
 /** Active GraphQL subscriptions by id → dispose fn. */
 const gqlSubs = new Map<string, () => void>()
+let oauthFlowCounter = 0
+/** Pending interactive authorization_code flows by id → cancel fn. */
+const oauthFlows = new Map<string, () => void>()
+/** One running mock server per collection root. */
+const mockServers = new Map<string, MockServer>()
+let grpcStreamCounter = 0
+/** Active server-streaming gRPC calls by id → client. */
+const grpcStreams = new Map<string, GrpcStreamClient>()
+let mqttSubCounter = 0
+/** Active MQTT subscriptions by id → client. */
+const mqttSubs = new Map<string, MqttSubscribeClient>()
 
 /** Map an http(s) endpoint to its ws(s) equivalent for the WebSocket transport. */
 function toWsUrl(url: string): string {
@@ -165,6 +189,34 @@ const STARTERS: Record<RequestKind, RequestFile> = {
     frontmatter: { messages: { ping: '{"op":"ping"}' } },
     variables: [{ name: 'WS_URL', defaultValue: 'ws://localhost:8080', required: false }],
     ws: { url: '${WS_URL}', headers: [] },
+    comments: []
+  },
+  grpc: {
+    kind: 'grpc',
+    frontmatter: { description: '' },
+    variables: [{ name: 'GRPC_TARGET', defaultValue: 'localhost:50051', required: false }],
+    grpc: {
+      target: '${GRPC_TARGET}',
+      fullMethod: 'package.Service/Method',
+      plaintext: true,
+      data: '{}',
+      metadata: [],
+      protoFiles: [],
+      importPaths: []
+    },
+    comments: []
+  },
+  mqtt: {
+    kind: 'mqtt',
+    frontmatter: { description: '' },
+    variables: [{ name: 'MQTT_HOST', defaultValue: 'localhost', required: false }],
+    mqtt: {
+      mode: 'publish',
+      host: '${MQTT_HOST}',
+      port: 1883,
+      topic: 'freepost/demo',
+      message: 'hello'
+    },
     comments: []
   }
 }
@@ -449,6 +501,109 @@ export function registerIpcHandlers(): void {
     wsClients.delete(id)
   })
 
+  // ---- gRPC server-streaming ----
+  ipcMain.handle(
+    IPC.grpcStreamStart,
+    async (_e, args: { root: string; path: string; envPath?: string; model?: RequestFile }) => {
+      const abs = join(args.root, args.path)
+      let file: RequestFile
+      if (args.model !== undefined) {
+        file = args.model
+      } else {
+        const raw = await fs.readFile(abs, 'utf8')
+        const parsed = parseRequestFile(raw, 'grpc')
+        if (!parsed.ok) throw new Error('Cannot parse gRPC request file')
+        file = parsed.file
+      }
+      const g = file.grpc
+      if (g === undefined) throw new Error('File has no grpcurl command')
+      const env = readEnvFile(args.root, args.envPath)
+      const { values, unresolved } = resolveVariables(file.variables, Object.fromEntries(session), env)
+      if (unresolved.length > 0) throw new Error(`Unresolved required variables: ${unresolved.join(', ')}`)
+      const dir = dirname(abs)
+      const resolveProto = (p: string): string =>
+        isAbsolute(substitute(p, values)) ? substitute(p, values) : join(dir, substitute(p, values))
+
+      const id = `grpc${++grpcStreamCounter}`
+      const client = new GrpcStreamClient()
+      grpcStreams.set(id, client)
+      client
+        .on('data', (data: string) => broadcast(IPC.grpcStreamEvent, { id, type: 'data', data }))
+        .on('error', (err: Error) => {
+          broadcast(IPC.grpcStreamEvent, { id, type: 'error', data: err.message })
+          grpcStreams.delete(id)
+        })
+        .on('end', () => {
+          broadcast(IPC.grpcStreamEvent, { id, type: 'end' })
+          grpcStreams.delete(id)
+        })
+      client.start({
+        target: substitute(g.target, values),
+        fullMethod: substitute(g.fullMethod, values),
+        data: g.data !== undefined ? substitute(g.data, values) : undefined,
+        metadata: g.metadata.map((h) => ({ name: h.name, value: substitute(h.value, values) })),
+        protoFiles: g.protoFiles.map(resolveProto),
+        importPaths: g.importPaths.map(resolveProto),
+        plaintext: g.plaintext,
+        insecure: g.insecure,
+        deadlineMs: g.maxTimeSeconds !== undefined ? g.maxTimeSeconds * 1000 : undefined
+      })
+      return { id }
+    }
+  )
+  ipcMain.handle(IPC.grpcStreamCancel, (_e, id: string) => {
+    grpcStreams.get(id)?.cancel()
+    grpcStreams.delete(id)
+  })
+
+  // ---- MQTT subscribe ----
+  ipcMain.handle(
+    IPC.mqttSubscribe,
+    async (_e, args: { root: string; path: string; envPath?: string; model?: RequestFile }) => {
+      let file: RequestFile
+      if (args.model !== undefined) {
+        file = args.model
+      } else {
+        const raw = await fs.readFile(join(args.root, args.path), 'utf8')
+        const parsed = parseRequestFile(raw, 'mqtt')
+        if (!parsed.ok) throw new Error('Cannot parse MQTT request file')
+        file = parsed.file
+      }
+      const m = file.mqtt
+      if (m === undefined) throw new Error('File has no mosquitto command')
+      const env = readEnvFile(args.root, args.envPath)
+      const { values, unresolved } = resolveVariables(file.variables, Object.fromEntries(session), env)
+      if (unresolved.length > 0) throw new Error(`Unresolved required variables: ${unresolved.join(', ')}`)
+
+      const id = `mqtt${++mqttSubCounter}`
+      const client = new MqttSubscribeClient()
+      mqttSubs.set(id, client)
+      client
+        .on('open', () => broadcast(IPC.mqttEvent, { id, type: 'open' }))
+        .on('message', (msg: { topic: string; payload: string }) =>
+          broadcast(IPC.mqttEvent, { id, type: 'message', topic: msg.topic, data: msg.payload })
+        )
+        .on('error', (err: Error) => broadcast(IPC.mqttEvent, { id, type: 'error', data: err.message }))
+        .on('close', () => {
+          broadcast(IPC.mqttEvent, { id, type: 'close' })
+          mqttSubs.delete(id)
+        })
+      client.connect({
+        ...mqttConnectArgs(m),
+        host: substitute(m.host, values),
+        username: m.username !== undefined ? substitute(m.username, values) : undefined,
+        password: m.password !== undefined ? substitute(m.password, values) : undefined,
+        topic: substitute(m.topic, values),
+        qos: m.qos
+      })
+      return { id }
+    }
+  )
+  ipcMain.handle(IPC.mqttUnsubscribe, (_e, id: string) => {
+    mqttSubs.get(id)?.close()
+    mqttSubs.delete(id)
+  })
+
   ipcMain.handle(
     IPC.importPostman,
     async (_e, args: { root: string; collectionJsonPath: string }) => {
@@ -638,6 +793,49 @@ export function registerIpcHandlers(): void {
       else await fs.writeFile(file, JSON.stringify(filtered, null, 2) + '\n')
     }
   )
+  // Mark one example active for the mock server; at most one per file.
+  ipcMain.handle(
+    IPC.exampleSetActive,
+    async (_e, args: { root: string; path: string; name: string }) => {
+      const file = exampleFilePath(args.root, args.path)
+      const existing = await readExamples(file)
+      let changed = false
+      const next = existing.map((e) => {
+        const active = e.name === args.name
+        if (active !== (e.active === true)) changed = true
+        return { ...e, active }
+      })
+      if (changed) await fs.writeFile(file, JSON.stringify(next, null, 2) + '\n')
+    }
+  )
+
+  // ---- mock server (one listener per collection root) ----
+  ipcMain.handle(IPC.mockStart, async (_e, args: { root: string; port?: number }) => {
+    const existing = mockServers.get(args.root)
+    if (existing !== undefined && existing.state === 'listening') {
+      // Idempotent: rebuild routes and report the already-bound port.
+      const routes = await buildRoutesForCollection(args.root)
+      return { port: existing.port ?? 0, routes: routes.length }
+    }
+    const routes = await buildRoutesForCollection(args.root)
+    const server = new MockServer()
+    server.on('request', (entry) => broadcast(IPC.mockLog, { root: args.root, entry }))
+    const { port } = await server.start({ routes, port: args.port })
+    mockServers.set(args.root, server)
+    return { port, routes: routes.length }
+  })
+  ipcMain.handle(IPC.mockStop, async (_e, args: { root: string }) => {
+    const server = mockServers.get(args.root)
+    if (server !== undefined) {
+      await server.stop()
+      mockServers.delete(args.root)
+    }
+  })
+  ipcMain.handle(IPC.mockStatus, (_e, args: { root: string }) => {
+    const server = mockServers.get(args.root)
+    if (server === undefined || server.state !== 'listening') return { running: false }
+    return { running: true, port: server.port }
+  })
 
   // ---- OAuth2 token acquisition ----
   ipcMain.handle(
@@ -658,9 +856,59 @@ export function registerIpcHandlers(): void {
       const token = await acquireToken(oauth, resolve)
       const varName = oauth.sessionVar ?? 'OAUTH_TOKEN'
       session.set(varName, token.accessToken)
+      // Persist so the CLI and later app sessions can reuse/refresh it.
+      await writeCachedToken(args.root, oauth, resolve, token).catch(() => undefined)
       return token
     }
   )
+
+  // ---- OAuth2 interactive authorization_code flow ----
+  ipcMain.handle(
+    IPC.oauthAuthorizeStart,
+    async (_e, args: { root: string; path: string; envPath?: string }): Promise<{ id: string }> => {
+      const kind = requestKindForPath(args.path)
+      if (kind === null) throw new Error('Not a request file')
+      const raw = await fs.readFile(join(args.root, args.path), 'utf8')
+      const parsed = parseRequestFile(raw, kind)
+      if (!parsed.ok) throw new Error('Cannot parse request file')
+      const { config } = await resolveConfigChain(args.root, args.path)
+      const oauth: OAuth2Config | undefined = parsed.file.frontmatter.auth ?? config.auth
+      if (oauth === undefined) throw new Error('No OAuth2 config on this request or its folders')
+      if (oauth.grant !== 'authorization_code') {
+        throw new Error('This request is not configured for the authorization_code grant')
+      }
+      const env = readEnvFile(args.root, args.envPath)
+      const { values } = resolveVariables(parsed.file.variables, Object.fromEntries(session), env)
+      const resolve = (s: string): string => substituteScalar(s, values, Object.fromEntries(session), env)
+
+      const id = `oauth${++oauthFlowCounter}`
+      const flow = await startAuthorizationCodeFlow({
+        config: oauth,
+        resolve,
+        openUrl: (url) => void shell.openExternal(url).catch(() => undefined),
+        onSettled: (result) => {
+          oauthFlows.delete(id)
+          if (result.ok) {
+            const varName = oauth.sessionVar ?? 'OAUTH_TOKEN'
+            session.set(varName, result.token.accessToken)
+            void writeCachedToken(args.root, oauth, resolve, result.token).catch(() => undefined)
+            broadcast(IPC.oauthAuthorizeEvent, { id, ok: true, token: result.token })
+          } else {
+            broadcast(IPC.oauthAuthorizeEvent, { id, ok: false, error: result.error })
+          }
+        }
+      })
+      oauthFlows.set(id, flow.cancel)
+      return { id }
+    }
+  )
+  ipcMain.handle(IPC.oauthAuthorizeCancel, (_e, id: string) => {
+    const cancel = oauthFlows.get(id)
+    if (cancel !== undefined) {
+      cancel()
+      oauthFlows.delete(id)
+    }
+  })
 
   // ---- GraphQL introspection ----
   ipcMain.handle(
@@ -817,20 +1065,6 @@ async function importOpenApiText(
     written.push(relPath)
   }
   return { written }
-}
-
-function exampleFilePath(root: string, relPath: string): string {
-  // Name.curl -> Name.examples.json alongside the request.
-  const base = relPath.replace(/\.(curl|ws)$/i, '')
-  return join(root, `${base}.examples.json`)
-}
-
-async function readExamples(file: string): Promise<SavedExample[]> {
-  try {
-    return JSON.parse(await fs.readFile(file, 'utf8')) as SavedExample[]
-  } catch {
-    return []
-  }
 }
 
 /** Resolve ${VAR} against values, then raw session/env, for scalar config fields. */

@@ -69,13 +69,30 @@ const api = {
   saveExample: (args: unknown) => ipcRenderer.invoke(IPC.exampleSave, args),
   listExamples: (args: unknown) => ipcRenderer.invoke(IPC.exampleList, args),
   deleteExample: (args: unknown) => ipcRenderer.invoke(IPC.exampleDelete, args),
+  setActiveExample: (args: unknown) => ipcRenderer.invoke(IPC.exampleSetActive, args),
+
+  startMock: (args: unknown) => ipcRenderer.invoke(IPC.mockStart, args),
+  stopMock: (args: unknown) => ipcRenderer.invoke(IPC.mockStop, args),
+  mockStatus: (args: unknown) => ipcRenderer.invoke(IPC.mockStatus, args),
+  onMockLog: (cb: (e: unknown) => void) => on(IPC.mockLog, cb as (...args: unknown[]) => void),
 
   acquireOAuthToken: (args: unknown) => ipcRenderer.invoke(IPC.oauthAcquire, args),
+  authorizeOAuthStart: (args: unknown) => ipcRenderer.invoke(IPC.oauthAuthorizeStart, args),
+  authorizeOAuthCancel: (id: string) => ipcRenderer.invoke(IPC.oauthAuthorizeCancel, id),
+  onOAuthAuthorizeEvent: (cb: (e: unknown) => void) =>
+    on(IPC.oauthAuthorizeEvent, cb as (...args: unknown[]) => void),
   introspectGraphql: (args: unknown) => ipcRenderer.invoke(IPC.gqlIntrospect, args),
   subscribeGraphql: (args: unknown) => ipcRenderer.invoke(IPC.gqlSubscribe, args),
   unsubscribeGraphql: (id: string) => ipcRenderer.invoke(IPC.gqlUnsubscribe, id),
   onGqlSubEvent: (cb: (e: unknown) => void) =>
     on(IPC.gqlSubEvent, cb as (...args: unknown[]) => void),
+  startGrpcStream: (args: unknown) => ipcRenderer.invoke(IPC.grpcStreamStart, args),
+  cancelGrpcStream: (id: string) => ipcRenderer.invoke(IPC.grpcStreamCancel, id),
+  onGrpcStreamEvent: (cb: (e: unknown) => void) =>
+    on(IPC.grpcStreamEvent, cb as (...args: unknown[]) => void),
+  subscribeMqtt: (args: unknown) => ipcRenderer.invoke(IPC.mqttSubscribe, args),
+  unsubscribeMqtt: (id: string) => ipcRenderer.invoke(IPC.mqttUnsubscribe, id),
+  onMqttEvent: (cb: (e: unknown) => void) => on(IPC.mqttEvent, cb as (...args: unknown[]) => void),
   browseDataFile: () => ipcRenderer.invoke(IPC.browseDataFile),
 
   onAppBeforeClose: (cb: () => void) => on(IPC.appBeforeClose, cb as (...args: unknown[]) => void),

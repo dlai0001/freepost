@@ -342,6 +342,99 @@
         </div>
       </div>
       <div class="card">
+        <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="An OAuth2 sign-in: the system browser opens to a provider, redirects to a local loopback, and a token lands in the session.">
+          <rect width="400" height="200" fill="#0a0d12"/>
+          <rect x="24" y="26" width="150" height="120" rx="8" fill="#0d1117" stroke="#30363d"/>
+          <rect x="24" y="26" width="150" height="24" rx="8" fill="#161b22"/>
+          <circle cx="38" cy="38" r="4" fill="#f85149"/><circle cx="52" cy="38" r="4" fill="#d29922"/><circle cx="66" cy="38" r="4" fill="#3fb950"/>
+          <text x="99" y="82" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#8b949e" text-anchor="middle">Provider</text>
+          <rect x="54" y="96" width="90" height="24" rx="6" fill="#238636" stroke="#3fb950"/>
+          <text x="99" y="112" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" font-weight="600" fill="#ffffff" text-anchor="middle">Sign in</text>
+          <path d="M180 86 L226 86" stroke="#58a6ff" stroke-width="2" stroke-dasharray="4 3"/>
+          <path d="M226 86 l-8 -4 v8 z" fill="#58a6ff"/>
+          <text x="203" y="78" font-family="ui-monospace, Menlo, monospace" font-size="9" fill="#58a6ff" text-anchor="middle">redirect</text>
+          <text x="203" y="102" font-family="ui-monospace, Menlo, monospace" font-size="9" fill="#8b949e" text-anchor="middle">127.0.0.1</text>
+          <rect x="232" y="40" width="144" height="92" rx="8" fill="#0d1117" stroke="#30363d"/>
+          <text x="246" y="66" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#3fb950">✓ signed in</text>
+          <text x="246" y="90" font-family="ui-monospace, Menlo, monospace" font-size="10.5" fill="#8b949e">${OAUTH_TOKEN}</text>
+          <text x="246" y="110" font-family="ui-monospace, Menlo, monospace" font-size="10.5" fill="#e6edf3">Bearer eyJ…</text>
+          <line x1="24" y1="164" x2="376" y2="164" stroke="#30363d"/>
+          <text x="24" y="186" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#8b949e">PKCE &#183; cached &amp; auto-refreshed under <tspan fill="#58a6ff">.freepost/</tspan></text>
+        </svg>
+        <div class="card-body">
+          <h3><span class="ico">🔐</span>OAuth2, including interactive sign-in</h3>
+          <p>client_credentials, password, and the browser-based authorization_code flow — PKCE by default, the token cached under <code>.freepost/</code> and refreshed automatically. The sign-in opens your system browser and catches the redirect on a local loopback port.</p>
+        </div>
+      </div>
+      <div class="card">
+        <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A mock server: an app calls a local port and gets back a saved 200 example; an unmatched path gets a 404.">
+          <rect width="400" height="200" fill="#0a0d12"/>
+          <rect x="24" y="40" width="96" height="120" rx="8" fill="#0d1117" stroke="#30363d"/>
+          <text x="72" y="106" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#8b949e" text-anchor="middle">your app</text>
+          <rect x="280" y="40" width="96" height="120" rx="8" fill="#0d1117" stroke="#30363d"/>
+          <text x="328" y="98" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#8b949e" text-anchor="middle">mock</text>
+          <text x="328" y="116" font-family="ui-monospace, Menlo, monospace" font-size="10" fill="#58a6ff" text-anchor="middle">:8080</text>
+          <g font-family="ui-monospace, Menlo, monospace" font-size="10.5">
+            <path d="M124 74 L276 74" stroke="#3fb950" stroke-width="1.5"/>
+            <path d="M276 74 l-8 -4 v8 z" fill="#3fb950"/>
+            <text x="200" y="68" fill="#3fb950" text-anchor="middle">GET /users/42</text>
+            <path d="M276 100 L124 100" stroke="#8b949e" stroke-width="1.5"/>
+            <path d="M124 100 l8 -4 v8 z" fill="#8b949e"/>
+            <text x="200" y="116" fill="#e6edf3" text-anchor="middle">200 · saved example</text>
+            <path d="M124 134 L276 134" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4 3"/>
+            <text x="200" y="152" fill="#f85149" text-anchor="middle">/nope → 404 (never proxied)</text>
+          </g>
+        </svg>
+        <div class="card-body">
+          <h3><span class="ico">🧩</span>Mock server from your examples</h3>
+          <p>Serve your saved response examples over a local HTTP port — no real backend needed. Mark an example active, or force one with a query param. Unmatched paths return 404 and never proxy out, so it stays fully offline. Runs from the app or <code>freepost mock</code> in CI.</p>
+        </div>
+      </div>
+      <div class="card">
+        <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A gRPC call: a grpcurl-style command invokes a package.Service/Method and streams reply messages back.">
+          <rect width="400" height="200" fill="#0a0d12"/>
+          <g font-family="ui-monospace, Menlo, monospace" font-size="11.5">
+            <text x="24" y="40" fill="#8b949e">$ <tspan fill="#e6edf3">grpcurl -plaintext \</tspan></text>
+            <text x="44" y="60" fill="#a5d6ff">-d '{"name":"world"}' \</text>
+            <text x="44" y="80" fill="#e6edf3">localhost:50051 \</text>
+            <text x="44" y="100" fill="#39c5cf">helloworld.Greeter/SayHello</text>
+          </g>
+          <line x1="24" y1="118" x2="376" y2="118" stroke="#30363d"/>
+          <g font-family="ui-monospace, Menlo, monospace" font-size="11.5">
+            <text x="24" y="140" fill="#3fb950">&#8592; {"message":"Hello world"}</text>
+            <text x="24" y="162" fill="#8b949e">stream · #1 #2 #3 · <tspan fill="#3fb950">OK</tspan></text>
+          </g>
+          <rect x="300" y="128" width="76" height="20" rx="10" fill="#238636" stroke="#3fb950"/>
+          <text x="338" y="142" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">gRPC</text>
+        </svg>
+        <div class="card-body">
+          <h3><span class="ico">🔌</span>gRPC, the curl way</h3>
+          <p>Call unary and server-streaming gRPC methods with a grpcurl-style <code>.grpc</code> file. Bring your <code>.proto</code> files, edit the request as JSON, and read the reply (or a live stream) — schema stays local, so it works fully offline.</p>
+        </div>
+      </div>
+      <div class="card">
+        <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="An MQTT client: a publish to sensors/temp and a subscription to sensors/# receiving the retained message.">
+          <rect width="400" height="200" fill="#0a0d12"/>
+          <text x="24" y="40" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#8b949e">publish</text>
+          <rect x="24" y="48" width="160" height="26" rx="6" fill="#161b22" stroke="#30363d"/>
+          <text x="34" y="65" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#e6edf3">sensors/temp  {"c":21}</text>
+          <path d="M188 61 L300 61" stroke="#d29922" stroke-width="1.5"/>
+          <path d="M300 61 l-8 -4 v8 z" fill="#d29922"/>
+          <rect x="304" y="46" width="72" height="30" rx="6" fill="#0d1117" stroke="#30363d"/>
+          <text x="340" y="65" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" fill="#8b949e" text-anchor="middle">broker</text>
+          <text x="24" y="118" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#8b949e">subscribe <tspan fill="#39c5cf" font-family="ui-monospace, monospace">sensors/#</tspan></text>
+          <g font-family="ui-monospace, Menlo, monospace" font-size="11">
+            <text x="24" y="142" fill="#3fb950">&#8592; sensors/temp  {"c":21}</text>
+            <text x="24" y="162" fill="#3fb950">&#8592; sensors/hum   {"h":48}</text>
+          </g>
+          <path d="M330 76 C 330 110, 120 110, 60 128" stroke="#3fb950" stroke-width="1.2" fill="none" stroke-dasharray="3 3"/>
+        </svg>
+        <div class="card-body">
+          <h3><span class="ico">📡</span>MQTT publish &amp; subscribe</h3>
+          <p>Talk to MQTT brokers with mosquitto-style <code>.mqtt</code> files. Publish a payload with QoS and retain, or subscribe to a topic (wildcards included) and watch messages stream in live. TLS, auth, and <code>${VAR}</code> all supported.</p>
+        </div>
+      </div>
+      <div class="card">
         <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A four-step workflow: login, create order, an expected-to-fail charge, and fetch receipt.">
           <rect width="400" height="200" fill="#0a0d12"/>
           <g font-family="-apple-system, Segoe UI, sans-serif" font-size="13.5">

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Command line — Freepost Help</title>
+<meta name="description" content="The Freepost CLI: run collections and workflows headlessly in CI with freepost run, and serve saved examples with freepost mock. Flags, exit codes, and a GitHub Actions example.">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="topbar-logo" href="../index.html">$ freepost</a>
+    <span class="topbar-crumb">Help / Command line</span>
+    <div class="topbar-spacer"></div>
+    <a class="topbar-link" href="../index.html">Website</a>
+    <a class="topbar-link" href="https://github.com/dlai0001/freepost">GitHub</a>
+  </div>
+</header>
+
+<div class="docs-shell">
+  <nav class="docs-nav">
+    <div class="docs-nav-title">Guides</div>
+    <a href="./index.html">Overview</a>
+    <a href="./creating-requests.html">Creating requests</a>
+    <a href="./importing.html">Importing</a>
+    <a href="./organizing.html">Saving &amp; organizing</a>
+    <a href="./workflows.html">Workflows</a>
+    <a href="./authentication.html">Authentication</a>
+    <a href="./mock-server.html">Mock server</a>
+    <a class="active" href="./cli.html">Command line</a>
+    <a href="./scripting.html">Scripting (pm.*)</a>
+  </nav>
+
+  <article class="docs-article">
+    <h1>Command line</h1>
+    <p class="lede">
+      Freepost ships a headless CLI — the <a href="https://github.com/postmanlabs/newman">Newman</a>
+      analog — that runs your collections with the <em>exact same engine</em> as the desktop app.
+      Same <code>.curl</code> files, same variables, same <a href="./scripting.html">pm.* scripts</a>.
+      Perfect for CI.
+    </p>
+
+    <h2>Install</h2>
+    <p>
+      Build the standalone bundle from a checkout and run it with Node (v20+):
+    </p>
+    <pre><code>npm install
+npm run build:cli
+node out/cli/index.mjs run ./my-collection</code></pre>
+    <p>
+      The <code>bin</code> entry is <code>freepost</code>, so an <code>npm link</code> (or installing
+      the package) lets you call <code>freepost</code> directly.
+    </p>
+
+    <h2><code>freepost run &lt;collection&gt;</code></h2>
+    <p>Runs every one-shot request in the collection, sharing one session, and exits non-zero if anything fails.</p>
+    <table>
+      <thead><tr><th>Flag</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>--env &lt;file&gt;</code></td><td>Environment JSON file (<code>session &gt; env &gt; request params</code>).</td></tr>
+        <tr><td><code>--workflow &lt;path&gt;</code></td><td>Run a <a href="./workflows.html">workflow</a> instead of loose requests. Repeatable.</td></tr>
+        <tr><td><code>--filter &lt;substr&gt;</code></td><td>Only run requests whose path contains the substring. Repeatable.</td></tr>
+        <tr><td><code>--bail</code></td><td>Stop at the first failing request or step.</td></tr>
+        <tr><td><code>--reporter &lt;cli|json&gt;</code></td><td>Human output (default) or a JSON array of reports for machines.</td></tr>
+      </tbody>
+    </table>
+    <p><strong>Exit codes:</strong> <code>0</code> everything passed · <code>1</code> a request errored, a test failed, or a workflow halted · <code>2</code> a usage error (bad flag, missing collection).</p>
+
+    <h3>What runs, what's skipped</h3>
+    <p>One-shot requests run: HTTP (<code>.curl</code>), gRPC <strong>unary</strong> (<code>.grpc</code>), and MQTT <strong>publish</strong> (<code>.mqtt</code>). Long-lived requests are skipped with a note at the end of the run: WebSocket (<code>.ws</code>) and MQTT <strong>subscribe</strong>. (gRPC server-streaming can't be told apart without loading the proto, so it runs and reports a clear "use the streaming client" error.) authorization_code OAuth needs a token cached by a prior interactive sign-in — see <a href="./authentication.html">Authentication</a>.</p>
+
+    <h2><code>freepost mock &lt;collection&gt; [--port &lt;n&gt;]</code></h2>
+    <p>
+      Starts the <a href="./mock-server.html">mock server</a> from the collection's saved examples
+      and serves until Ctrl-C. Omit <code>--port</code> for an OS-assigned port. Great for standing
+      up fake dependencies in local dev or integration jobs.
+    </p>
+    <pre><code>freepost mock ./my-collection --port 8080</code></pre>
+
+    <h2>In CI (GitHub Actions)</h2>
+    <p>A typical job that fails the build when any request or assertion fails:</p>
+    <pre><code>- name: API smoke tests
+  run: |
+    npm ci
+    npm run build:cli
+    node out/cli/index.mjs run ./collection \
+      --env ci.env.json --bail --reporter json</code></pre>
+    <p>
+      Because collections are plain files in your repo, they're versioned and reviewed like any
+      other code — no exported artifact, no account, nothing to sync.
+    </p>
+
+    <footer class="docs-footer">
+      Next: <a href="./scripting.html">Write pre-request &amp; test scripts →</a>
+    </footer>
+  </article>
+</div>
+
+</body>
+</html>

@@ -5,7 +5,14 @@
 
 export { sendHttp, loadPem } from './http'
 export type { SendHttpRequest, SendHttpOptions } from './http'
-export { acquireToken } from './oauth'
+export {
+  acquireToken,
+  refreshToken,
+  startAuthorizationCodeFlow,
+  generatePkce,
+  buildAuthorizeUrl
+} from './oauth'
+export type { AuthorizeFlowArgs, AuthorizeResult } from './oauth'
 export { CookieJar } from './cookies'
 export type { StoredCookie } from './cookies'
 export { WsClient } from './ws'
@@ -13,3 +20,16 @@ export type { WsState, WsConnectArgs, WsClientEvents } from './ws'
 export { subscribeGraphql } from './gql-subscribe'
 export type { GqlTransport, GqlSubscribeArgs, GqlSubscribeHandlers } from './gql-subscribe'
 export { shouldBypassProxy } from './proxy'
+export { MockServer } from './mock-server'
+export type { MockState, MockStartArgs, MockServerEvents } from './mock-server'
+export { sendGrpcUnary, GrpcStreamClient } from './grpc'
+export type { GrpcCallArgs, GrpcResponse, GrpcStreamState, GrpcStreamEvents } from './grpc'
+export { publishMqtt, MqttSubscribeClient, mqttConnectArgs } from './mqtt'
+export type {
+  MqttPublishArgs,
+  MqttPublishResult,
+  MqttSubscribeArgs,
+  MqttSubState,
+  MqttSubEvents,
+  MqttMessage
+} from './mqtt'

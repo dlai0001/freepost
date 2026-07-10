@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Authentication — Freepost Help</title>
+<meta name="description" content="How to authenticate Freepost requests: Basic, Bearer, and API key via headers and variables, plus OAuth2 client_credentials, password, and the interactive authorization_code sign-in flow.">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="topbar-logo" href="../index.html">$ freepost</a>
+    <span class="topbar-crumb">Help / Authentication</span>
+    <div class="topbar-spacer"></div>
+    <a class="topbar-link" href="../index.html">Website</a>
+    <a class="topbar-link" href="https://github.com/dlai0001/freepost">GitHub</a>
+  </div>
+</header>
+
+<div class="docs-shell">
+  <nav class="docs-nav">
+    <div class="docs-nav-title">Guides</div>
+    <a href="./index.html">Overview</a>
+    <a href="./creating-requests.html">Creating requests</a>
+    <a href="./importing.html">Importing</a>
+    <a href="./organizing.html">Saving &amp; organizing</a>
+    <a href="./workflows.html">Workflows</a>
+    <a class="active" href="./authentication.html">Authentication</a>
+    <a href="./mock-server.html">Mock server</a>
+    <a href="./cli.html">Command line</a>
+    <a href="./scripting.html">Scripting (pm.*)</a>
+  </nav>
+
+  <article class="docs-article">
+    <h1>Authentication</h1>
+    <p class="lede">
+      Freepost handles the common auth schemes two ways: simple ones (Basic, Bearer, API key)
+      are just headers plus <a href="./organizing.html#how-variables-resolve">variables</a>, and
+      OAuth2 is a structured helper on the request's <strong>Auth</strong> tab that fetches a
+      token for you and drops it into a session variable.
+    </p>
+
+    <h2>Basic, Bearer &amp; API key</h2>
+    <p>
+      These need no special machinery — they're ordinary request fields, so they stay valid,
+      runnable <code>curl</code> on disk:
+    </p>
+    <ul>
+      <li><strong>Bearer / API key</strong> — add an <code>Authorization</code> (or custom)
+        header whose value references a variable, e.g.
+        <code>Authorization: Bearer ${TOKEN}</code> or <code>X-API-Key: ${API_KEY}</code>.
+        Keep the secret in an <a href="./organizing.html">environment</a> or a
+        <code>.gitignore</code>'d <code>*.local.env.json</code>.</li>
+      <li><strong>Basic</strong> — the <strong>Auth</strong> tab's Basic mode writes curl's
+        <code>--user "${USER}:${PASSWORD}"</code>, so the credentials live in variables rather
+        than a hand-encoded header.</li>
+    </ul>
+
+    <h2>OAuth2</h2>
+    <p>
+      On the <strong>Auth</strong> tab, choose <strong>OAuth2</strong> and pick a grant. The
+      config (grant, token URL, client id, scope, …) is saved in the request's frontmatter, and
+      can also be set once on a <code>collection.json</code> / <code>folder.json</code> so every
+      request underneath inherits it. When you acquire a token it's stored in a
+      <strong>session variable</strong> (default <code>${OAUTH_TOKEN}</code>) — reference that
+      from your request's own <code>Authorization</code> header.
+    </p>
+
+    <h3>client_credentials &amp; password</h3>
+    <p>
+      These are non-interactive: click <strong>Acquire token</strong> and Freepost POSTs to the
+      token URL (HTTP Basic client auth for confidential clients; the <code>password</code> grant
+      also sends the username/password) and stores the returned access token. Because there's no
+      browser step, these work headlessly in the <a href="./cli.html">CLI</a> too.
+    </p>
+
+    <h3>authorization_code (interactive sign-in)</h3>
+    <p>
+      This is the browser-based flow used by most modern providers (Google, Okta, Auth0, …).
+      Fill in the <strong>Authorization URL</strong>, token URL, and client id; the
+      <strong>Redirect URI</strong> is optional — leave it blank and Freepost picks a loopback
+      port automatically. Then click <strong>Sign in</strong>:
+    </p>
+    <ol>
+      <li>Freepost starts a temporary loopback listener on <code>127.0.0.1</code> and opens the
+        authorize URL in your <strong>system browser</strong> (never an in-app window — consistent
+        with the zero-network, no-embedded-browser design). PKCE (S256) and a CSRF
+        <code>state</code> are always used.</li>
+      <li>You log in with the provider. It redirects back to the loopback URI with a code.</li>
+      <li>Freepost validates <code>state</code>, exchanges the code for a token, and shuts the
+        listener down. You can close the browser tab.</li>
+    </ol>
+
+    <div class="callout callout-note">
+      <div class="callout-title">Token cache &amp; refresh</div>
+      The acquired token is cached under the collection's <code>.freepost/oauth-tokens/</code>
+      folder (owner-only permissions, and <code>.freepost/</code> is always git-ignored). On later
+      sends, a still-valid token is reused silently; an expired one with a refresh token is
+      refreshed automatically — no need to click <strong>Sign in</strong> again until the refresh
+      itself fails.
+    </div>
+
+    <div class="callout callout-tip">
+      <div class="callout-title">authorization_code in CI</div>
+      Headless <a href="./cli.html"><code>freepost run</code></a> can't open a browser, so it can
+      only <em>reuse</em> a token a prior interactive sign-in cached (refreshing it if needed).
+      Sign in once in the desktop app so the token exists under <code>.freepost/</code>, and make
+      sure that cache travels to your CI runner (it's git-ignored by default, so provide it out of
+      band). If no usable token is cached, the run fails with a clear "sign in via the Auth tab"
+      message rather than hanging.
+    </div>
+
+    <footer class="docs-footer">
+      Next: <a href="./mock-server.html">Serve saved examples with the mock server →</a>
+    </footer>
+  </article>
+</div>
+
+</body>
+</html>

@@ -12,6 +12,10 @@ import { fileURLToPath } from 'url'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const SRC = join(ROOT, 'src')
+// The engine is the only module allowed to open a socket. As of the mock server
+// that includes an *inbound* listener (src/engine/mock-server.ts), not just
+// outbound clients — the rule is "no sockets outside src/engine", and a
+// user-started mock listener is still confined here.
 const ALLOWED_PREFIX = join('src', 'engine')
 
 // Usage patterns — real network calls. Tested against a copy of the line with

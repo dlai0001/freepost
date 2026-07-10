@@ -9,6 +9,7 @@ import type {
   ExecutionReport,
   GqlIntrospectResult,
   HistoryEntry,
+  MockRequestLogEntry,
   OpenApiOperationSummary,
   ParseCommandResult,
   ParseResult,
@@ -80,8 +81,25 @@ export const IPC = {
   exampleSave: 'example:save', // ({ root, path, name }) => void — snapshots last response
   exampleList: 'example:list', // ({ root, path }) => SavedExample[]
   exampleDelete: 'example:delete', // ({ root, path, name }) => void
+  exampleSetActive: 'example:set-active', // ({ root, path, name }) => void — mock default (clears siblings)
+
+  mockStart: 'mock:start', // ({ root, port? }) => { port; routes } (idempotent per root)
+  mockStop: 'mock:stop', // ({ root }) => void
+  mockStatus: 'mock:status', // ({ root }) => { running; port?; routes? }
+  mockLog: 'mock:log', // main -> renderer event ({ root, entry: MockRequestLogEntry })
 
   oauthAcquire: 'oauth:acquire', // ({ root, path, envPath? }) => AcquiredToken (stores in session)
+  oauthAuthorizeStart: 'oauth:authorize-start', // ({ root, path, envPath? }) => { id } — interactive authorization_code
+  oauthAuthorizeCancel: 'oauth:authorize-cancel', // (id) => void
+  oauthAuthorizeEvent: 'oauth:authorize-event', // main -> renderer: { id, ok:true, token } | { id, ok:false, error }
+
+  grpcStreamStart: 'grpc:stream-start', // ({ root, path, envPath?, model? }) => { id } — server-streaming
+  grpcStreamCancel: 'grpc:stream-cancel', // (id) => void
+  grpcStreamEvent: 'grpc:stream-event', // main -> renderer event ({ id, type: 'data'|'error'|'end', data? })
+
+  mqttSubscribe: 'mqtt:subscribe', // ({ root, path, envPath?, model? }) => { id }
+  mqttUnsubscribe: 'mqtt:unsubscribe', // (id) => void
+  mqttEvent: 'mqtt:event', // main -> renderer event ({ id, type: 'open'|'message'|'error'|'close', topic?, data? })
 
   gqlIntrospect: 'gql:introspect', // ({ root, path, envPath? }) => { schema: GqlSchemaSummary } | { error }
   gqlSubscribe: 'gql:subscribe', // ({ root, path, envPath?, query, variables?, url?, transport? }) => { id }
@@ -119,7 +137,7 @@ export interface FreepostApi {
     strict?: boolean
     kind?: RequestKind
   }): Promise<ParseCommandResult>
-  createRequest(absPath: string, kind: 'curl' | 'websocat'): Promise<void>
+  createRequest(absPath: string, kind: 'curl' | 'websocat' | 'grpc' | 'mqtt'): Promise<void>
   renameRequest(absPath: string, newAbsPath: string): Promise<void>
   deleteRequest(absPath: string): Promise<void>
   executeRequest(args: {
@@ -205,9 +223,30 @@ export interface FreepostApi {
   saveExample(args: { root: string; path: string; name: string }): Promise<void>
   listExamples(args: { root: string; path: string }): Promise<SavedExample[]>
   deleteExample(args: { root: string; path: string; name: string }): Promise<void>
+  /** Mark one example as the mock server's default for its route (clears siblings). */
+  setActiveExample(args: { root: string; path: string; name: string }): Promise<void>
+
+  /** Start (or return the already-running) mock server for a collection. */
+  startMock(args: { root: string; port?: number }): Promise<{ port: number; routes: number }>
+  stopMock(args: { root: string }): Promise<void>
+  mockStatus(args: { root: string }): Promise<{ running: boolean; port?: number; routes?: number }>
+  onMockLog(cb: (e: { root: string; entry: MockRequestLogEntry }) => void): () => void
 
   /** Acquire an OAuth2 token for the request and store it in the session. */
   acquireOAuthToken(args: { root: string; path: string; envPath?: string }): Promise<AcquiredToken>
+
+  /**
+   * Start the interactive authorization_code flow: opens the system browser and
+   * waits for the loopback redirect. Resolves with a flow id; the terminal
+   * outcome arrives via `onOAuthAuthorizeEvent`.
+   */
+  authorizeOAuthStart(args: { root: string; path: string; envPath?: string }): Promise<{ id: string }>
+  /** Cancel a pending interactive authorization_code flow. */
+  authorizeOAuthCancel(id: string): Promise<void>
+  /** Terminal outcome of an interactive authorization_code flow. */
+  onOAuthAuthorizeEvent(
+    cb: (e: { id: string; ok: true; token: AcquiredToken } | { id: string; ok: false; error: string }) => void
+  ): () => void
 
   /**
    * Run a GraphQL introspection query for schema hints. `schemaUrl` overrides
@@ -239,6 +278,35 @@ export interface FreepostApi {
   unsubscribeGraphql(id: string): Promise<void>
   onGqlSubEvent(
     cb: (e: { id: string; type: 'next' | 'error' | 'complete'; data?: string }) => void
+  ): () => void
+
+  /** Start a server-streaming gRPC call. Streams via `onGrpcStreamEvent`. */
+  startGrpcStream(args: {
+    root: string
+    path: string
+    envPath?: string
+    model?: RequestFile
+  }): Promise<{ id: string }>
+  cancelGrpcStream(id: string): Promise<void>
+  onGrpcStreamEvent(
+    cb: (e: { id: string; type: 'data' | 'error' | 'end'; data?: string }) => void
+  ): () => void
+
+  /** Subscribe to an MQTT topic. Streams via `onMqttEvent`. */
+  subscribeMqtt(args: {
+    root: string
+    path: string
+    envPath?: string
+    model?: RequestFile
+  }): Promise<{ id: string }>
+  unsubscribeMqtt(id: string): Promise<void>
+  onMqttEvent(
+    cb: (e: {
+      id: string
+      type: 'open' | 'message' | 'error' | 'close'
+      topic?: string
+      data?: string
+    }) => void
   ): () => void
 
   /** Native file picker for a CSV/JSON data file; returns the chosen path or null. */

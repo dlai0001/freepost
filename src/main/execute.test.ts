@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { writeRequestFile } from '../core/format'
 import type { RequestFile } from '../shared/model'
 import { executeRequest } from './execute'
+import { writeCachedToken } from './oauth-cache'
 import { runWorkflow } from '../core/workflow'
 
 let server: Server
@@ -225,5 +226,61 @@ describe('executeRequest end-to-end', () => {
     })
     expect(report.halted).toBe(false)
     expect(report.steps.map((s) => s.status)).toEqual(['expected-error', 'passed', 'passed'])
+  })
+
+  it('authorization_code: reuses a cached token, injecting it into the session', async () => {
+    const oauth = {
+      grant: 'authorization_code' as const,
+      tokenUrl: `http://${baseUrl}/token`,
+      authUrl: `http://${baseUrl}/authorize`,
+      clientId: 'app'
+    }
+    // A prior interactive sign-in cached this token under .freepost/.
+    await writeCachedToken(root, oauth, (s) => s, {
+      accessToken: 'tok-123',
+      tokenType: 'Bearer',
+      expiresAt: Date.now() + 3600_000
+    })
+    writeRequest('AuthMe.curl', {
+      kind: 'curl',
+      frontmatter: { auth: oauth },
+      variables: [{ name: 'BASE_URL', defaultValue: baseUrl, required: false }],
+      http: {
+        method: 'GET',
+        url: 'http://${BASE_URL}/me',
+        headers: [{ name: 'Authorization', value: 'Bearer ${OAUTH_TOKEN}' }],
+        options: {}
+      },
+      comments: []
+    })
+    const session = new Map<string, string>()
+    const report = await executeRequest({ root, path: 'AuthMe.curl', session })
+    expect(report.transportError).toBeUndefined()
+    expect(report.response?.status).toBe(200)
+    expect(session.get('OAUTH_TOKEN')).toBe('tok-123')
+  })
+
+  it('authorization_code: errors clearly when no token is cached (headless)', async () => {
+    const oauth = {
+      grant: 'authorization_code' as const,
+      tokenUrl: `http://${baseUrl}/token`,
+      authUrl: `http://${baseUrl}/authorize`,
+      clientId: 'never-signed-in'
+    }
+    writeRequest('NoToken.curl', {
+      kind: 'curl',
+      frontmatter: { auth: oauth },
+      variables: [{ name: 'BASE_URL', defaultValue: baseUrl, required: false }],
+      http: {
+        method: 'GET',
+        url: 'http://${BASE_URL}/me',
+        headers: [{ name: 'Authorization', value: 'Bearer ${OAUTH_TOKEN}' }],
+        options: {}
+      },
+      comments: []
+    })
+    const report = await executeRequest({ root, path: 'NoToken.curl', session: new Map() })
+    expect(report.errored).toBe(true)
+    expect(report.transportError).toMatch(/No valid OAuth token cached/)
   })
 })

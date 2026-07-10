@@ -3,8 +3,8 @@
  * process, and the renderer. See PLAN.md for the format specification.
  */
 
-/** Request file type, discriminated by extension: .curl | .ws */
-export type RequestKind = 'curl' | 'websocat'
+/** Request file type, discriminated by extension: .curl | .ws | .grpc | .mqtt */
+export type RequestKind = 'curl' | 'websocat' | 'grpc' | 'mqtt'
 
 /** Optional per-variable metadata carried in frontmatter `variables`. */
 export interface VariableMeta {
@@ -132,6 +132,56 @@ export interface WsRequestModel {
   protocol?: string
 }
 
+/** Parsed grpcurl command (supported-flag subset; see core/format/grpc.ts). */
+export interface GrpcRequestModel {
+  /** host:port (may contain ${VAR}). */
+  target: string
+  /** Fully-qualified method, e.g. "helloworld.Greeter/SayHello". */
+  fullMethod: string
+  /** -plaintext: connect without TLS. */
+  plaintext?: boolean
+  /** -insecure: TLS without certificate verification. */
+  insecure?: boolean
+  /** -d: request message as JSON text (may contain ${VAR}). */
+  data?: string
+  /** -H metadata entries. */
+  metadata: Header[]
+  /** -proto files (collection-relative or absolute; may contain ${VAR}). */
+  protoFiles: string[]
+  /** -import-path directories for proto resolution. */
+  importPaths: string[]
+  /** -max-time seconds. */
+  maxTimeSeconds?: number
+}
+
+/** Publish or subscribe, inferred from mosquitto_pub / mosquitto_sub. */
+export type MqttMode = 'publish' | 'subscribe'
+
+/** Parsed mosquitto_pub / mosquitto_sub command (supported-flag subset). */
+export interface MqttRequestModel {
+  mode: MqttMode
+  /** Broker host (-h). May contain ${VAR}. */
+  host: string
+  /** Broker port (-p). Default 1883. */
+  port?: number
+  /** Topic (-t). Publish: exact; subscribe: may use +/# wildcards. */
+  topic: string
+  /** QoS 0|1|2 (-q). */
+  qos?: number
+  /** -r retain (publish). */
+  retain?: boolean
+  /** Message payload (-m), publish only. May contain ${VAR}. */
+  message?: string
+  /** Client id (-i). */
+  clientId?: string
+  /** Username (-u). */
+  username?: string
+  /** Password (-P). */
+  password?: string
+  /** --cafile: trust this CA (enables TLS). May contain ${VAR}. */
+  caFile?: string
+}
+
 /** Standalone comment line in the body, preserved on rewrite. */
 export interface BodyComment {
   /** Index of the statement (assignment or command) this comment precedes;
@@ -150,6 +200,10 @@ export interface RequestFile {
   http?: HttpRequestModel
   /** Present when kind === 'websocat'. */
   ws?: WsRequestModel
+  /** Present when kind === 'grpc'. */
+  grpc?: GrpcRequestModel
+  /** Present when kind === 'mqtt'. */
+  mqtt?: MqttRequestModel
   comments: BodyComment[]
 }
 
@@ -395,6 +449,24 @@ export interface SavedExample {
   savedAt: string
   request: { method: string; url: string; headers: Header[]; body?: string }
   response: HttpResponseModel
+  /**
+   * Mock server: the example the mock serves by default for its route. At most
+   * one example per file should be active. Optional/back-compat — files saved
+   * before this field simply have it undefined (treated as "not active", so the
+   * mock falls back to first-in-file order).
+   */
+  active?: boolean
+}
+
+/** One line of the mock server's request log. */
+export interface MockRequestLogEntry {
+  method: string
+  path: string
+  status: number
+  matched: boolean
+  exampleName?: string
+  sourcePath?: string
+  at: string
 }
 
 /* ------------------------------ code generation -------------------------- */

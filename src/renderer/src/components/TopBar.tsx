@@ -5,6 +5,7 @@ interface Props {
   onDismissNotice: () => void
   onImport: () => void
   onHistory: () => void
+  onMock: () => void
 }
 
 export default function TopBar(props: Props): JSX.Element {
@@ -25,6 +26,9 @@ export default function TopBar(props: Props): JSX.Element {
       )}
       <button className="btn" onClick={props.onHistory} disabled={props.root === null}>
         History
+      </button>
+      <button className="btn" onClick={props.onMock} disabled={props.root === null}>
+        Mock Server
       </button>
       <button className="btn" onClick={props.onImport} disabled={props.root === null}>
         Import

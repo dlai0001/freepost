@@ -167,6 +167,11 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
   const [oauthUsername, setOauthUsername] = useState('')
   const [oauthPassword, setOauthPassword] = useState('')
   const [oauthSessionVar, setOauthSessionVar] = useState('')
+  // authorization_code interactive flow.
+  const [oauthAuthUrl, setOauthAuthUrl] = useState('')
+  const [oauthRedirectUri, setOauthRedirectUri] = useState('')
+  const oauthFlowIdRef = useRef<string | null>(null)
+  const [oauthFlowActive, setOauthFlowActive] = useState(false)
   const [oauthBusy, setOauthBusy] = useState(false)
   const [oauthResult, setOauthResult] = useState<string | null>(null)
   // GraphQL introspection.
@@ -291,6 +296,8 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
       setOauthUsername(a.username ?? '')
       setOauthPassword(a.password ?? '')
       setOauthSessionVar(a.sessionVar ?? '')
+      setOauthAuthUrl(a.authUrl ?? '')
+      setOauthRedirectUri(a.redirectUri ?? '')
     } else if (user !== undefined) {
       const colon = user.indexOf(':')
       setAuthMode('basic')
@@ -455,10 +462,14 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
         if (oauthPassword !== '') auth.password = oauthPassword
       }
       if (oauthSessionVar.trim() !== '') auth.sessionVar = oauthSessionVar.trim()
+      // authorization_code carries the authorize URL and (optional) redirect URI,
+      // edited on the Auth tab.
+      if (oauthGrant === 'authorization_code') {
+        if (oauthAuthUrl.trim() !== '') auth.authUrl = oauthAuthUrl.trim()
+        if (oauthRedirectUri.trim() !== '') auth.redirectUri = oauthRedirectUri.trim()
+      }
       // Preserve any inherited-only keys the editor doesn't surface.
       const prev = orig.frontmatter.auth
-      if (prev?.authUrl !== undefined) auth.authUrl = prev.authUrl
-      if (prev?.redirectUri !== undefined) auth.redirectUri = prev.redirectUri
       if (prev?.tokenName !== undefined) auth.tokenName = prev.tokenName
       fm.auth = auth
     } else {
@@ -787,8 +798,41 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
     }
   }
 
+  /** Format an acquired token for the small status line next to the button. */
+  function tokenSummary(token: AcquiredToken): string {
+    const truncated =
+      token.accessToken.length > 16
+        ? `${token.accessToken.slice(0, 8)}…${token.accessToken.slice(-4)}`
+        : token.accessToken
+    const expiry =
+      token.expiresAt !== undefined
+        ? ` · expires ${new Date(token.expiresAt).toLocaleString()}`
+        : ''
+    return `${token.tokenType} ${truncated}${expiry}`
+  }
+
   async function acquireToken(): Promise<void> {
     setOauthResult(null)
+    // authorization_code needs an interactive browser sign-in (handled by the
+    // main process + a loopback listener); other grants are a direct POST.
+    if (oauthGrant === 'authorization_code') {
+      setOauthBusy(true)
+      setOauthResult('Waiting for browser sign-in…')
+      try {
+        const { id } = await fp().authorizeOAuthStart({
+          root: props.root,
+          path: props.relPath,
+          envPath: props.envPath ?? undefined
+        })
+        oauthFlowIdRef.current = id
+        setOauthFlowActive(true)
+        // The terminal outcome arrives via onOAuthAuthorizeEvent.
+      } catch (e) {
+        setOauthResult(errMsg(e))
+        setOauthBusy(false)
+      }
+      return
+    }
     setOauthBusy(true)
     try {
       const token: AcquiredToken = await fp().acquireOAuthToken({
@@ -796,21 +840,38 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
         path: props.relPath,
         envPath: props.envPath ?? undefined
       })
-      const truncated =
-        token.accessToken.length > 16
-          ? `${token.accessToken.slice(0, 8)}…${token.accessToken.slice(-4)}`
-          : token.accessToken
-      const expiry =
-        token.expiresAt !== undefined
-          ? ` · expires ${new Date(token.expiresAt).toLocaleString()}`
-          : ''
-      setOauthResult(`${token.tokenType} ${truncated}${expiry}`)
+      setOauthResult(tokenSummary(token))
     } catch (e) {
       setOauthResult(errMsg(e))
     } finally {
       setOauthBusy(false)
     }
   }
+
+  function cancelOAuthFlow(): void {
+    const id = oauthFlowIdRef.current
+    if (id !== null) void fp().authorizeOAuthCancel(id).catch(() => undefined)
+    oauthFlowIdRef.current = null
+    setOauthFlowActive(false)
+    setOauthBusy(false)
+  }
+
+  // Terminal outcome of an interactive authorization_code sign-in.
+  useEffect(() => {
+    const off = fp().onOAuthAuthorizeEvent((e) => {
+      if (e.id !== oauthFlowIdRef.current) return
+      oauthFlowIdRef.current = null
+      setOauthFlowActive(false)
+      setOauthBusy(false)
+      setOauthResult(e.ok ? tokenSummary(e.token) : errMsg(e.error))
+    })
+    return () => {
+      off()
+      const id = oauthFlowIdRef.current
+      if (id !== null) void fp().authorizeOAuthCancel(id).catch(() => undefined)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function introspect(opts?: { open?: boolean }): Promise<void> {
     setGqlError(null)
@@ -1504,6 +1565,30 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
                         />
                       </>
                     )}
+                    {oauthGrant === 'authorization_code' && (
+                      <>
+                        <label className="field-label">Authorization URL</label>
+                        <input
+                          className="cell-input mono"
+                          value={oauthAuthUrl}
+                          placeholder="https://provider/authorize"
+                          onChange={(e) => {
+                            setOauthAuthUrl(e.target.value)
+                            touch()
+                          }}
+                        />
+                        <label className="field-label">Redirect URI</label>
+                        <input
+                          className="cell-input mono"
+                          value={oauthRedirectUri}
+                          placeholder="blank = auto-picked loopback port"
+                          onChange={(e) => {
+                            setOauthRedirectUri(e.target.value)
+                            touch()
+                          }}
+                        />
+                      </>
+                    )}
                     <label className="field-label">Session variable</label>
                     <input
                       className="cell-input mono"
@@ -1520,8 +1605,19 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
                         onClick={() => void acquireToken()}
                         disabled={oauthBusy}
                       >
-                        {oauthBusy ? 'Acquiring…' : 'Acquire token'}
+                        {oauthGrant === 'authorization_code'
+                          ? oauthBusy
+                            ? 'Signing in…'
+                            : 'Sign in'
+                          : oauthBusy
+                            ? 'Acquiring…'
+                            : 'Acquire token'}
                       </button>
+                      {oauthFlowActive && (
+                        <button className="btn btn-small" onClick={cancelOAuthFlow}>
+                          Cancel
+                        </button>
+                      )}
                       {oauthResult !== null && (
                         <span className="oauth-result mono">{oauthResult}</span>
                       )}
@@ -1539,7 +1635,10 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
                         {oauthSessionVar.trim() === '' ? DEFAULT_OAUTH_VAR : oauthSessionVar.trim()}
                         {'}'}
                       </span>
-                      . The authorization_code grant is not supported interactively.
+                      .{' '}
+                      {oauthGrant === 'authorization_code'
+                        ? 'Sign in opens your system browser; the token is cached under .freepost/ and refreshed automatically on later runs. Headless CLI runs reuse that cached token (no browser), so sign in here at least once first.'
+                        : ''}
                     </div>
                   </div>
                 )}

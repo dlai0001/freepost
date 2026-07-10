@@ -13,24 +13,32 @@
  *     --reporter <cli|json>   output format (default: cli)
  *     -h, --help              show this help
  *
+ *   freepost mock <collection> [--port <n>]
+ *     Serve the collection's saved response examples over HTTP until Ctrl-C.
+ *
  * Exit code is 0 when everything passed, 1 when any request errored, any test
  * assertion failed, or a workflow halted.
  */
 import { existsSync, readFileSync } from 'fs'
 import { isAbsolute, resolve } from 'path'
 import type { ExecutionReport, TestResult, WorkflowStepResult } from '../shared/model'
-import { requestKindForPath } from '../core/format'
+import { parseRequestFile, requestKindForPath } from '../core/format'
 import { parseWorkflow, runWorkflow, validateReferences } from '../core/workflow'
 import { executeRequest } from '../main/execute'
 import { listFiles } from '../main/collection'
+import { buildRoutesForCollection } from '../main/mock'
+import { MockServer } from '../engine'
 
 export interface CliIo {
   cwd: string
   write: (s: string) => void
   color: boolean
+  /** Register a Ctrl-C handler for long-running commands (mock). Optional in tests. */
+  onSigint?: (cb: () => void) => void
 }
 
-interface Options {
+interface RunOptions {
+  command: 'run'
   collection: string
   env?: string
   workflows: string[]
@@ -39,25 +47,71 @@ interface Options {
   reporter: 'cli' | 'json'
 }
 
+interface MockOptions {
+  command: 'mock'
+  collection: string
+  port: number
+}
+
+type Options = RunOptions | MockOptions
+
 const HELP = `freepost — offline API client, headless runner
 
-Usage: freepost run <collection> [options]
+Usage:
+  freepost run <collection> [options]
+  freepost mock <collection> [--port <n>]
 
-Options:
+run options:
   --env <file>           environment JSON file
   --workflow <path>      run this workflow (collection-relative); repeatable
   --filter <substr>      only run requests whose path contains <substr>; repeatable
   --bail                 stop at the first failing request/step
   --reporter <cli|json>  output format (default: cli)
+
+mock options:
+  --port <n>             port to listen on (default: an ephemeral port)
+
   -h, --help             show this help
 `
 
 function parseArgs(argv: string[]): { options?: Options; error?: string; help?: boolean } {
   if (argv.length === 0 || argv.includes('-h') || argv.includes('--help')) return { help: true }
-  if (argv[0] !== 'run') return { error: `Unknown command: ${argv[0]}. Try 'freepost run <collection>'.` }
-
-  const opts: Options = { collection: '', workflows: [], filters: [], bail: false, reporter: 'cli' }
+  const command = argv[0]
+  if (command !== 'run' && command !== 'mock') {
+    return { error: `Unknown command: ${command}. Try 'freepost run <collection>' or 'freepost mock <collection>'.` }
+  }
   const rest = argv.slice(1)
+
+  if (command === 'mock') {
+    const opts: MockOptions = { command: 'mock', collection: '', port: 0 }
+    for (let i = 0; i < rest.length; i++) {
+      const a = rest[i]
+      const next = (): string | undefined => rest[++i]
+      if (a === '--port') {
+        const v = next()
+        const n = v !== undefined ? Number(v) : NaN
+        if (!Number.isInteger(n) || n < 0 || n > 65535) return { error: `--port must be 0-65535` }
+        opts.port = n
+      } else if (a.startsWith('-')) {
+        return { error: `Unknown option: ${a}` }
+      } else if (opts.collection === '') {
+        opts.collection = a
+      } else {
+        return { error: `Unexpected argument: ${a}` }
+      }
+    }
+    if (opts.collection === '') return { error: 'Missing <collection> path.' }
+    return { options: opts }
+  }
+
+  const opts: RunOptions = {
+    command: 'run',
+    collection: '',
+    workflows: [],
+    filters: [],
+    bail: false,
+    reporter: 'cli'
+  }
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i]
     const next = (): string | undefined => rest[++i]
@@ -150,6 +204,36 @@ function reportStep(io: CliIo, s: WorkflowStepResult, totals: Totals): void {
  * Run the CLI. Returns a process exit code (0 = all passed). `io` is injectable
  * so tests can capture output and set the working directory.
  */
+/**
+ * `freepost mock`: build routes from saved examples, serve them, and stay up
+ * until Ctrl-C (or the injected onSigint fires). Resolves with an exit code.
+ */
+async function runMockServer(opts: MockOptions, root: string, io: CliIo): Promise<number> {
+  const c = paint(io)
+  const routes = await buildRoutesForCollection(root)
+  if (routes.length === 0) {
+    io.write(c.red('No routes: no requests with saved examples found in this collection.\n'))
+    return 2
+  }
+  const server = new MockServer()
+  server.on('request', (e) => {
+    const mark = e.matched ? c.green('✓') : c.red('✗')
+    io.write(`${mark} ${e.method} ${e.path} ${c.dim(`→ ${e.status}${e.exampleName !== undefined ? ' ' + e.exampleName : ''}`)}\n`)
+  })
+  const { port } = await server.start({ routes, port: opts.port })
+  io.write(c.green(`Mock server listening on http://127.0.0.1:${port}`) + c.dim(` · ${routes.length} route(s) · Ctrl-C to stop\n`))
+
+  return await new Promise<number>((resolvePromise) => {
+    const stop = (): void => {
+      void server.stop().then(() => {
+        io.write(c.dim('\nMock server stopped.\n'))
+        resolvePromise(0)
+      })
+    }
+    if (io.onSigint !== undefined) io.onSigint(stop)
+  })
+}
+
 export async function run(argv: string[], io: CliIo): Promise<number> {
   const parsed = parseArgs(argv)
   if (parsed.help === true) {
@@ -166,6 +250,8 @@ export async function run(argv: string[], io: CliIo): Promise<number> {
     io.write(`Collection not found: ${root}\n`)
     return 2
   }
+  if (opts.command === 'mock') return runMockServer(opts, root, io)
+  // From here `opts` is narrowed to RunOptions.
   const envPath = opts.env === undefined ? undefined : isAbsolute(opts.env) ? opts.env : resolve(io.cwd, opts.env)
   const session = new Map<string, string>()
   const totals: Totals = { requests: 0, assertions: 0, failures: 0 }
@@ -207,13 +293,28 @@ export async function run(argv: string[], io: CliIo): Promise<number> {
       if (report.halted && opts.bail) break
     }
   } else {
-    // Request mode: every runnable HTTP request, path-sorted, shared session.
+    // Request mode: every one-shot-runnable request, path-sorted, shared
+    // session. Runnable: HTTP (.curl), gRPC unary (.grpc), MQTT publish (.mqtt).
+    // Not one-shot (skipped, like websocket): MQTT subscribe. gRPC
+    // server-streaming can't be told apart without loading the proto, so it
+    // runs and surfaces a clear "use the streaming client" error.
     const files = (await listFiles(root)).sort()
-    let skippedWs = 0
+    const skipped: { websocket: number; mqttSubscribe: number } = { websocket: 0, mqttSubscribe: 0 }
     for (const rel of files) {
       const kind = requestKindForPath(rel)
       if (kind === null) continue
-      if (kind !== 'curl') { skippedWs++; continue } // websocket requests aren't one-shot runnable
+      if (kind === 'websocat') {
+        skipped.websocket++
+        continue
+      }
+      if (kind === 'mqtt') {
+        // Subscribe files are long-lived, not one-shot.
+        const parsed = parseRequestFile(readFileSync(resolve(root, rel), 'utf8'), 'mqtt')
+        if (parsed.ok && parsed.file.mqtt?.mode === 'subscribe') {
+          skipped.mqttSubscribe++
+          continue
+        }
+      }
       if (opts.filters.length > 0 && !opts.filters.some((f) => rel.toLowerCase().includes(f.toLowerCase()))) {
         continue
       }
@@ -222,8 +323,13 @@ export async function run(argv: string[], io: CliIo): Promise<number> {
       else reportRequest(io, rel, report, totals)
       if (report.errored && opts.bail) break
     }
-    if (skippedWs > 0 && opts.reporter === 'cli') {
-      io.write(c.dim(`\n(${skippedWs} websocket request(s) skipped — not one-shot runnable)\n`))
+    if (opts.reporter === 'cli') {
+      const notes: string[] = []
+      if (skipped.websocket > 0) notes.push(`${skipped.websocket} websocket`)
+      if (skipped.mqttSubscribe > 0) notes.push(`${skipped.mqttSubscribe} MQTT subscribe`)
+      if (notes.length > 0) {
+        io.write(c.dim(`\n(${notes.join(', ')} request(s) skipped — not one-shot runnable)\n`))
+      }
     }
   }
 
@@ -241,7 +347,8 @@ if (process.argv[1] !== undefined && import.meta.url === `file://${process.argv[
   run(process.argv.slice(2), {
     cwd: process.cwd(),
     write: (s) => process.stdout.write(s),
-    color: process.stdout.isTTY === true
+    color: process.stdout.isTTY === true,
+    onSigint: (cb) => process.once('SIGINT', cb)
   })
     .then((code) => process.exit(code))
     .catch((e) => {

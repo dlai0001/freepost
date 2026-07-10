@@ -2,14 +2,31 @@ import { promises as fs } from 'fs'
 import { appendFileSync, chmodSync, existsSync, readFileSync, writeFileSync } from 'fs'
 import { randomUUID } from 'crypto'
 import { basename, dirname, isAbsolute, join } from 'path'
-import type { ExecutionReport, FormField, Header, HttpResponseModel, RequestFile } from '../shared/model'
+import type {
+  AcquiredToken,
+  ExecutionReport,
+  FormField,
+  Header,
+  HttpResponseModel,
+  OAuth2Config,
+  RequestFile
+} from '../shared/model'
 import { parseRequestFile, requestKindForPath } from '../core/format'
 import { buildMultipartBody, multipartContentType, type MultipartPart } from '../core/format/multipart'
 import { resolveVariables, substitute, substituteModel } from '../core/vars'
 import { runScript } from '../core/sandbox'
 import { mergeRequestHeaders } from '../core/config'
-import { sendHttp, CookieJar, shouldBypassProxy } from '../engine'
+import {
+  sendHttp,
+  sendGrpcUnary,
+  publishMqtt,
+  mqttConnectArgs,
+  CookieJar,
+  refreshToken,
+  shouldBypassProxy
+} from '../engine'
 import { ensureFreepostDir } from './collection'
+import { isExpired, readCachedToken, writeCachedToken } from './oauth-cache'
 import { resolveConfigChain } from './config-resolve'
 
 /** One in-memory cookie jar per collection root. */
@@ -80,8 +97,8 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
     errored: false
   }
 
-  if (kind !== 'curl') {
-    return { ...report, errored: true, transportError: 'Not an HTTP request file (.curl)' }
+  if (kind !== 'curl' && kind !== 'grpc' && kind !== 'mqtt') {
+    return { ...report, errored: true, transportError: 'Not a one-shot request file (.curl/.grpc/.mqtt)' }
   }
 
   let file: RequestFile
@@ -101,6 +118,10 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
     }
     file = parsed.file
   }
+
+  if (kind === 'grpc') return executeGrpc(args, file, report)
+  if (kind === 'mqtt') return executeMqtt(args, file, report)
+
   const http = file.http
   if (http === undefined) {
     return { ...report, errored: true, transportError: 'File has no HTTP command' }
@@ -141,6 +162,33 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
     if (pre.error !== undefined) report.errored = true
   }
   if (preOutcomes.length > 0) report.preScript = mergeOutcomes(preOutcomes)
+
+  // OAuth2 authorization_code: this grant needs an interactive browser sign-in,
+  // which only the desktop app can do. Here (and in the CLI) we can only reuse a
+  // token a prior sign-in cached under .freepost/, refreshing it if expired.
+  const oauth = file.frontmatter.auth ?? cfg.auth
+  if (oauth !== undefined && oauth.grant === 'authorization_code') {
+    const sessionVar = oauth.sessionVar ?? 'OAUTH_TOKEN'
+    if (sessionObj[sessionVar] === undefined) {
+      // Resolve auth-config values with the same precedence the IPC sign-in
+      // handler uses (request values > session > env) so the on-disk token
+      // cache key matches what the interactive flow wrote.
+      const pre = resolveVariables(file.variables, sessionObj, env)
+      const merged = { ...env, ...sessionObj, ...pre.values }
+      const resolveScalar = (s: string): string => substitute(s, merged)
+      try {
+        const tok = await ensureAuthorizationCodeToken(root, oauth, resolveScalar)
+        session.set(sessionVar, tok.accessToken)
+        sessionObj[sessionVar] = tok.accessToken
+      } catch (e) {
+        return {
+          ...report,
+          errored: true,
+          transportError: e instanceof Error ? e.message : String(e)
+        }
+      }
+    }
+  }
 
   // Resolve variables: session > env > request defaults.
   const { values, unresolved } = resolveVariables(file.variables, sessionObj, env)
@@ -322,6 +370,270 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
   return report
 }
 
+/** Resolve a proto path: absolute untouched, else relative to the request dir. */
+function resolveProtoPath(requestDir: string, p: string): string {
+  return isAbsolute(p) ? p : join(requestDir, p)
+}
+
+/**
+ * Execute a unary gRPC (.grpc) request: pre-scripts -> resolve -> invoke ->
+ * test-scripts. The gRPC response is mapped onto the same HttpResponseModel /
+ * ExecutionReport shape the rest of the app uses (OK -> 200, error -> 500 with
+ * the status code name in statusText), so pm.* scripts, history, and the CLI
+ * reporter all work uniformly. Server-streaming methods aren't one-shot and are
+ * handled by the streaming client (IPC), not here.
+ */
+async function executeGrpc(
+  args: ExecuteArgs,
+  file: RequestFile,
+  report: ExecutionReport
+): Promise<ExecutionReport> {
+  const { root, path, session } = args
+  const abs = join(root, path)
+  const grpcModel = file.grpc
+  if (grpcModel === undefined) {
+    return { ...report, errored: true, transportError: 'File has no grpcurl command' }
+  }
+  const env = readEnvFile(root, args.envPath)
+  const sessionObj = Object.fromEntries(session)
+  const requestName = path.split('/').pop() ?? path
+  const { config: cfg } = await resolveConfigChain(root, path)
+
+  // Pre-request scripts (request shape: method=fullMethod, url=target).
+  const preScripts = [
+    ...cfg.preScripts,
+    ...(file.frontmatter.scripts?.['pre-request']
+      ? [{ source: file.frontmatter.scripts['pre-request'], origin: requestName }]
+      : [])
+  ]
+  const preOutcomes: import('../shared/model').ScriptOutcome[] = []
+  for (const s of preScripts) {
+    if (s.source.trim() === '') continue
+    const pre = await runScript({
+      source: s.source,
+      phase: 'pre-request',
+      request: { method: grpcModel.fullMethod, url: grpcModel.target, headers: grpcModel.metadata },
+      session: sessionObj,
+      env,
+      requestName,
+      sendRequest: (r) => sandboxSend(r, args)
+    })
+    preOutcomes.push(pre)
+    for (const [k, v] of Object.entries(pre.sessionWrites)) {
+      session.set(k, v)
+      sessionObj[k] = v
+    }
+    if (pre.error !== undefined) report.errored = true
+  }
+  if (preOutcomes.length > 0) report.preScript = mergeOutcomes(preOutcomes)
+
+  const { values, unresolved } = resolveVariables(file.variables, sessionObj, env)
+  if (unresolved.length > 0) return { ...report, unresolved, errored: true }
+
+  const requestDir = dirname(abs)
+  const target = substitute(grpcModel.target, values)
+  const fullMethod = substitute(grpcModel.fullMethod, values)
+  const data = grpcModel.data !== undefined ? substitute(grpcModel.data, values) : undefined
+  const metadata = grpcModel.metadata.map((h) => ({ name: h.name, value: substitute(h.value, values) }))
+  const protoFiles = grpcModel.protoFiles.map((p) => resolveProtoPath(requestDir, substitute(p, values)))
+  const importPaths = grpcModel.importPaths.map((p) => resolveProtoPath(requestDir, substitute(p, values)))
+  report.resolvedUrl = `${target} ${fullMethod}`
+  report.resolvedRequest = { method: fullMethod, url: target, headers: metadata, body: data }
+
+  const grpcRes = await sendGrpcUnary({
+    target,
+    fullMethod,
+    data,
+    metadata,
+    protoFiles,
+    importPaths,
+    plaintext: grpcModel.plaintext,
+    insecure: grpcModel.insecure,
+    deadlineMs: grpcModel.maxTimeSeconds !== undefined ? grpcModel.maxTimeSeconds * 1000 : undefined
+  })
+
+  const response: HttpResponseModel = {
+    status: grpcRes.code === 0 ? 200 : 500,
+    statusText: grpcRes.codeName,
+    headers: grpcRes.metadata,
+    bodyText: grpcRes.message,
+    timeMs: grpcRes.timeMs,
+    sizeBytes: Buffer.byteLength(grpcRes.message)
+  }
+  report.response = response
+  if (grpcRes.code !== 0) report.errored = true
+
+  // Test scripts (request's own first, then inherited).
+  const testScripts = [
+    ...(file.frontmatter.scripts?.test
+      ? [{ source: file.frontmatter.scripts.test, origin: requestName }]
+      : []),
+    ...cfg.testScripts
+  ]
+  const testOutcomes: import('../shared/model').ScriptOutcome[] = []
+  for (const s of testScripts) {
+    if (s.source.trim() === '') continue
+    const test = await runScript({
+      source: s.source,
+      phase: 'test',
+      request: { method: fullMethod, url: target, headers: metadata },
+      response,
+      session: sessionObj,
+      env,
+      requestName,
+      sendRequest: (r) => sandboxSend(r, args)
+    })
+    testOutcomes.push(test)
+    for (const [k, v] of Object.entries(test.sessionWrites)) session.set(k, v)
+    if (test.error !== undefined || test.tests.some((t) => !t.passed)) report.errored = true
+  }
+  if (testOutcomes.length > 0) report.testScript = mergeOutcomes(testOutcomes)
+
+  appendHistory(root, {
+    at: new Date().toISOString(),
+    path,
+    method: fullMethod,
+    url: target,
+    status: response.status,
+    timeMs: response.timeMs,
+    errored: report.errored
+  })
+  return report
+}
+
+/**
+ * Execute a one-shot MQTT publish (.mqtt in publish mode): pre-scripts ->
+ * resolve -> publish -> test-scripts. The publish result is mapped onto the
+ * shared ExecutionReport (success -> 200, failure -> 500). Subscribe-mode files
+ * are long-lived and handled by the streaming client (IPC), not here.
+ */
+async function executeMqtt(
+  args: ExecuteArgs,
+  file: RequestFile,
+  report: ExecutionReport
+): Promise<ExecutionReport> {
+  const { root, path, session } = args
+  const abs = join(root, path)
+  const m = file.mqtt
+  if (m === undefined) {
+    return { ...report, errored: true, transportError: 'File has no mosquitto command' }
+  }
+  if (m.mode !== 'publish') {
+    return {
+      ...report,
+      errored: true,
+      transportError: 'MQTT subscribe is not one-shot runnable; connect from the app instead'
+    }
+  }
+  const env = readEnvFile(root, args.envPath)
+  const sessionObj = Object.fromEntries(session)
+  const requestName = path.split('/').pop() ?? path
+  const { config: cfg } = await resolveConfigChain(root, path)
+
+  const preScripts = [
+    ...cfg.preScripts,
+    ...(file.frontmatter.scripts?.['pre-request']
+      ? [{ source: file.frontmatter.scripts['pre-request'], origin: requestName }]
+      : [])
+  ]
+  const preOutcomes: import('../shared/model').ScriptOutcome[] = []
+  for (const s of preScripts) {
+    if (s.source.trim() === '') continue
+    const pre = await runScript({
+      source: s.source,
+      phase: 'pre-request',
+      request: { method: 'PUBLISH', url: `${m.host}/${m.topic}`, headers: [] },
+      session: sessionObj,
+      env,
+      requestName,
+      sendRequest: (r) => sandboxSend(r, args)
+    })
+    preOutcomes.push(pre)
+    for (const [k, v] of Object.entries(pre.sessionWrites)) {
+      session.set(k, v)
+      sessionObj[k] = v
+    }
+    if (pre.error !== undefined) report.errored = true
+  }
+  if (preOutcomes.length > 0) report.preScript = mergeOutcomes(preOutcomes)
+
+  const { values, unresolved } = resolveVariables(file.variables, sessionObj, env)
+  if (unresolved.length > 0) return { ...report, unresolved, errored: true }
+
+  const host = substitute(m.host, values)
+  const topic = substitute(m.topic, values)
+  const message = m.message !== undefined ? substitute(m.message, values) : ''
+  const caFile =
+    m.caFile !== undefined ? resolveCertPath(dirname(abs), substitute(m.caFile, values)) : undefined
+  report.resolvedUrl = `${host}/${topic}`
+  report.resolvedRequest = { method: 'PUBLISH', url: `${host}/${topic}`, headers: [], body: message }
+
+  const result = await publishMqtt({
+    ...mqttConnectArgs(m),
+    host,
+    caFile,
+    username: m.username !== undefined ? substitute(m.username, values) : undefined,
+    password: m.password !== undefined ? substitute(m.password, values) : undefined,
+    topic,
+    message,
+    qos: m.qos,
+    retain: m.retain
+  })
+
+  const bodyText = result.ok
+    ? JSON.stringify({ published: true, topic }, null, 2)
+    : JSON.stringify({ error: result.error }, null, 2)
+  const response: HttpResponseModel = {
+    status: result.ok ? 200 : 500,
+    statusText: result.ok ? 'PUBLISHED' : 'ERROR',
+    headers: [],
+    bodyText,
+    timeMs: result.timeMs,
+    sizeBytes: Buffer.byteLength(bodyText)
+  }
+  report.response = response
+  if (!result.ok) {
+    report.errored = true
+    report.transportError = result.error
+  }
+
+  const testScripts = [
+    ...(file.frontmatter.scripts?.test
+      ? [{ source: file.frontmatter.scripts.test, origin: requestName }]
+      : []),
+    ...cfg.testScripts
+  ]
+  const testOutcomes: import('../shared/model').ScriptOutcome[] = []
+  for (const s of testScripts) {
+    if (s.source.trim() === '') continue
+    const test = await runScript({
+      source: s.source,
+      phase: 'test',
+      request: { method: 'PUBLISH', url: `${host}/${topic}`, headers: [] },
+      response,
+      session: sessionObj,
+      env,
+      requestName,
+      sendRequest: (r) => sandboxSend(r, args)
+    })
+    testOutcomes.push(test)
+    for (const [k, v] of Object.entries(test.sessionWrites)) session.set(k, v)
+    if (test.error !== undefined || test.tests.some((t) => !t.passed)) report.errored = true
+  }
+  if (testOutcomes.length > 0) report.testScript = mergeOutcomes(testOutcomes)
+
+  appendHistory(root, {
+    at: new Date().toISOString(),
+    path,
+    method: 'PUBLISH',
+    url: `${host}/${topic}`,
+    status: response.status,
+    timeMs: response.timeMs,
+    errored: report.errored
+  })
+  return report
+}
+
 /** Combine several script outcomes (folder + request level) into one. */
 function mergeOutcomes(
   outcomes: import('../shared/model').ScriptOutcome[]
@@ -365,6 +677,35 @@ function resolveProxy(configProxy: string | undefined, targetUrl: string): strin
     ? (env.HTTPS_PROXY ?? env.https_proxy)
     : (env.HTTP_PROXY ?? env.http_proxy)
   return scheme ?? env.ALL_PROXY ?? env.all_proxy
+}
+
+/**
+ * Reuse (and if needed refresh) a cached authorization_code token. There is no
+ * headless interactive login: if no valid token is cached and it can't be
+ * refreshed, this throws a message telling the user to sign in via the app.
+ */
+async function ensureAuthorizationCodeToken(
+  root: string,
+  oauth: OAuth2Config,
+  resolveScalar: (s: string) => string
+): Promise<AcquiredToken> {
+  const cached = await readCachedToken(root, oauth, resolveScalar)
+  if (cached !== undefined && !isExpired(cached)) return cached
+  if (cached?.refreshToken !== undefined) {
+    try {
+      const refreshed = await refreshToken(oauth, cached.refreshToken, resolveScalar)
+      // Providers may omit a new refresh_token; keep the previous one.
+      if (refreshed.refreshToken === undefined) refreshed.refreshToken = cached.refreshToken
+      await writeCachedToken(root, oauth, resolveScalar, refreshed)
+      return refreshed
+    } catch {
+      /* fall through to the sign-in-required error */
+    }
+  }
+  throw new Error(
+    'No valid OAuth token cached for this request. Sign in via the Auth tab in the ' +
+      'desktop app — authorization_code tokens cannot be acquired headlessly.'
+  )
 }
 
 /** pm.sendRequest delegate — goes through the engine like everything else. */

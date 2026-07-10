@@ -2,7 +2,7 @@
  *  in the tab components themselves (they stay mounted while open). */
 import type { TreeNode } from '../../shared/model'
 
-export type TabType = 'request' | 'websocket' | 'workflow'
+export type TabType = 'request' | 'websocket' | 'workflow' | 'grpc' | 'mqtt'
 
 /** Imperative handle a tab component exposes so the shell can save it on close. */
 export interface TabHandle {

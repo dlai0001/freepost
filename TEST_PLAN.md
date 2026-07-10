@@ -58,6 +58,11 @@ Prereq: a local echo server (e.g. `httpbin` container or a tiny node echo). Open
 12. **History** — TopBar **History** lists recent sends; Clear empties it.
 13. **Saved examples** — after a send, **Save as example**; reopen request → example listed; view its saved response; delete it.
 14. **Zero-network audit** — confirm no outbound request occurs except user-initiated sends (the fence is the mechanical proof; spot-check by watching the network at idle).
+15. **OAuth2 interactive** — a request with OAuth2 `authorization_code` auth; **Sign in** opens the system browser, complete the login, redirect is caught on the loopback port, token stored + cached under `.freepost/oauth-tokens/`; send using `${OAUTH_TOKEN}`. Re-send later reuses/refreshes silently.
+16. **Mock server** — TopBar **Mock Server** → **Start**; copy the base URL; hit a route with a saved example (matching example served), hit an unknown path (404 + available routes); mark a different example **active** and re-hit; **Stop**. Also `freepost mock <collection>` from a terminal.
+17. **gRPC** — a `.grpc` request pointing at a local gRPC server with its `.proto`; **Send** a unary call → reply JSON + OK; a server-streaming method via **Stream** → live messages until end.
+18. **MQTT** — a publish `.mqtt` against a local broker → **Publish** succeeds; a subscribe `.mqtt` (wildcard topic) → **Subscribe** shows messages live as another client publishes.
+19. **Headless CLI** — `freepost run <collection> --reporter json` exits 0/1 correctly; websocket and MQTT-subscribe files are skipped with a note; `--bail` stops at the first failure.
 
 ---
 

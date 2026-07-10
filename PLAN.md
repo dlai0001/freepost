@@ -11,9 +11,15 @@
 > OpenAPI 3.x/Swagger 2.0 import, curl/websocat/wscat paste & file import, request
 > history + saved response examples, zero-network fence in CI, examples collection,
 > marketing site live at https://dlai0001.github.io/freepost/.
-> **Deferred to post-1.0:** OAuth2 authorization_code interactive flow, headless
-> CLI runner (Newman analog), gRPC, mock server, MQTT, plugin API. See TEST_PLAN.md
-> for verification coverage.
+>
+> **Post-1.0 (M6–M10, implemented & CI-verified):** OAuth2 authorization_code
+> interactive flow (RFC 8252 system-browser + loopback listener, PKCE, token
+> cache/refresh under `.freepost/`); headless CLI runner (`freepost run`, the
+> Newman analog — HTTP, gRPC unary, MQTT publish; long-lived kinds skipped);
+> gRPC (unary + server-streaming via grpcurl-style `.grpc` files on
+> `@grpc/grpc-js`); mock server (replays saved examples over HTTP, `freepost
+> mock`); MQTT (publish/subscribe via mosquitto-style `.mqtt` files on mqtt.js).
+> **Still deferred:** plugin API. See TEST_PLAN.md for verification coverage.
 
 An open-source Postman clone: offline-only, no registration, builds from source on
 Windows and macOS, saves requests to disk anywhere as pretty-printed curl commands.
@@ -419,14 +425,16 @@ app which engine and writer to use).
 
 ### Network policy (decided: absolute zero)
 
-**The only network I/O in the entire application is requests the user explicitly
-sends.** No telemetry, no crash reporting, no auto-update, and no update check —
-not even a manual one. Users track releases via GitHub. This is a hard, README-stated
-guarantee and a code-review invariant: the request engine is the sole module allowed
-to open a socket, making the promise mechanically auditable (`grep` for network APIs
-finds one module) — exactly the audit that locked-down corporate security teams
-perform. CI should enforce it (e.g. a lint rule fencing network imports to the
-request-engine package).
+**The only sockets ever opened are ones the user explicitly initiates** — an
+outbound request they send, or a mock server they start (post-1.0; a *listening*
+socket, still user-initiated and loopback-bound by default). No telemetry, no
+crash reporting, no auto-update, and no update check — not even a manual one.
+Users track releases via GitHub. This is a hard, README-stated guarantee and a
+code-review invariant: the request engine (`src/engine`) is the sole module
+allowed to open a socket — inbound or outbound — making the promise mechanically
+auditable (`grep` for network APIs finds one module) — exactly the audit that
+locked-down corporate security teams perform. CI enforces it via
+`scripts/check-network-fence.mjs` (fencing network imports/APIs to `src/engine`).
 
 ## 4. Tech stack
 
@@ -500,7 +508,8 @@ signed builds optional, with `git clone && npm i && npm start` documented (CI-te
 since M1). Docs note the Windows executability caveat: `.curl`/`.ws` files run
 directly only under Git Bash/WSL — the app itself is fully native on Windows.
 
-**Post-1.0:** headless CLI runner, gRPC, mock server, MQTT, plugin API.
+**Post-1.0 (M6–M10, done):** OAuth2 authorization_code interactive flow, headless
+CLI runner, gRPC, mock server, MQTT. **Still deferred:** plugin API.
 
 ---
 

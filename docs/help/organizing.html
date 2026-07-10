@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Saving &amp; organizing — Freepost Help</title>
+<meta name="description" content="How Freepost saves requests to disk, and how to organize a collection: folders, labels, search, environments, sessions, and variable resolution order.">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="topbar-logo" href="../index.html">$ freepost</a>
+    <span class="topbar-crumb">Help / Saving &amp; organizing</span>
+    <div class="topbar-spacer"></div>
+    <a class="topbar-link" href="../index.html">Website</a>
+    <a class="topbar-link" href="https://github.com/dlai0001/freepost">GitHub</a>
+  </div>
+</header>
+
+<div class="docs-shell">
+  <nav class="docs-nav">
+    <div class="docs-nav-title">Guides</div>
+    <a href="./index.html">Overview</a>
+    <a href="./creating-requests.html">Creating requests</a>
+    <a href="./importing.html">Importing</a>
+    <a class="active" href="./organizing.html">Saving &amp; organizing</a>
+    <a href="./workflows.html">Workflows</a>
+    <a href="./scripting.html">Scripting (pm.*)</a>
+  </nav>
+
+  <article class="docs-article">
+    <h1>Saving &amp; organizing</h1>
+    <p class="lede">
+      There's no database and no sync. A collection is a folder; saving a request writes a
+      file into it. Everything below is just filesystem structure plus a small, predictable
+      set of variable scopes.
+    </p>
+
+    <h2>Saving</h2>
+    <p>
+      Save (button, or the shortcut shown on hover) rewrites the request to its
+      <strong>canonical form</strong>: long-form flags, one per line, normalized quoting —
+      the same "gofmt for curl" treatment every time, so diffs stay small and predictable.
+      Two things are always preserved even though the file is rewritten:
+    </p>
+    <ul>
+      <li>Frontmatter keys the app doesn't know about are kept verbatim.</li>
+      <li>Standalone <code>#</code> comment lines you wrote in the body stay in place.</li>
+    </ul>
+    <p>
+      If a file doesn't parse as valid Freepost shell (pipes, conditionals, multiple
+      commands), it's shown in the tree marked invalid, stays editable as raw text, and is
+      <strong>never</strong> rewritten by the app — a parse error can't corrupt hand-written
+      content.
+    </p>
+
+    <h2>Collections &amp; folders</h2>
+    <p>
+      A <strong>collection</strong> is whatever folder you opened with
+      <strong>Open Collection</strong>. Sub-folders in the sidebar are ordinary folders on
+      disk. Rename or move a request or folder in the app and the file/folder on disk is
+      renamed or moved to match — and the reverse holds too: the app watches the filesystem,
+      so edits made outside it (a <code>git pull</code>, an editor, a script) show up
+      immediately.
+    </p>
+    <p>
+      A <code>collection.json</code> (collection root) or <code>folder.json</code> (any
+      subfolder) sidecar file can set defaults that every request under it inherits: default
+      headers, auth, a CA certificate, proxy settings, and pre-request/test scripts that wrap
+      every request in that folder.
+    </p>
+
+    <h2>Labels &amp; search</h2>
+    <p>
+      Add labels to a request in its <strong>Meta</strong> tab (stored as frontmatter
+      <code>label:</code>). The sidebar search box matches free text against name,
+      description, URL, and method, and supports a <code>label:</code> filter — click a label
+      chip on any result to filter by it instantly.
+    </p>
+
+    <figure class="docs-shot">
+      <svg viewBox="0 0 640 100" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="A search box containing the query label:smoke, matching two requests tagged smoke.">
+        <rect width="640" height="100" fill="#0a0d12"/>
+        <rect x="20" y="16" width="300" height="28" rx="6" fill="#161b22" stroke="#30363d"/>
+        <text x="34" y="34" font-family="ui-monospace, monospace" font-size="12" fill="#e6edf3">label:smoke</text>
+        <g font-family="-apple-system, Segoe UI, sans-serif" font-size="12">
+          <rect x="20" y="58" width="42" height="16" rx="4" fill="#ffffff" fill-opacity="0.06"/>
+          <text x="41" y="70" font-family="ui-monospace, monospace" font-size="10" font-weight="700" fill="#3fb950" text-anchor="middle">GET</text>
+          <text x="70" y="71" fill="#e6edf3">get user</text>
+          <rect x="150" y="60" width="54" height="18" rx="9" fill="#58a6ff" fill-opacity="0.12" stroke="#58a6ff" stroke-opacity="0.35"/>
+          <text x="177" y="73" fill="#58a6ff" text-anchor="middle">smoke</text>
+        </g>
+      </svg>
+    </figure>
+
+    <h2>Environments</h2>
+    <p>
+      An <strong>environment</strong> is a saved set of variables stored as a
+      <code>*.env.json</code> file under an <code>environments/</code> folder. Pick one from
+      the dropdown at the bottom of the sidebar, or manage them (add, rename, edit values) from
+      the gear icon next to it — a two-pane manager listing every variable across your
+      environments side by side. Secrets left blank in <code>*.env.json</code> and instead put
+      in a git-ignored <code>*.local.env.json</code> stay out of version control.
+    </p>
+
+    <h2>Session</h2>
+    <p>
+      Click <strong>Session</strong> in the sidebar to open the session panel: an in-memory
+      table of runtime variables, inspectable and clearable. Pre-request and test scripts
+      write here (<code>pm.variables.set(...)</code> and friends — see the
+      <a href="./scripting.html">scripting guide</a>). It's cleared when the app restarts and
+      never touches disk.
+    </p>
+
+    <h2 id="how-variables-resolve">How variables resolve</h2>
+    <p>
+      Every <code>${VAR}</code> reference resolves against three tiers, from strongest to
+      weakest:
+    </p>
+    <table>
+      <thead><tr><th>Tier</th><th>Where it lives</th><th>Wins when…</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>1. Meta (request parameters)</strong></td>
+          <td>The request's own <code>${VAR:-default}</code> assignment block, edited on its
+            <strong>Meta</strong> tab.</td>
+          <td>Its value is <strong>non-empty</strong> — this is the strongest tier and
+            overrides session and environment for that one request.</td>
+        </tr>
+        <tr>
+          <td><strong>2. Session</strong></td>
+          <td>The runtime store — see above.</td>
+          <td>The Meta value is blank, and something (a script, a workflow, a data-driven run)
+            has written to the session.</td>
+        </tr>
+        <tr>
+          <td><strong>3. Environment</strong></td>
+          <td>The selected <code>*.env.json</code>.</td>
+          <td>Nothing stronger set a value.</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="callout callout-warn">
+      <div class="callout-title">A non-empty Meta value always wins</div>
+      If a variable is meant to be captured from a script or supplied per-row by a
+      data-driven workflow run, leave it <strong>blank</strong> (or required with
+      <code>${VAR:?}</code>) on the Meta tab. A literal Meta value shadows the session value of
+      the same name every time.
+    </div>
+
+    <h2>History &amp; saved examples</h2>
+    <p>
+      Every send is recorded to request history (open it from the top bar), kept under a
+      git-ignored <code>.freepost/</code> folder inside the collection with a default retention
+      of the last 500 entries. Separately, you can save a response as a curated
+      <strong>example</strong> — committed alongside the request as a
+      <code>&lt;Request name&gt;.examples.json</code> sidecar, useful as living documentation
+      that travels with the request through renames and moves.
+    </p>
+
+    <footer class="docs-footer">
+      Next: <a href="./workflows.html">Chaining requests into workflows →</a>
+    </footer>
+  </article>
+</div>
+
+</body>
+</html>

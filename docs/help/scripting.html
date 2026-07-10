@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scripting guide (pm.*) — Freepost Help</title>
+<meta name="description" content="Developer guide to Freepost's pre-request and test scripting: the pm.* API reference, Chai assertions, console output, timeouts, and where scripts live.">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="topbar-logo" href="../index.html">$ freepost</a>
+    <span class="topbar-crumb">Help / Scripting</span>
+    <div class="topbar-spacer"></div>
+    <a class="topbar-link" href="../index.html">Website</a>
+    <a class="topbar-link" href="https://github.com/dlai0001/freepost">GitHub</a>
+  </div>
+</header>
+
+<div class="docs-shell">
+  <nav class="docs-nav">
+    <div class="docs-nav-title">Guides</div>
+    <a href="./index.html">Overview</a>
+    <a href="./creating-requests.html">Creating requests</a>
+    <a href="./importing.html">Importing</a>
+    <a href="./organizing.html">Saving &amp; organizing</a>
+    <a href="./workflows.html">Workflows</a>
+    <a class="active" href="./scripting.html">Scripting (pm.*)</a>
+  </nav>
+
+  <article class="docs-article">
+    <h1>Scripting guide</h1>
+    <p class="lede">
+      Pre-request and test scripts run as plain JavaScript against a
+      <strong>Postman-compatible <code>pm.*</code> API</strong>, so most existing Postman
+      scripts work unmodified. Assertions use <a href="https://www.chaijs.com/">Chai</a>'s BDD
+      style via <code>pm.expect</code>.
+    </p>
+
+    <h2>Where scripts live</h2>
+    <ul>
+      <li><strong>Per request</strong> — the <strong>Scripts</strong> tab has two boxes:
+        <strong>Pre-request script</strong> (runs before the request is sent) and
+        <strong>Test script</strong> (runs after the response arrives). Stored in frontmatter as
+        <code>scripts.pre-request</code> / <code>scripts.test</code>.</li>
+      <li><strong>Per folder or collection</strong> — a <code>folder.json</code> or
+        <code>collection.json</code> sidecar can reference a script file
+        (e.g. <code>"preRequestScript": "./collection.pre.js"</code>) that wraps every request
+        underneath it. Folder scripts wrap direct children; collection scripts wrap every
+        request in the collection.</li>
+    </ul>
+    <pre><code><span class="c"># ---</span>
+<span class="c"># scripts:</span>
+<span class="c">#   pre-request: |</span>
+<span class="c">#     pm.variables.set("ts", Date.now());</span>
+<span class="c">#   test: |</span>
+<span class="c">#     pm.test("status is 200", () =&gt; pm.response.to.have.status(200));</span>
+<span class="c">#     pm.test("has email", () =&gt; {</span>
+<span class="c">#       pm.expect(pm.response.json().email).to.be.a("string");</span>
+<span class="c">#     });</span>
+<span class="c"># ---</span></code></pre>
+
+    <h2>The pm.* API</h2>
+
+    <h3>pm.request</h3>
+    <p>Available in both phases. Read and adjust the outgoing request before it's sent.</p>
+    <table>
+      <thead><tr><th>Member</th><th>Signature</th></tr></thead>
+      <tbody>
+        <tr><td><code>pm.request.method</code></td><td>string</td></tr>
+        <tr><td><code>pm.request.url</code></td><td>string</td></tr>
+        <tr><td><code>pm.request.headers.get(name)</code></td><td>→ string | undefined (case-insensitive)</td></tr>
+        <tr><td><code>pm.request.headers.add({ key, value })</code></td><td>→ void</td></tr>
+        <tr><td><code>pm.request.headers.toObject()</code></td><td>→ Record&lt;string,string&gt;</td></tr>
+      </tbody>
+    </table>
+
+    <h3>pm.response</h3>
+    <p>
+      <strong>Test scripts only.</strong> Reading it from a pre-request script throws — there's
+      no response yet.
+    </p>
+    <table>
+      <thead><tr><th>Member</th><th>Signature</th></tr></thead>
+      <tbody>
+        <tr><td><code>pm.response.code</code></td><td>number — HTTP status code</td></tr>
+        <tr><td><code>pm.response.status</code></td><td>string — status reason phrase</td></tr>
+        <tr><td><code>pm.response.responseTime</code></td><td>number — milliseconds</td></tr>
+        <tr><td><code>pm.response.headers.get(name)</code></td><td>→ string | undefined</td></tr>
+        <tr><td><code>pm.response.text()</code></td><td>→ string — raw body</td></tr>
+        <tr><td><code>pm.response.json()</code></td><td>→ unknown — throws a clear error if the body isn't valid JSON</td></tr>
+        <tr><td><code>pm.response.to.have.status(200 | "OK")</code></td><td>assert on status code or reason phrase</td></tr>
+        <tr><td><code>pm.response.to.have.header(name)</code></td><td>assert a header is present</td></tr>
+        <tr><td><code>pm.response.to.have.jsonBody()</code></td><td>assert the body parses as JSON</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Variable scopes</h3>
+    <p>
+      <code>pm.variables</code>, <code>pm.environment</code>, <code>pm.globals</code>, and
+      <code>pm.collectionVariables</code> are all the <strong>same underlying store</strong> —
+      a deliberate Postman-compat shim. Whichever one an imported script calls,
+      <code>.set()</code> writes to the <a href="./organizing.html">session</a> at runtime, and
+      <code>.get()</code> reads session first, falling back to the environment.
+    </p>
+    <table>
+      <thead><tr><th>Member</th><th>Signature</th></tr></thead>
+      <tbody>
+        <tr><td><code>pm.variables.get(name)</code></td><td>→ string | undefined</td></tr>
+        <tr><td><code>pm.variables.set(name, value)</code></td><td>→ void — non-string values are JSON-stringified</td></tr>
+      </tbody>
+    </table>
+    <div class="callout callout-note">
+      <div class="callout-title">This is a snapshot, not a live edit</div>
+      A script's reads see the session as it was when the script started, plus its own writes
+      so far. Its writes are collected and applied once the script finishes — a script never
+      mutates the session out from under itself mid-run.
+    </div>
+
+    <h3>pm.test &amp; pm.expect</h3>
+    <table>
+      <thead><tr><th>Member</th><th>Signature</th></tr></thead>
+      <tbody>
+        <tr><td><code>pm.test(name, fn)</code></td><td>Registers a named test. <code>fn</code> may be sync (throw to fail) or return a Promise (rejection fails the test); omit <code>fn</code> to record a bare pass.</td></tr>
+        <tr><td><code>pm.expect</code></td><td>Chai's <code>expect</code>, for BDD-style assertions: <code>pm.expect(value).to.equal(x)</code>, <code>.to.be.a("string")</code>, etc.</td></tr>
+      </tbody>
+    </table>
+    <pre><code>pm.<span class="k">test</span>(<span class="s">"has email"</span>, () =&gt; {
+  <span class="k">const</span> body = pm.response.json();
+  pm.expect(body.email).to.be.a(<span class="s">"string"</span>);
+  pm.expect(body.role).to.equal(<span class="s">"admin"</span>);
+});</code></pre>
+
+    <h3>pm.info</h3>
+    <p><code>{ requestName, iteration }</code> — the current request's name, and the current
+      data-driven iteration index (see <a href="./workflows.html">workflows</a>).</p>
+
+    <h3>pm.sendRequest</h3>
+    <p>
+      Fire an extra request from inside a script — useful for fetching a token before the main
+      request runs. Accepts a URL string or a Postman-style request object, and supports both
+      callback and <code>await</code> styles:
+    </p>
+    <pre><code><span class="c">// promise style</span>
+<span class="k">const</span> res = <span class="k">await</span> pm.sendRequest({
+  url: <span class="s">"https://auth.example.com/token"</span>,
+  method: <span class="s">"POST"</span>,
+  header: { <span class="s">"Content-Type"</span>: <span class="s">"application/json"</span> },
+  body: <span class="s">'{"grant_type":"client_credentials"}'</span>
+});
+pm.variables.set(<span class="s">"TOKEN"</span>, res.json().access_token);
+
+<span class="c">// callback style</span>
+pm.sendRequest(<span class="s">"https://example.com/ping"</span>, (err, res) =&gt; {
+  <span class="k">if</span> (!err) console.log(res.code);
+});</code></pre>
+    <p>The response passed back has the same shape as <code>pm.response</code> above (<code>code</code>, <code>status</code>, <code>responseTime</code>, <code>headers.get()</code>, <code>text()</code>, <code>json()</code>).</p>
+
+    <h3>console</h3>
+    <p>
+      <code>console.log/info/warn/error/debug</code> are captured (not printed to a real
+      terminal) and shown alongside the test results after the script runs.
+    </p>
+
+    <h2>Timeouts</h2>
+    <p>
+      Each script phase has a whole-script budget — <strong>10 seconds by default</strong> —
+      covering both synchronous execution and any pending promises (chained
+      <code>pm.sendRequest</code> calls, async <code>pm.test</code> bodies). A script that runs
+      past its budget is stopped and reported as timed out.
+    </p>
+
+    <h2>Full example</h2>
+    <pre><code><span class="c">#!/usr/bin/env bash</span>
+<span class="c"># ---</span>
+<span class="c"># description: Fetches a single user record by id</span>
+<span class="c"># scripts:</span>
+<span class="c">#   pre-request: |-</span>
+<span class="c">#     pm.variables.set("RUN_ID", String(Date.now()));</span>
+<span class="c">#   test: |-</span>
+<span class="c">#     pm.test("status is 200", () =&gt; pm.response.to.have.status(200));</span>
+<span class="c">#     pm.test("echoes the run id", () =&gt; {</span>
+<span class="c">#       const body = pm.response.json();</span>
+<span class="c">#       pm.expect(body.headers["X-Run-Id"]).to.equal(pm.variables.get("RUN_ID"));</span>
+<span class="c">#     });</span>
+<span class="c"># ---</span>
+
+<span class="k">BASE_URL</span>=<span class="s">"${BASE_URL:-httpbin.org}"</span>
+<span class="k">RUN_ID</span>=<span class="s">"${RUN_ID:-local}"</span>
+
+<span class="k">curl</span> --request GET \
+  --url <span class="s">"https://${BASE_URL}/get"</span> \
+  --header <span class="s">"X-Run-Id: ${RUN_ID}"</span></code></pre>
+
+    <div class="callout callout-warn">
+      <div class="callout-title">The sandbox has no network access of its own</div>
+      Scripts can't open sockets directly — <code>pm.sendRequest</code> is the only way out,
+      and it's routed through the same request engine as every other send. This keeps
+      Freepost's "only one module ever opens a socket" guarantee intact even with untrusted or
+      imported scripts.
+    </div>
+
+    <footer class="docs-footer">
+      See also: <a href="./organizing.html#how-variables-resolve">how variables resolve</a> across Meta, session, and environment.
+    </footer>
+  </article>
+</div>
+
+</body>
+</html>

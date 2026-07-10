@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Freepost Help — documentation</title>
+<meta name="description" content="Guides for Freepost: creating REST, GraphQL and WebSocket requests, importing from curl and OpenAPI/Swagger, organizing collections, workflows, and the pm.* scripting API.">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="topbar-logo" href="../index.html">$ freepost</a>
+    <span class="topbar-crumb">Help</span>
+    <div class="topbar-spacer"></div>
+    <a class="topbar-link" href="../index.html">Website</a>
+    <a class="topbar-link" href="https://github.com/dlai0001/freepost">GitHub</a>
+  </div>
+</header>
+
+<div class="docs-shell">
+  <nav class="docs-nav">
+    <div class="docs-nav-title">Guides</div>
+    <a class="active" href="./index.html">Overview</a>
+    <a href="./creating-requests.html">Creating requests</a>
+    <a href="./importing.html">Importing</a>
+    <a href="./organizing.html">Saving &amp; organizing</a>
+    <a href="./workflows.html">Workflows</a>
+    <a href="./scripting.html">Scripting (pm.*)</a>
+  </nav>
+
+  <article class="docs-article">
+    <h1>Freepost help</h1>
+    <p class="lede">
+      Freepost is an offline API client: REST, GraphQL, and WebSocket requests, saved as
+      pretty-printed <code>curl</code> / <code>websocat</code> files in a folder you choose.
+      No account, no cloud, nothing leaves your machine except the requests you send. These
+      guides cover the everyday workflow — creating requests, importing existing collections,
+      organizing what you build, chaining requests into workflows, and writing pre-request /
+      test scripts.
+    </p>
+
+    <div class="help-grid">
+      <a class="help-card" href="./creating-requests.html">
+        <h3>🌐 Creating requests</h3>
+        <p>New REST, GraphQL, and WebSocket requests, sending them, and reading the response.</p>
+      </a>
+      <a class="help-card" href="./importing.html">
+        <h3>📥 Importing</h3>
+        <p>Paste a curl command, import a Postman collection, or pull endpoints from an OpenAPI/Swagger URL.</p>
+      </a>
+      <a class="help-card" href="./organizing.html">
+        <h3>📁 Saving &amp; organizing</h3>
+        <p>Collections, folders, labels, search, environments, and how variables resolve.</p>
+      </a>
+      <a class="help-card" href="./workflows.html">
+        <h3>🔀 Workflows</h3>
+        <p>Chain requests into ordered, sequential runs — with expect-error steps and data-driven runs.</p>
+      </a>
+      <a class="help-card" href="./scripting.html">
+        <h3>🧪 Scripting guide</h3>
+        <p>The pm.* API reference for pre-request and test scripts, with Chai assertions.</p>
+      </a>
+    </div>
+
+    <h2>Concepts, quickly</h2>
+    <p>
+      Freepost reuses ordinary filesystem concepts instead of inventing new ones. If you know
+      what these five terms mean, you know the app:
+    </p>
+    <dl class="glossary">
+      <dt>Collection</dt>
+      <dd>Any folder you open with <strong>Open Collection</strong>. There's no separate "workspace" — the folder is the whole thing, and it's portable to any machine.</dd>
+      <dt>Request</dt>
+      <dd>A single <code>.curl</code> file (REST or GraphQL) or <code>.ws</code> file (WebSocket). The filename is the request's name; the file is valid, runnable shell.</dd>
+      <dt>Folder</dt>
+      <dd>A subfolder in your collection. The sidebar tree mirrors the folder tree on disk exactly — rename or move either side and the other follows.</dd>
+      <dt>Workflow</dt>
+      <dd>A <code>.workflow.json</code> file: an ordered list of requests played back sequentially, one at a time.</dd>
+      <dt>Environment / Session</dt>
+      <dd>An <strong>environment</strong> is a saved set of variables (a <code>*.env.json</code> file) you pick from the sidebar. The <strong>session</strong> is the app's in-memory scratch space for the current run — scripts write to it, and it's never saved to disk.</dd>
+    </dl>
+
+    <div class="callout callout-note">
+      <div class="callout-title">Why curl?</div>
+      Every request is stored as a real, runnable shell script with a YAML frontmatter comment
+      block for metadata (description, labels, scripts, variables). <code>bash the-file.curl</code>
+      runs it outside the app. <code>git diff</code> reviews it. That's the whole storage model —
+      see the <a href="https://github.com/dlai0001/freepost/blob/main/PLAN.md">format specification</a> for the full grammar.
+    </div>
+
+    <footer class="docs-footer">
+      Freepost is free, open source, and MIT licensed. <a href="https://github.com/dlai0001/freepost">Source on GitHub</a>.
+    </footer>
+  </article>
+</div>
+
+</body>
+</html>

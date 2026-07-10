@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Importing — Freepost Help</title>
+<meta name="description" content="Import requests into Freepost from a pasted curl command, a Postman collection file, or an OpenAPI/Swagger URL with per-endpoint selection.">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="topbar-logo" href="../index.html">$ freepost</a>
+    <span class="topbar-crumb">Help / Importing</span>
+    <div class="topbar-spacer"></div>
+    <a class="topbar-link" href="../index.html">Website</a>
+    <a class="topbar-link" href="https://github.com/dlai0001/freepost">GitHub</a>
+  </div>
+</header>
+
+<div class="docs-shell">
+  <nav class="docs-nav">
+    <div class="docs-nav-title">Guides</div>
+    <a href="./index.html">Overview</a>
+    <a href="./creating-requests.html">Creating requests</a>
+    <a class="active" href="./importing.html">Importing</a>
+    <a href="./organizing.html">Saving &amp; organizing</a>
+    <a href="./workflows.html">Workflows</a>
+    <a href="./scripting.html">Scripting (pm.*)</a>
+  </nav>
+
+  <article class="docs-article">
+    <h1>Importing</h1>
+    <p class="lede">
+      Open a collection, then click <strong>Import</strong> in the top bar. The Import dialog
+      has three modes, each writing one or more <code>.curl</code> files straight into your
+      open collection.
+    </p>
+
+    <figure class="docs-shot">
+      <svg viewBox="0 0 640 60" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="Three tabs in the Import dialog: File, Paste command, and OpenAPI/Swagger URL, with the first tab active.">
+        <rect width="640" height="60" fill="#0a0d12"/>
+        <g font-family="-apple-system, Segoe UI, sans-serif" font-size="13">
+          <rect x="20" y="16" width="60" height="28" rx="6" fill="#161b22" stroke="#3fb950"/>
+          <text x="50" y="34" fill="#3fb950" text-anchor="middle" font-weight="600">File</text>
+          <rect x="88" y="16" width="146" height="28" rx="6" fill="#161b22" stroke="#30363d"/>
+          <text x="161" y="34" fill="#8b949e" text-anchor="middle">Paste command</text>
+          <rect x="242" y="16" width="180" height="28" rx="6" fill="#161b22" stroke="#30363d"/>
+          <text x="332" y="34" fill="#8b949e" text-anchor="middle">OpenAPI/Swagger URL</text>
+        </g>
+      </svg>
+    </figure>
+
+    <h2>Import from curl (paste)</h2>
+    <p>
+      Switch to the <strong>Paste command</strong> tab and paste a <code>curl</code>,
+      <code>websocat</code>, or <code>wscat</code> command copied from a terminal, browser
+      devtools "Copy as cURL", or another API tool. Give it a name, or leave it blank and
+      Freepost derives one from the URL. The import is lenient — unsupported flags are kept as
+      a note rather than dropped silently.
+    </p>
+    <pre><code><span class="k">curl</span> -X POST https://api.example.com/users \
+  -H <span class="s">'Content-Type: application/json'</span> \
+  -d <span class="s">'{"name": "ada"}'</span></code></pre>
+
+    <h2>Import a file</h2>
+    <p>
+      Switch to the <strong>File</strong> tab and browse to either:
+    </p>
+    <ul>
+      <li>A <strong>Postman collection</strong> (v2.1 JSON export) — folders, requests, and
+        <code>pm.*</code> scripts import as-is; Postman's <code>{{var}}</code> syntax converts
+        to Freepost's <code>${VAR}</code>.</li>
+      <li>Any <strong>shell script</strong> containing a single <code>curl</code>,
+        <code>websocat</code>, or <code>wscat</code> command.</li>
+    </ul>
+
+    <h2>Import from an OpenAPI/Swagger URL</h2>
+    <p>
+      Switch to the <strong>OpenAPI/Swagger URL</strong> tab, paste the spec URL (OpenAPI 3.x
+      or Swagger 2.0, JSON or YAML), and click <strong>Fetch</strong>. Endpoints are listed
+      grouped by tag, each with a checkbox — select individually, per-group, or
+      <strong>Select all</strong>. Optionally set a destination folder to import everything
+      under one prefix instead of each operation's own tag/path folder.
+    </p>
+
+    <figure class="docs-shot">
+      <svg viewBox="0 0 700 260" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="OpenAPI import: a fetched spec URL, a destination folder field, and a checklist of endpoints grouped under a Users folder with GET and POST operations, some selected.">
+        <rect width="700" height="260" fill="#0a0d12"/>
+        <rect x="20" y="16" width="500" height="28" rx="6" fill="#161b22" stroke="#30363d"/>
+        <text x="34" y="34" font-family="ui-monospace, monospace" font-size="12" fill="#e6edf3">https://api.acme.com/openapi.json</text>
+        <rect x="528" y="16" width="76" height="28" rx="6" fill="#161b22" stroke="#30363d"/>
+        <text x="566" y="34" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#e6edf3" text-anchor="middle">Fetch</text>
+        <text x="20" y="66" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" fill="#3fb950">Detected OpenAPI 3.0.3</text>
+
+        <rect x="20" y="80" width="660" height="28" rx="6" fill="#161b22" stroke="#30363d"/>
+        <text x="34" y="98" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" fill="#8b949e">Destination folder (optional) — e.g. External APIs / Acme</text>
+
+        <g font-family="-apple-system, Segoe UI, sans-serif" font-size="12.5">
+          <rect x="20" y="120" width="14" height="14" rx="3" fill="#161b22" stroke="#3fb950"/>
+          <text x="42" y="132" fill="#e6edf3">Select all (5/6)</text>
+
+          <rect x="20" y="148" width="14" height="14" rx="3" fill="#3fb950" stroke="#3fb950"/>
+          <text x="42" y="160" fill="#e6edf3" font-weight="600">Users (3/3)</text>
+
+          <rect x="40" y="172" width="14" height="14" rx="3" fill="#3fb950" stroke="#3fb950"/>
+          <text x="62" y="184" fill="#3fb950" font-family="ui-monospace, monospace" font-size="11">GET</text>
+          <text x="98" y="184" fill="#e6edf3" font-family="ui-monospace, monospace" font-size="11">/users</text>
+          <text x="200" y="184" fill="#8b949e">List users</text>
+
+          <rect x="40" y="196" width="14" height="14" rx="3" fill="#3fb950" stroke="#3fb950"/>
+          <text x="62" y="208" fill="#d29922" font-family="ui-monospace, monospace" font-size="11">POST</text>
+          <text x="98" y="208" fill="#e6edf3" font-family="ui-monospace, monospace" font-size="11">/users</text>
+          <text x="200" y="208" fill="#8b949e">Create user</text>
+
+          <rect x="40" y="220" width="14" height="14" rx="3" fill="none" stroke="#8b949e"/>
+          <text x="62" y="232" fill="#3fb950" font-family="ui-monospace, monospace" font-size="11">GET</text>
+          <text x="98" y="232" fill="#e6edf3" font-family="ui-monospace, monospace" font-size="11">/users/{id}</text>
+          <text x="230" y="232" fill="#8b949e">Get user</text>
+        </g>
+      </svg>
+    </figure>
+    <p class="shot-caption">Each fetched operation is grouped by tag/folder with a tri-state select-all checkbox at every level.</p>
+
+    <div class="callout callout-tip">
+      <div class="callout-title">Re-importing is safe to repeat</div>
+      Imports only ever add new <code>.curl</code> files — nothing else in your collection is
+      touched. Run an OpenAPI import again later and just select the new endpoints.
+    </div>
+
+    <footer class="docs-footer">
+      Next: <a href="./organizing.html">Saving &amp; organizing your collection →</a>
+    </footer>
+  </article>
+</div>
+
+</body>
+</html>

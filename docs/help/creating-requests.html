@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Creating requests — Freepost Help</title>
+<meta name="description" content="How to create REST, GraphQL, and WebSocket requests in Freepost, send them, and read the response.">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="topbar-logo" href="../index.html">$ freepost</a>
+    <span class="topbar-crumb">Help / Creating requests</span>
+    <div class="topbar-spacer"></div>
+    <a class="topbar-link" href="../index.html">Website</a>
+    <a class="topbar-link" href="https://github.com/dlai0001/freepost">GitHub</a>
+  </div>
+</header>
+
+<div class="docs-shell">
+  <nav class="docs-nav">
+    <div class="docs-nav-title">Guides</div>
+    <a href="./index.html">Overview</a>
+    <a class="active" href="./creating-requests.html">Creating requests</a>
+    <a href="./importing.html">Importing</a>
+    <a href="./organizing.html">Saving &amp; organizing</a>
+    <a href="./workflows.html">Workflows</a>
+    <a href="./scripting.html">Scripting (pm.*)</a>
+  </nav>
+
+  <article class="docs-article">
+    <h1>Creating requests</h1>
+    <p class="lede">
+      Every request is a file in your collection: a <code>.curl</code> file for REST and
+      GraphQL, a <code>.ws</code> file for WebSocket. There's no separate "new GraphQL
+      request" — GraphQL is a body mode on an ordinary <code>.curl</code> request.
+    </p>
+
+    <h2>Open a collection</h2>
+    <p>
+      Click <strong>Open Collection</strong> in the sidebar and pick any folder. Any folder
+      containing <code>.curl</code>, <code>.ws</code>, or <code>.workflow.json</code> files
+      works — there's nothing to initialize first. The sidebar tree mirrors that folder
+      exactly, one to one.
+    </p>
+
+    <h2>Create a new request</h2>
+    <p>
+      Hover a folder in the sidebar and click the <strong>+</strong> button that appears next
+      to it. A menu offers three kinds of new item:
+    </p>
+
+    <figure class="docs-shot">
+      <svg viewBox="0 0 640 220" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="A folder row named users with a plus button, and an open menu listing New Request (.curl), New WebSocket (.ws), and New Workflow.">
+        <rect width="640" height="220" fill="#0a0d12"/>
+        <g font-family="-apple-system, Segoe UI, sans-serif" font-size="14">
+          <text x="24" y="34" fill="#8b949e">&#9662;</text>
+          <text x="40" y="34" font-weight="600" fill="#e6edf3">users</text>
+        </g>
+        <rect x="580" y="16" width="24" height="24" rx="6" fill="#ffffff" fill-opacity="0.08" stroke="#30363d"/>
+        <text x="592" y="33" font-family="ui-monospace, monospace" font-size="15" fill="#e6edf3" text-anchor="middle">+</text>
+        <rect x="380" y="46" width="238" height="112" rx="8" fill="#161b22" stroke="#30363d"/>
+        <g font-family="-apple-system, Segoe UI, sans-serif" font-size="13.5" fill="#e6edf3">
+          <rect x="380" y="46" width="238" height="34" fill="#ffffff" fill-opacity="0.05"/>
+          <text x="396" y="68">New Request (.curl)</text>
+          <text x="396" y="102">New WebSocket (.ws)</text>
+          <text x="396" y="136">New Workflow</text>
+        </g>
+        <line x1="380" y1="80" x2="618" y2="80" stroke="#30363d"/>
+        <line x1="380" y1="114" x2="618" y2="114" stroke="#30363d"/>
+      </svg>
+    </figure>
+    <p class="shot-caption">The + menu on any folder row. Requests and workflows can live anywhere in the tree.</p>
+
+    <ul>
+      <li><strong>New Request (.curl)</strong> — a REST request. This is also the starting point for GraphQL (see below).</li>
+      <li><strong>New WebSocket (.ws)</strong> — a WebSocket connection.</li>
+      <li><strong>New Workflow</strong> — an ordered sequence of existing requests; see the <a href="./workflows.html">Workflows guide</a>.</li>
+    </ul>
+
+    <h2>REST requests</h2>
+    <p>
+      A new request opens with a method dropdown and URL bar at the top, and a row of
+      section tabs below it: <strong>Headers</strong>, <strong>Body</strong>,
+      <strong>Auth</strong>, <strong>Scripts</strong>, and <strong>Meta</strong>.
+    </p>
+
+    <figure class="docs-shot">
+      <svg viewBox="0 0 720 280" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="A request editor: GET method, a URL bar, section tabs Headers Body Auth Scripts Meta, and a headers table with an Accept header row.">
+        <rect width="720" height="280" fill="#0a0d12"/>
+        <rect x="20" y="20" width="70" height="32" rx="6" fill="#161b22" stroke="#30363d"/>
+        <text x="55" y="41" font-family="ui-monospace, monospace" font-size="13" font-weight="700" fill="#3fb950" text-anchor="middle">GET &#9662;</text>
+        <rect x="98" y="20" width="602" height="32" rx="6" fill="#161b22" stroke="#30363d"/>
+        <text x="112" y="41" font-family="ui-monospace, monospace" font-size="13" fill="#e6edf3">https://api.acme.com/users/${USER_ID}</text>
+
+        <g font-family="-apple-system, Segoe UI, sans-serif" font-size="13">
+          <rect x="20" y="66" width="76" height="28" fill="#161b22" stroke="#30363d" stroke-width="0"/>
+          <line x1="20" y1="94" x2="700" y2="94" stroke="#30363d"/>
+          <line x1="20" y1="66" x2="96" y2="66" stroke="#3fb950" stroke-width="2"/>
+          <text x="58" y="85" fill="#e6edf3" text-anchor="middle" font-weight="600">Headers</text>
+          <text x="130" y="85" fill="#8b949e" text-anchor="middle">Body</text>
+          <text x="196" y="85" fill="#8b949e" text-anchor="middle">Auth</text>
+          <text x="262" y="85" fill="#8b949e" text-anchor="middle">Scripts</text>
+          <text x="330" y="85" fill="#8b949e" text-anchor="middle">Meta</text>
+        </g>
+
+        <g font-family="ui-monospace, Menlo, monospace" font-size="12.5">
+          <rect x="20" y="112" width="680" height="30" rx="6" fill="#161b22" stroke="#30363d"/>
+          <text x="34" y="132" fill="#39c5cf">Accept</text>
+          <text x="200" y="132" fill="#a5d6ff">application/json</text>
+          <rect x="20" y="150" width="680" height="30" rx="6" fill="#161b22" stroke="#30363d"/>
+          <text x="34" y="170" fill="#39c5cf">Authorization</text>
+          <text x="200" y="170" fill="#a5d6ff">Bearer ${TOKEN}</text>
+          <text x="20" y="204" fill="#8b949e" font-size="12">+ Add header</text>
+        </g>
+
+        <rect x="600" y="230" width="100" height="32" rx="6" fill="#238636" stroke="#3fb950"/>
+        <text x="650" y="251" font-family="-apple-system, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#ffffff" text-anchor="middle">Send</text>
+      </svg>
+    </figure>
+    <p class="shot-caption">
+      The <strong>Meta</strong> tab holds the request's own variable defaults, an optional
+      CA certificate, and a "skip HTTPS validation" checkbox for self-signed backends.
+    </p>
+
+    <p>
+      In the <strong>Body</strong> tab, pick a mode: <strong>Raw · JSON</strong> (or any raw
+      text/XML), <strong>Multipart form</strong> (file uploads, text fields), or
+      <strong>GraphQL</strong>.
+    </p>
+
+    <div class="callout callout-tip">
+      <div class="callout-title">Switch to Raw view any time</div>
+      Every editor has a <strong>Form</strong> / <strong>Raw</strong> toggle. Raw shows the
+      exact <code>.curl</code> file as it will be written to disk — useful for copy-pasting
+      into a terminal, or hand-editing something the form doesn't expose yet.
+    </div>
+
+    <h2>GraphQL requests</h2>
+    <p>
+      Create a normal REST request pointed at your GraphQL endpoint, then switch its
+      <strong>Body</strong> tab to <strong>GraphQL</strong> mode. You get a query editor, a
+      typed variables table, and an <strong>Introspect schema</strong> button that fetches the
+      schema and opens a schema explorer (Query / Mutation / Subscription root types) you can
+      drill into while writing the query.
+    </p>
+
+    <figure class="docs-shot">
+      <svg viewBox="0 0 720 240" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="Body mode set to GraphQL with a query for viewer id, name, email, an Introspect schema button, and a schema explorer panel listing Query, Mutation, and Subscription root types.">
+        <rect width="720" height="240" fill="#0a0d12"/>
+        <g font-family="-apple-system, Segoe UI, sans-serif" font-size="12">
+          <rect x="20" y="18" width="52" height="24" rx="6" fill="#161b22" stroke="#30363d"/>
+          <text x="46" y="34" fill="#8b949e" text-anchor="middle">Raw</text>
+          <rect x="78" y="18" width="60" height="24" rx="6" fill="#161b22" stroke="#30363d"/>
+          <text x="108" y="34" fill="#8b949e" text-anchor="middle">Form</text>
+          <rect x="144" y="18" width="76" height="24" rx="6" fill="#161b22" stroke="#3fb950"/>
+          <text x="182" y="34" fill="#3fb950" text-anchor="middle">GraphQL</text>
+          <rect x="560" y="18" width="140" height="24" rx="6" fill="#161b22" stroke="#30363d"/>
+          <text x="630" y="34" fill="#e6edf3" text-anchor="middle">Introspect schema</text>
+        </g>
+        <g font-family="ui-monospace, Menlo, Consolas, monospace" font-size="12.5">
+          <rect x="20" y="54" width="330" height="150" rx="6" fill="#161b22" stroke="#30363d"/>
+          <text x="34" y="78" fill="#79c0ff">query<tspan fill="#e6edf3"> GetViewer {</tspan></text>
+          <text x="34" y="98" fill="#e6edf3">  viewer {</text>
+          <text x="34" y="118" fill="#39c5cf">    id</text>
+          <text x="34" y="138" fill="#39c5cf">    name</text>
+          <text x="34" y="158" fill="#39c5cf">    email</text>
+          <text x="34" y="178" fill="#e6edf3">  }</text>
+          <text x="34" y="196" fill="#e6edf3">}</text>
+        </g>
+        <rect x="366" y="54" width="334" height="150" rx="6" fill="#161b22" stroke="#30363d"/>
+        <g font-family="-apple-system, Segoe UI, sans-serif" font-size="12.5">
+          <text x="382" y="76" fill="#8b949e" font-weight="700">SCHEMA</text>
+          <text x="382" y="102" fill="#e6edf3">&#9662; Query</text>
+          <text x="382" y="126" fill="#e6edf3">&#9656; Mutation</text>
+          <text x="382" y="150" fill="#e6edf3">&#9656; Subscription</text>
+          <text x="398" y="176" fill="#39c5cf" font-family="ui-monospace, monospace" font-size="12">viewer: User</text>
+        </g>
+      </svg>
+    </figure>
+
+    <p>
+      If a query is a <code>subscription</code>, the tab switches into subscription mode: set
+      a <strong>Subscription endpoint</strong> (defaults to the request URL), pick a transport
+      — <strong>WebSocket</strong> or <strong>SSE</strong> — and click <strong>Subscribe</strong>.
+      Incoming messages stream live into a <strong>Subscription stream</strong> log until you
+      click <strong>Stop</strong>.
+    </p>
+
+    <div class="callout callout-note">
+      <div class="callout-title">Why store GraphQL in a curl file?</div>
+      The GraphQL query is kept as readable, unescaped text in the frontmatter
+      (<code>graphql.query</code>) — the app generates the JSON-escaped <code>--data</code> in
+      the command from it on save, so the file stays both diffable and directly runnable with
+      <code>bash</code>.
+    </div>
+
+    <h2>WebSocket requests</h2>
+    <p>
+      A WebSocket request is stored as an annotated <code>websocat</code> command
+      (<code>.ws</code> file). Set the URL, connect, and send messages from the log — or save
+      frequently-used payloads as named <strong>message presets</strong> so you can fire them
+      with one click during a session.
+    </p>
+
+    <figure class="docs-shot">
+      <svg viewBox="0 0 720 220" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="A WebSocket tab: a wss URL bar with a Connect button, saved message presets hello and ping, and a message log showing sent and received frames.">
+        <rect width="720" height="220" fill="#0a0d12"/>
+        <rect x="20" y="18" width="560" height="30" rx="6" fill="#161b22" stroke="#30363d"/>
+        <text x="34" y="38" font-family="ui-monospace, monospace" font-size="13" fill="#e6edf3">wss://${BASE_URL}/stream</text>
+        <rect x="592" y="18" width="108" height="30" rx="6" fill="#238636" stroke="#3fb950"/>
+        <text x="646" y="38" font-family="-apple-system, Segoe UI, sans-serif" font-size="12.5" font-weight="700" fill="#fff" text-anchor="middle">Connect</text>
+
+        <g font-family="-apple-system, Segoe UI, sans-serif" font-size="12">
+          <rect x="20" y="58" width="70" height="24" rx="12" fill="#bc8cff" fill-opacity="0.12" stroke="#bc8cff" stroke-opacity="0.4"/>
+          <text x="55" y="74" fill="#bc8cff" text-anchor="middle">hello</text>
+          <rect x="98" y="58" width="60" height="24" rx="12" fill="#bc8cff" fill-opacity="0.12" stroke="#bc8cff" stroke-opacity="0.4"/>
+          <text x="128" y="74" fill="#bc8cff" text-anchor="middle">ping</text>
+        </g>
+
+        <g font-family="ui-monospace, Menlo, monospace" font-size="12">
+          <text x="24" y="112" fill="#8b949e">&#8594; sent</text>
+          <text x="90" y="112" fill="#e6edf3">{"op":"hello","from":"freepost"}</text>
+          <text x="24" y="136" fill="#3fb950">&#8592; recv</text>
+          <text x="90" y="136" fill="#e6edf3">{"op":"welcome","sessionId":"a1b2"}</text>
+          <text x="24" y="160" fill="#8b949e">&#8594; sent</text>
+          <text x="90" y="160" fill="#e6edf3">{"op":"ping"}</text>
+          <text x="24" y="184" fill="#3fb950">&#8592; recv</text>
+          <text x="90" y="184" fill="#e6edf3">{"op":"pong"}</text>
+        </g>
+      </svg>
+    </figure>
+
+    <h2>Sending &amp; the response</h2>
+    <p>
+      Click <strong>Send</strong> (or the keyboard shortcut shown on hover). The response
+      panel shows status code and reason, timing, size, headers, and a pretty-printed body.
+      For GraphQL subscriptions and WebSocket connections, the equivalent panel is a live,
+      auto-scrolling message log instead of a single response.
+    </p>
+
+    <div class="callout callout-tip">
+      <div class="callout-title">Everything you type is a real curl file</div>
+      There's no hidden state. Whatever you build in the form is exactly what gets pretty-printed
+      to disk on save — headers, body, auth, and scripts included. See
+      <a href="./organizing.html">Saving &amp; organizing</a> for how saves and variables work.
+    </div>
+
+    <footer class="docs-footer">
+      Next: <a href="./importing.html">Importing existing requests →</a>
+    </footer>
+  </article>
+</div>
+
+</body>
+</html>

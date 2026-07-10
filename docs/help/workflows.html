@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workflows — Freepost Help</title>
+<meta name="description" content="How to build and run Freepost workflows: ordered, sequential request chains with expect-error steps, data-driven runs, and broken-reference healing.">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="topbar-logo" href="../index.html">$ freepost</a>
+    <span class="topbar-crumb">Help / Workflows</span>
+    <div class="topbar-spacer"></div>
+    <a class="topbar-link" href="../index.html">Website</a>
+    <a class="topbar-link" href="https://github.com/dlai0001/freepost">GitHub</a>
+  </div>
+</header>
+
+<div class="docs-shell">
+  <nav class="docs-nav">
+    <div class="docs-nav-title">Guides</div>
+    <a href="./index.html">Overview</a>
+    <a href="./creating-requests.html">Creating requests</a>
+    <a href="./importing.html">Importing</a>
+    <a href="./organizing.html">Saving &amp; organizing</a>
+    <a class="active" href="./workflows.html">Workflows</a>
+    <a href="./scripting.html">Scripting (pm.*)</a>
+  </nav>
+
+  <article class="docs-article">
+    <h1>Workflows</h1>
+    <p class="lede">
+      A workflow plays a set of requests <strong>one at a time, strictly in order</strong> —
+      each step waits for the previous one to fully finish (response received, test script
+      run) before the next fires. It's stored as a <code>.workflow.json</code> file, and can
+      live anywhere in your collection tree.
+    </p>
+
+    <h2>Creating a workflow</h2>
+    <p>
+      Use the <strong>+</strong> menu on any folder and pick <strong>New Workflow</strong>
+      (see <a href="./creating-requests.html">Creating requests</a>). The workflow editor has a
+      description field, a data file field, and a list of steps — each step is just a
+      collection-relative path to an existing request.
+    </p>
+
+    <figure class="docs-shot">
+      <svg viewBox="0 0 700 260" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="A workflow editor with a Run button, a description field, a data file field, and three steps: create account, create account again marked expect error, and get profile.">
+        <rect width="700" height="260" fill="#0a0d12"/>
+        <rect x="20" y="16" width="80" height="30" rx="6" fill="#238636" stroke="#3fb950"/>
+        <text x="60" y="36" font-family="-apple-system, Segoe UI, sans-serif" font-size="12.5" font-weight="700" fill="#fff" text-anchor="middle">&#9654; Run</text>
+        <rect x="108" y="16" width="72" height="30" rx="6" fill="#161b22" stroke="#30363d"/>
+        <text x="144" y="36" font-family="-apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#e6edf3" text-anchor="middle">Save</text>
+
+        <text x="20" y="72" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" fill="#8b949e">Description</text>
+        <rect x="20" y="78" width="660" height="26" rx="6" fill="#161b22" stroke="#30363d"/>
+        <text x="30" y="95" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#e6edf3">End-to-end signup happy path</text>
+
+        <text x="20" y="126" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" fill="#8b949e">Data file (CSV/JSON — one run per row)</text>
+        <rect x="20" y="132" width="500" height="26" rx="6" fill="#161b22" stroke="#30363d"/>
+        <text x="30" y="149" font-family="ui-monospace, monospace" font-size="11.5" fill="#8b949e">data/users.csv</text>
+
+        <g font-family="-apple-system, Segoe UI, sans-serif" font-size="12">
+          <text x="20" y="184" fill="#8b949e" font-family="ui-monospace, monospace">1</text>
+          <text x="36" y="184" fill="#3fb950">&#10003;</text>
+          <text x="54" y="184" fill="#e6edf3" font-family="ui-monospace, monospace">auth/Create account.curl</text>
+
+          <text x="20" y="206" fill="#8b949e" font-family="ui-monospace, monospace">2</text>
+          <text x="36" y="206" fill="#d29922">&#9888;</text>
+          <text x="54" y="206" fill="#e6edf3" font-family="ui-monospace, monospace">auth/Create account.curl</text>
+          <text x="330" y="206" fill="#8b949e">expect error &#10003;</text>
+
+          <text x="20" y="228" fill="#8b949e" font-family="ui-monospace, monospace">3</text>
+          <text x="36" y="228" fill="#3fb950">&#10003;</text>
+          <text x="54" y="228" fill="#e6edf3" font-family="ui-monospace, monospace">users/Get profile.curl</text>
+        </g>
+        <text x="20" y="252" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" fill="#8b949e">3 passed &#183; 1 expected-error</text>
+      </svg>
+    </figure>
+
+    <p>Type a request's path (or use the field below the list) and press Enter to add a step. Check <strong>expect error</strong> on a step that's supposed to fail.</p>
+
+    <h2>Running a workflow</h2>
+    <p>
+      Click <strong>▶ Run</strong>. Each step shows a live status icon as it executes:
+    </p>
+    <table>
+      <thead><tr><th>Icon</th><th>Status</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td class="m-get">✓</td><td><code>passed</code></td><td>Succeeded normally.</td></tr>
+        <tr><td class="m-post">⚠</td><td><code>expected-error</code></td><td>Marked <code>expect error</code>, and it did error — as intended.</td></tr>
+        <tr><td class="m-post">⚠</td><td><code>unexpected-success</code></td><td>Marked <code>expect error</code>, but it succeeded — flagged as a warning; the run continues.</td></tr>
+        <tr><td class="m-delete">✗</td><td><code>failed</code></td><td>Errored without <code>expect error</code> set — the workflow halts here.</td></tr>
+        <tr><td>○</td><td><code>skipped</code></td><td>Never reached because an earlier step halted the run.</td></tr>
+      </tbody>
+    </table>
+    <p>
+      A step counts as an error if the request fails at the transport level, returns HTTP
+      4xx/5xx, or its <a href="./scripting.html">test script</a> has a failing assertion.
+    </p>
+
+    <h2>Passing data between steps</h2>
+    <p>
+      Workflows never override a request's own variables — every step resolves exactly as it
+      would standalone (see <a href="./organizing.html#how-variables-resolve">variable
+      resolution</a>). Instead, requests write to the <strong>session</strong> as they run:
+      capture a token in a pre-request or test script on step 1, and step 3 reads it from the
+      session automatically. Just remember to leave that variable blank on step 3's Meta tab so
+      the session value isn't shadowed.
+    </p>
+
+    <h2>Data-driven runs</h2>
+    <p>
+      Set a <strong>Data file</strong> (a CSV or JSON file, ideally kept inside the
+      collection) and the workflow runs once per row — each row's columns are loaded into the
+      session at the start of that iteration, so a request can reference
+      <code>${email}</code> or <code>${user_id}</code> straight from the data file. After the
+      run, each iteration gets its own pass/fail summary.
+    </p>
+
+    <h2>Broken references &amp; auto-heal</h2>
+    <p>
+      Steps reference requests by collection-relative path, so external deletes/renames/moves
+      can break a workflow. Freepost validates every step reference on open and on every
+      filesystem change while the workflow is open — broken steps are flagged with a
+      <strong>relink</strong> (pick a replacement) or <strong>remove step</strong> action, and a
+      workflow with broken references can't be run until they're resolved. Renames and moves
+      done <em>inside</em> the app auto-heal every workflow that references the moved file, so
+      references only break via edits made outside Freepost.
+    </p>
+
+    <div class="callout callout-tip">
+      <div class="callout-title">Running headlessly</div>
+      Workflows also run from the command line for CI: <code>freepost run &lt;collection&gt;
+      --workflow &lt;path&gt;</code> uses the same engine as the app.
+    </div>
+
+    <footer class="docs-footer">
+      Next: <a href="./scripting.html">The pre-request &amp; test scripting guide →</a>
+    </footer>
+  </article>
+</div>
+
+</body>
+</html>

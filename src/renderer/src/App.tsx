@@ -3,7 +3,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import type { RequestKind, SearchEntry, TreeNode } from '../../shared/model'
 import { errMsg, fp, hasApi } from './api'
 import { initialState, reducer, type Tab, type TabHandle, type TabType } from './state'
-import { displayName, INVALID_NAME, joinPath } from './util'
+import { baseName, displayName, INVALID_NAME, joinPath, knownExt, parentDir } from './util'
 import TopBar from './components/TopBar'
 import Sidebar from './components/Sidebar'
 import TabBar from './components/TabBar'
@@ -18,7 +18,8 @@ import ImportModal from './components/ImportModal'
 import HistoryPanel from './components/HistoryPanel'
 import MockServerModal from './components/MockServerModal'
 import EnvironmentManager from './components/EnvironmentManager'
-import type { NewItemKind } from './components/Tree'
+import MoveModal from './components/MoveModal'
+import type { NewItemKind, TreeAction } from './components/Tree'
 
 type ModalSpec =
   | { kind: 'import' }
@@ -26,6 +27,11 @@ type ModalSpec =
   | { kind: 'mock' }
   | { kind: 'env-manager' }
   | { kind: 'new-item'; folder: string; itemKind: NewItemKind }
+  | { kind: 'new-folder'; parent: string }
+  | { kind: 'rename'; node: TreeNode }
+  | { kind: 'duplicate'; node: TreeNode }
+  | { kind: 'move'; node: TreeNode }
+  | { kind: 'delete'; node: TreeNode }
   | { kind: 'close-tab'; id: string }
   | { kind: 'quit' }
 
@@ -229,6 +235,146 @@ function Shell(): JSX.Element {
     }
   }
 
+  // --- sidebar context-menu operations -------------------------------------
+
+  const INVALID = 'Invalid name: cannot contain < > : " / \\ | ? *'
+
+  /** Open tabs invalidated by an operation on `rel` (a file, or a folder + its subtree). */
+  function affectedTabIds(rel: string, isFolder: boolean): string[] {
+    return state.tabs
+      .filter((t) => (isFolder ? t.path === rel || t.path.startsWith(rel + '/') : t.path === rel))
+      .map((t) => t.id)
+  }
+
+  function handleTreeAction(action: TreeAction): void {
+    switch (action.type) {
+      case 'new-folder':
+        setModal({ kind: 'new-folder', parent: action.parent })
+        break
+      case 'rename':
+        setModal({ kind: 'rename', node: action.node })
+        break
+      case 'duplicate':
+        setModal({ kind: 'duplicate', node: action.node })
+        break
+      case 'move':
+        setModal({ kind: 'move', node: action.node })
+        break
+      case 'delete':
+        setModal({ kind: 'delete', node: action.node })
+        break
+      case 'reveal': {
+        const root = state.root
+        if (root === null) return
+        void fp()
+          .revealInFolder(joinPath(root, action.node.path))
+          .catch((e) => setNotice(errMsg(e)))
+        break
+      }
+    }
+  }
+
+  async function createFolder(parent: string, name: string): Promise<void> {
+    const root = state.root
+    if (root === null) return
+    if (INVALID_NAME.test(name)) {
+      setNotice(INVALID)
+      return
+    }
+    const parentRel = parent === '.' ? '' : parent
+    const rel = parentRel === '' ? name : `${parentRel}/${name}`
+    try {
+      await fp().createFolder(joinPath(root, rel))
+      await loadCollection(root)
+    } catch (e) {
+      setNotice(errMsg(e))
+    }
+  }
+
+  /** Rename a request/workflow file (preserving its extension) or a folder. */
+  async function renameNode(node: TreeNode, newName: string): Promise<void> {
+    const root = state.root
+    if (root === null) return
+    if (INVALID_NAME.test(newName)) {
+      setNotice(INVALID)
+      return
+    }
+    const isFolder = node.type === 'folder'
+    const parent = parentDir(node.path)
+    const prefix = parent === '.' ? '' : `${parent}/`
+    const newRel = isFolder ? `${prefix}${newName}` : `${prefix}${newName}${knownExt(node.path)}`
+    if (newRel === node.path) return
+    const affected = affectedTabIds(node.path, isFolder)
+    try {
+      if (isFolder) await fp().renameFolder(joinPath(root, node.path), joinPath(root, newRel))
+      else await fp().renameRequest(joinPath(root, node.path), joinPath(root, newRel))
+      for (const id of affected) dispatch({ type: 'close-tab', id })
+      await loadCollection(root)
+      if (!isFolder && affected.includes(node.path)) {
+        openPath(newRel, node.type as 'request' | 'workflow', node.kind)
+      }
+    } catch (e) {
+      setNotice(errMsg(e))
+    }
+  }
+
+  /** Copy a request/workflow file to a sibling with a new name. */
+  async function duplicateNode(node: TreeNode, newName: string): Promise<void> {
+    const root = state.root
+    if (root === null) return
+    if (INVALID_NAME.test(newName)) {
+      setNotice(INVALID)
+      return
+    }
+    const parent = parentDir(node.path)
+    const prefix = parent === '.' ? '' : `${parent}/`
+    const newRel = `${prefix}${newName}${knownExt(node.path)}`
+    try {
+      await fp().duplicateRequest(joinPath(root, node.path), joinPath(root, newRel))
+      await loadCollection(root)
+      openPath(newRel, node.type as 'request' | 'workflow', node.kind)
+    } catch (e) {
+      setNotice(errMsg(e))
+    }
+  }
+
+  /** Move a request/workflow file or a folder into `destFolder` (keeps its name). */
+  async function moveNode(node: TreeNode, destFolder: string): Promise<void> {
+    const root = state.root
+    if (root === null) return
+    const isFolder = node.type === 'folder'
+    const destPrefix = destFolder === '.' ? '' : `${destFolder}/`
+    const newRel = `${destPrefix}${baseName(node.path)}`
+    if (newRel === node.path) return
+    const affected = affectedTabIds(node.path, isFolder)
+    try {
+      if (isFolder) await fp().renameFolder(joinPath(root, node.path), joinPath(root, newRel))
+      else await fp().renameRequest(joinPath(root, node.path), joinPath(root, newRel))
+      for (const id of affected) dispatch({ type: 'close-tab', id })
+      await loadCollection(root)
+      if (!isFolder && affected.includes(node.path)) {
+        openPath(newRel, node.type as 'request' | 'workflow', node.kind)
+      }
+    } catch (e) {
+      setNotice(errMsg(e))
+    }
+  }
+
+  async function deleteNode(node: TreeNode): Promise<void> {
+    const root = state.root
+    if (root === null) return
+    const isFolder = node.type === 'folder'
+    const affected = affectedTabIds(node.path, isFolder)
+    try {
+      if (isFolder) await fp().deleteFolder(joinPath(root, node.path))
+      else await fp().deleteRequest(joinPath(root, node.path))
+      for (const id of affected) dispatch({ type: 'close-tab', id })
+      await loadCollection(root)
+    } catch (e) {
+      setNotice(errMsg(e))
+    }
+  }
+
   return (
     <div className="app">
       <TopBar
@@ -251,6 +397,7 @@ function Shell(): JSX.Element {
           onOpenNode={openNode}
           onOpenEntry={openEntry}
           onNewItem={(folder, kind) => setModal({ kind: 'new-item', folder, itemKind: kind })}
+          onTreeAction={handleTreeAction}
           onEnvChange={(envPath) => dispatch({ type: 'set-env', envPath })}
           onToggleSession={() => dispatch({ type: 'toggle-session' })}
           onManageEnvs={() => setModal({ kind: 'env-manager' })}
@@ -394,6 +541,86 @@ function Shell(): JSX.Element {
           onCancel={() => setModal(null)}
         />
       )}
+      {modal?.kind === 'new-folder' && (
+        <PromptModal
+          title="New Folder"
+          label={`Folder name${modal.parent !== '' && modal.parent !== '.' ? ` (in ${modal.parent})` : ''}`}
+          placeholder="auth"
+          submitText="Create"
+          onSubmit={(name) => {
+            const parent = modal.parent
+            setModal(null)
+            void createFolder(parent, name)
+          }}
+          onCancel={() => setModal(null)}
+        />
+      )}
+      {modal?.kind === 'rename' && (
+        <PromptModal
+          title={modal.node.type === 'folder' ? 'Rename Folder' : 'Rename'}
+          label="New name"
+          initial={modal.node.type === 'folder' ? modal.node.name : displayName(modal.node.path)}
+          submitText="Rename"
+          onSubmit={(name) => {
+            const node = modal.node
+            setModal(null)
+            void renameNode(node, name)
+          }}
+          onCancel={() => setModal(null)}
+        />
+      )}
+      {modal?.kind === 'duplicate' && (
+        <PromptModal
+          title="Duplicate"
+          label="Name for the copy"
+          initial={`${displayName(modal.node.path)} copy`}
+          submitText="Duplicate"
+          onSubmit={(name) => {
+            const node = modal.node
+            setModal(null)
+            void duplicateNode(node, name)
+          }}
+          onCancel={() => setModal(null)}
+        />
+      )}
+      {modal?.kind === 'move' && state.tree !== null && (
+        <MoveModal
+          tree={state.tree}
+          node={modal.node}
+          displayName={
+            modal.node.type === 'folder' ? modal.node.name : displayName(modal.node.path)
+          }
+          onSubmit={(dest) => {
+            const node = modal.node
+            setModal(null)
+            void moveNode(node, dest)
+          }}
+          onCancel={() => setModal(null)}
+        />
+      )}
+      {modal?.kind === 'delete' &&
+        (() => {
+          const node = modal.node
+          const isFolder = node.type === 'folder'
+          const label = isFolder ? node.name : displayName(node.path)
+          return (
+            <ConfirmModal
+              title={isFolder ? 'Delete folder' : 'Delete'}
+              message={
+                isFolder
+                  ? `Delete the folder “${label}” and everything inside it? This cannot be undone.`
+                  : `Delete “${label}”? This cannot be undone.`
+              }
+              confirmText="Delete"
+              danger
+              onConfirm={() => {
+                setModal(null)
+                void deleteNode(node)
+              }}
+              onCancel={() => setModal(null)}
+            />
+          )
+        })()}
       {modal?.kind === 'close-tab' &&
         (() => {
           const id = modal.id

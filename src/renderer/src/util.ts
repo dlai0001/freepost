@@ -15,7 +15,7 @@ export function baseName(p: string): string {
 }
 
 /** Longest first so `.workflow.json` wins over `.json`. */
-const KNOWN_SUFFIXES = ['.workflow.json', '.env.json', '.curl', '.ws']
+const KNOWN_SUFFIXES = ['.workflow.json', '.env.json', '.curl', '.ws', '.grpc', '.mqtt']
 
 /** Display name for a request/workflow/env path: basename minus known suffix. */
 export function displayName(p: string): string {
@@ -25,6 +25,22 @@ export function displayName(p: string): string {
     if (lower.endsWith(s)) return base.slice(0, -s.length)
   }
   return base
+}
+
+/** The known request/workflow/env extension of a path (with leading dot), or '' if none. */
+export function knownExt(p: string): string {
+  const lower = baseName(p).toLowerCase()
+  for (const s of KNOWN_SUFFIXES) {
+    if (lower.endsWith(s)) return s
+  }
+  return ''
+}
+
+/** Parent directory of a collection-relative path; '.' for a top-level item. */
+export function parentDir(rel: string): string {
+  const norm = rel.replace(/\\/g, '/')
+  const i = norm.lastIndexOf('/')
+  return i >= 0 ? norm.slice(0, i) : '.'
 }
 
 /** Windows-incompatible filename characters (PLAN.md naming rules). */

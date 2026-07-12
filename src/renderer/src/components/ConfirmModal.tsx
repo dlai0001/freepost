@@ -12,6 +12,8 @@ interface Props {
   cancelText?: string
   onCancel: () => void
   busy?: boolean
+  /** Style the primary action as destructive (filled red) instead of accent green. */
+  danger?: boolean
 }
 
 /** Save / Don't Save / Cancel dialog for closing tabs or the app with unsaved edits. */
@@ -30,7 +32,11 @@ export default function ConfirmModal(props: Props): JSX.Element {
               {props.discardText}
             </button>
           )}
-          <button className="btn btn-accent" onClick={props.onConfirm} disabled={props.busy}>
+          <button
+            className={'btn ' + (props.danger ? 'btn-danger-solid' : 'btn-accent')}
+            onClick={props.onConfirm}
+            disabled={props.busy}
+          >
             {props.confirmText}
           </button>
         </div>

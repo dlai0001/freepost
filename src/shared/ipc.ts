@@ -35,8 +35,14 @@ export const IPC = {
   commandParse: 'command:parse', // ({ text, strict?, kind? }) => ParseCommandResult — parse text to model, no write
   requestCreate: 'request:create', // (absPath, kind) => void
   requestRename: 'request:rename', // (absPath, newAbsPath) => void  (auto-heals workflow refs)
+  requestDuplicate: 'request:duplicate', // (absPath, newAbsPath) => void  (copy a request/workflow file)
   requestDelete: 'request:delete', // (absPath) => void
   requestExecute: 'request:execute', // ({ root, path, envPath?, model? }) => ExecutionReport (model runs unsaved editor state)
+
+  folderCreate: 'folder:create', // (absPath) => void  (mkdir; errors if it exists)
+  folderRename: 'folder:rename', // (absPath, newAbsPath) => void  (rename/move a folder; auto-heals workflow refs)
+  folderDelete: 'folder:delete', // (absPath) => void  (recursive remove)
+  revealInFolder: 'shell:reveal', // (absPath) => void  (open the OS file explorer at this path)
 
   envList: 'env:list', // (root) => string[]
   envRead: 'env:read', // (absPath) => Record<string,string>
@@ -139,7 +145,18 @@ export interface FreepostApi {
   }): Promise<ParseCommandResult>
   createRequest(absPath: string, kind: 'curl' | 'websocat' | 'grpc' | 'mqtt'): Promise<void>
   renameRequest(absPath: string, newAbsPath: string): Promise<void>
+  /** Copy a request/workflow file to a new path (no workflow-ref healing — it's a new file). */
+  duplicateRequest(absPath: string, newAbsPath: string): Promise<void>
   deleteRequest(absPath: string): Promise<void>
+
+  /** Create a new (empty) folder. Rejects if the path already exists. */
+  createFolder(absPath: string): Promise<void>
+  /** Rename or move a folder; auto-heals workflow references to files it contains. */
+  renameFolder(absPath: string, newAbsPath: string): Promise<void>
+  /** Recursively delete a folder and everything under it. */
+  deleteFolder(absPath: string): Promise<void>
+  /** Reveal a file or folder in the OS file explorer (Finder / Explorer). */
+  revealInFolder(absPath: string): Promise<void>
   executeRequest(args: {
     root: string
     path: string

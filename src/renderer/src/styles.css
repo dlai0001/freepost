@@ -7,6 +7,7 @@
   --accent: #3fb950;
   --accent-dim: #238636;
   --danger: #f85149;
+  --danger-dim: #b62324;
   --warn: #d29922;
   --blue: #58a6ff;
   --purple: #bc8cff;
@@ -69,6 +70,8 @@ button { cursor: pointer; }
 .btn-accent { background: var(--accent-dim); border-color: var(--accent-dim); color: #fff; font-weight: 600; }
 .btn-accent:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); }
 .btn-danger { background: transparent; border-color: var(--danger); color: var(--danger); }
+.btn-danger-solid { background: var(--danger-dim); border-color: var(--danger-dim); color: #fff; font-weight: 600; }
+.btn-danger-solid:hover:not(:disabled) { background: var(--danger); border-color: var(--danger); }
 .btn-small { padding: 2px 8px; font-size: 12px; margin-top: 6px; }
 .btn-block { width: 100%; }
 .btn-toggled { border-color: var(--accent); color: var(--accent); }

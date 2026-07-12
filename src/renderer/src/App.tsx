@@ -612,6 +612,7 @@ function Shell(): JSX.Element {
                   : `Delete “${label}”? This cannot be undone.`
               }
               confirmText="Delete"
+              danger
               onConfirm={() => {
                 setModal(null)
                 void deleteNode(node)

@@ -119,6 +119,29 @@ describe('serializeWorkflow', () => {
     const json = serializeWorkflow({ steps: [] })
     expect(json).toBe('{\n  "steps": []\n}\n')
   })
+
+  it('round-trips dataFile (data-driven workflows)', () => {
+    const wf: WorkflowFile = {
+      description: 'smoke',
+      dataFile: 'data/rows.csv',
+      steps: [{ request: 'a.curl' }]
+    }
+    const json = serializeWorkflow(wf)
+    // dataFile is emitted between description and steps.
+    expect(json).toBe(
+      JSON.stringify(
+        { description: 'smoke', dataFile: 'data/rows.csv', steps: [{ request: 'a.curl' }] },
+        null,
+        2
+      ) + '\n'
+    )
+    expect(parseWorkflow(json)).toEqual({ ok: true, wf })
+  })
+
+  it('rejects a non-string dataFile', () => {
+    const result = parseWorkflow('{ "dataFile": 5, "steps": [] }')
+    expect(result.ok).toBe(false)
+  })
 })
 
 /* ------------------------------- validation ------------------------------ */
@@ -177,6 +200,18 @@ describe('healReferences', () => {
     const { wf: same, changed } = healReferences(wf, 'x.curl', 'y.curl')
     expect(changed).toBe(false)
     expect(same).toBe(wf)
+  })
+
+  it('preserves dataFile when healing (folder move / rename must not drop it)', () => {
+    const wf: WorkflowFile = {
+      description: 'd',
+      dataFile: 'data/rows.csv',
+      steps: [{ request: 'auth/Login.curl' }]
+    }
+    const { wf: healed, changed } = healReferences(wf, 'auth/Login.curl', 'id/auth/Login.curl')
+    expect(changed).toBe(true)
+    expect(healed.dataFile).toBe('data/rows.csv')
+    expect(healed.steps[0].request).toBe('id/auth/Login.curl')
   })
 })
 

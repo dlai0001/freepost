@@ -47,6 +47,9 @@ export function parseWorkflow(json: string): ParseWorkflowResult {
   if (data.description !== undefined && typeof data.description !== 'string') {
     return { ok: false, error: '"description" must be a string' }
   }
+  if (data.dataFile !== undefined && typeof data.dataFile !== 'string') {
+    return { ok: false, error: '"dataFile" must be a string' }
+  }
   if (!('steps' in data)) {
     return { ok: false, error: 'missing required "steps" array' }
   }
@@ -54,7 +57,7 @@ export function parseWorkflow(json: string): ParseWorkflowResult {
     return { ok: false, error: '"steps" must be an array' }
   }
   for (const key of Object.keys(data)) {
-    if (key !== 'description' && key !== 'steps') {
+    if (key !== 'description' && key !== 'steps' && key !== 'dataFile') {
       return { ok: false, error: `unknown key "${key}" at workflow root` }
     }
   }
@@ -83,15 +86,17 @@ export function parseWorkflow(json: string): ParseWorkflowResult {
 
   const wf: WorkflowFile = { steps }
   if (typeof data.description === 'string') wf.description = data.description
+  if (typeof data.dataFile === 'string') wf.dataFile = data.dataFile
   return { ok: true, wf }
 }
 
 /* ------------------------------- serialize ------------------------------- */
 
-/** Stable pretty JSON: description first (when present), then steps; 2-space indent. */
+/** Stable pretty JSON: description, then dataFile (when present), then steps; 2-space indent. */
 export function serializeWorkflow(wf: WorkflowFile): string {
   const out: Record<string, unknown> = {}
   if (wf.description !== undefined) out.description = wf.description
+  if (wf.dataFile !== undefined) out.dataFile = wf.dataFile
   out.steps = wf.steps.map((s) => {
     const step: Record<string, unknown> = { request: s.request }
     if (s.expectError !== undefined) step.expectError = s.expectError
@@ -141,6 +146,7 @@ export function healReferences(
   if (!changed) return { wf, changed: false }
   const healed: WorkflowFile = { steps }
   if (wf.description !== undefined) healed.description = wf.description
+  if (wf.dataFile !== undefined) healed.dataFile = wf.dataFile
   return { wf: healed, changed: true }
 }
 

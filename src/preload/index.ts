@@ -22,7 +22,12 @@ const api = {
   parseCommand: (args: unknown) => ipcRenderer.invoke(IPC.commandParse, args),
   createRequest: (p: string, kind: string) => ipcRenderer.invoke(IPC.requestCreate, p, kind),
   renameRequest: (p: string, n: string) => ipcRenderer.invoke(IPC.requestRename, p, n),
+  duplicateRequest: (p: string, n: string) => ipcRenderer.invoke(IPC.requestDuplicate, p, n),
   deleteRequest: (p: string) => ipcRenderer.invoke(IPC.requestDelete, p),
+  createFolder: (p: string) => ipcRenderer.invoke(IPC.folderCreate, p),
+  renameFolder: (p: string, n: string) => ipcRenderer.invoke(IPC.folderRename, p, n),
+  deleteFolder: (p: string) => ipcRenderer.invoke(IPC.folderDelete, p),
+  revealInFolder: (p: string) => ipcRenderer.invoke(IPC.revealInFolder, p),
   executeRequest: (args: unknown) => ipcRenderer.invoke(IPC.requestExecute, args),
 
   listEnvs: (root: string) => ipcRenderer.invoke(IPC.envList, root),

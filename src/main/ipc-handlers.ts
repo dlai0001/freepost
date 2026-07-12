@@ -131,6 +131,39 @@ async function readWorkflowFile(abs: string): Promise<WorkflowFile> {
   return parsed.wf
 }
 
+/** The open-collection root that contains `abs`, or undefined if none is watched. */
+function collectionRootOf(abs: string): string | undefined {
+  return [...watchers.keys()].find((r) => abs === r || abs.startsWith(r + sep))
+}
+
+/**
+ * Rewrite workflow step references across the whole collection after a rename or
+ * move. `pairs` is a list of [oldRel, newRel] collection-relative paths (one for
+ * a single-file rename; many for a folder move). Unparseable workflows are left
+ * untouched.
+ */
+async function healWorkflowRefs(root: string, pairs: [string, string][]): Promise<void> {
+  if (pairs.length === 0) return
+  for (const rel of await listFiles(root)) {
+    if (!rel.endsWith('.workflow.json')) continue
+    try {
+      const wfAbs = join(root, rel)
+      let wf = await readWorkflowFile(wfAbs)
+      let changed = false
+      for (const [oldRel, newRel] of pairs) {
+        const healed = healReferences(wf, oldRel, newRel)
+        if (healed.changed) {
+          wf = healed.wf
+          changed = true
+        }
+      }
+      if (changed) await fs.writeFile(wfAbs, serializeWorkflow(wf))
+    } catch {
+      /* unparseable workflow: leave as-is */
+    }
+  }
+}
+
 function requestExistsCheck(root: string): (rel: string) => 'request' | 'missing' | 'not-a-request' {
   return (rel) => {
     const abs = join(root, rel)
@@ -294,29 +327,55 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle(IPC.requestRename, async (_e, abs: string, newAbs: string) => {
+    if (existsSync(newAbs)) throw new Error('A file already exists at the destination')
     await fs.mkdir(dirname(newAbs), { recursive: true })
     await fs.rename(abs, newAbs)
     // Auto-heal workflow references in the containing collection (PLAN.md).
-    const root = [...watchers.keys()].find((r) => abs.startsWith(r + sep))
+    const root = collectionRootOf(abs)
     if (root !== undefined) {
-      const oldRel = toRel(root, abs)
-      const newRel = toRel(root, newAbs)
-      for (const rel of await listFiles(root)) {
-        if (!rel.endsWith('.workflow.json')) continue
-        try {
-          const wfAbs = join(root, rel)
-          const wf = await readWorkflowFile(wfAbs)
-          const healed = healReferences(wf, oldRel, newRel)
-          if (healed.changed) await fs.writeFile(wfAbs, serializeWorkflow(healed.wf))
-        } catch {
-          /* unparseable workflow: leave as-is */
-        }
-      }
+      await healWorkflowRefs(root, [[toRel(root, abs), toRel(root, newAbs)]])
     }
+  })
+
+  ipcMain.handle(IPC.requestDuplicate, async (_e, abs: string, newAbs: string) => {
+    if (existsSync(newAbs)) throw new Error('A file already exists at the destination')
+    await fs.mkdir(dirname(newAbs), { recursive: true })
+    await fs.copyFile(abs, newAbs)
   })
 
   ipcMain.handle(IPC.requestDelete, async (_e, abs: string) => {
     await fs.rm(abs)
+  })
+
+  ipcMain.handle(IPC.folderCreate, async (_e, abs: string) => {
+    if (existsSync(abs)) throw new Error('A file or folder already exists here')
+    await fs.mkdir(abs, { recursive: true })
+  })
+
+  ipcMain.handle(IPC.folderRename, async (_e, abs: string, newAbs: string) => {
+    if (existsSync(newAbs)) throw new Error('A file or folder already exists at the destination')
+    const root = collectionRootOf(abs)
+    // Snapshot the files under the folder BEFORE moving so we can heal each ref.
+    const pairs: [string, string][] = []
+    if (root !== undefined) {
+      const oldRel = toRel(root, abs)
+      const newRel = toRel(root, newAbs)
+      for (const rel of await listFiles(abs)) {
+        // listFiles returns paths relative to `abs`; re-anchor to the collection root.
+        pairs.push([`${oldRel}/${rel}`, `${newRel}/${rel}`])
+      }
+    }
+    await fs.mkdir(dirname(newAbs), { recursive: true })
+    await fs.rename(abs, newAbs)
+    if (root !== undefined) await healWorkflowRefs(root, pairs)
+  })
+
+  ipcMain.handle(IPC.folderDelete, async (_e, abs: string) => {
+    await fs.rm(abs, { recursive: true, force: true })
+  })
+
+  ipcMain.handle(IPC.revealInFolder, (_e, abs: string) => {
+    shell.showItemInFolder(abs)
   })
 
   ipcMain.handle(

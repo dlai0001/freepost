@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import type { SearchEntry, TreeNode } from '../../../shared/model'
 import { fp } from '../api'
 import { displayName } from '../util'
-import Tree, { type NewItemKind } from './Tree'
+import Tree, { type NewItemKind, type TreeAction } from './Tree'
 import SearchResults from './SearchResults'
 import SessionPanel from './SessionPanel'
 
@@ -18,6 +18,7 @@ interface Props {
   onOpenNode: (node: TreeNode) => void
   onOpenEntry: (entry: SearchEntry) => void
   onNewItem: (folderRelPath: string, kind: NewItemKind) => void
+  onTreeAction: (action: TreeAction) => void
   onEnvChange: (envPath: string | null) => void
   onToggleSession: () => void
   onManageEnvs: () => void
@@ -86,6 +87,7 @@ export default function Sidebar(props: Props): JSX.Element {
             methods={props.methods}
             onOpen={props.onOpenNode}
             onNewItem={props.onNewItem}
+            onAction={props.onTreeAction}
           />
         ) : null}
       </div>

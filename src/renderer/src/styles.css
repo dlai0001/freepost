@@ -153,6 +153,8 @@ button { cursor: pointer; }
   text-align: left; padding: 6px 10px; font-size: 13px; border-radius: 4px; cursor: pointer;
 }
 .ctx-menu-item:hover { background: rgba(255, 255, 255, 0.08); }
+.ctx-menu-item.ctx-menu-danger { color: var(--danger); }
+.ctx-menu-sep { height: 1px; background: var(--border); margin: 4px 6px; }
 
 /* --------------------------------- badges -------------------------------- */
 .badge {

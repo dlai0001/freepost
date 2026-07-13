@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { looksLikeCommand } from './util'
+import { looksLikeCommand, looksLikeFilePathKey } from './util'
 
 describe('looksLikeCommand', () => {
   it('matches a pasted curl command', () => {
@@ -29,5 +29,24 @@ describe('looksLikeCommand', () => {
     expect(looksLikeCommand('curl')).toBe(false) // no following token
     expect(looksLikeCommand('')).toBe(false)
     expect(looksLikeCommand('curlie https://x.dev')).toBe(false) // not the curl token
+  })
+})
+
+describe('looksLikeFilePathKey', () => {
+  it('matches certificate/key style names, case-insensitively', () => {
+    expect(looksLikeFilePathKey('cert')).toBe(true)
+    expect(looksLikeFilePathKey('client_cert')).toBe(true)
+    expect(looksLikeFilePathKey('caBundle')).toBe(true)
+    expect(looksLikeFilePathKey('CA_CERT')).toBe(true)
+    expect(looksLikeFilePathKey('private_key')).toBe(true)
+    expect(looksLikeFilePathKey('KEYSTORE')).toBe(true)
+    expect(looksLikeFilePathKey('sslIdentity')).toBe(true)
+  })
+
+  it('does NOT match ordinary string variables', () => {
+    expect(looksLikeFilePathKey('base_url')).toBe(false)
+    expect(looksLikeFilePathKey('token')).toBe(false)
+    expect(looksLikeFilePathKey('username')).toBe(false)
+    expect(looksLikeFilePathKey('')).toBe(false)
   })
 })

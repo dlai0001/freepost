@@ -1,7 +1,7 @@
 import type { JSX } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { errMsg, fp } from '../api'
-import { displayName, joinPath, nextId } from '../util'
+import { displayName, joinPath, looksLikeFilePathKey, nextId } from '../util'
 
 interface Props {
   root: string
@@ -598,6 +598,11 @@ export default function EnvironmentManager(props: Props): JSX.Element {
                             setCtxMenu({ x: e.clientX, y: e.clientY, rowId: r.id })
                           }}
                         />
+                        {looksLikeFilePathKey(r.name) && (
+                          <span className="file-hint" title="Right-click the value to browse for a file">
+                            📁
+                          </span>
+                        )}
                         <button
                           className="icon-btn"
                           title={revealed.has(r.id) ? 'Hide value' : 'Reveal value'}

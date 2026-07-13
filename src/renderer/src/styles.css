@@ -357,6 +357,9 @@ td .var-input.cell-var { width: 100%; }
 .opt-check input { margin: 0; }
 .opt-file { display: flex; align-items: center; gap: 8px; }
 .opt-file .cell-var { min-width: 0; }
+/* Value cell with an optional file-path hint marker beside the input. */
+.cell-file { display: flex; align-items: center; gap: 6px; }
+.cell-file .cell-input.grow { flex: 1; min-width: 0; }
 .workflow-tab .field-label { margin-left: 12px; margin-right: 12px; }
 .workflow-tab > .cell-input { width: calc(100% - 24px); margin: 0 12px; }
 .auth-fields { max-width: 420px; display: flex; flex-direction: column; }
@@ -576,6 +579,13 @@ td .var-input.cell-var { width: 100%; }
   background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px;
 }
 .env-var-name:focus, .env-var-value:focus { outline: none; border-color: var(--blue); }
+
+/* Hint marker for variables whose name looks like a file path (cert/key/…).
+   Non-interactive; the value itself is right-clicked to browse. */
+.file-hint {
+  flex-shrink: 0; font-size: 12px; line-height: 1; opacity: 0.6; cursor: help;
+  user-select: none;
+}
 .env-var-add { margin-top: 6px; }
 .env-var-add .btn-small { margin-top: 0; flex-shrink: 0; }
 .env-bulk { flex: 1; min-height: 0; }

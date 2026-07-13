@@ -74,6 +74,30 @@ export function nextId(): number {
   return idCounter++
 }
 
+/** Substrings in a variable name that suggest its value is a path to a file
+ *  on disk (certificate, key, keystore, …) rather than an inline string. */
+const FILE_PATH_KEY_HINTS = [
+  'cert',
+  'key',
+  'pem',
+  'pfx',
+  'p12',
+  'pkcs',
+  'jks',
+  'bundle',
+  'identity'
+]
+
+/**
+ * Heuristic: does a variable name suggest its value is a path to a file
+ * (e.g. `cert`, `client_key`, `caBundle`)? Used to hint that the value can be
+ * filled by right-clicking to browse for a file.
+ */
+export function looksLikeFilePathKey(name: string): boolean {
+  const lower = name.toLowerCase()
+  return FILE_PATH_KEY_HINTS.some((h) => lower.includes(h))
+}
+
 /**
  * Token-only heuristic: does pasted text look like a curl/websocat/wscat command
  * (rather than a plain URL)? The command must be the first word of some line.

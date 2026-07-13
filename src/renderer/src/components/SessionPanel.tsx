@@ -1,6 +1,7 @@
 import type { JSX } from 'react'
 import { useCallback, useEffect, useState } from 'react'
 import { errMsg, fp } from '../api'
+import { looksLikeFilePathKey } from '../util'
 
 /** Inspect/edit the runtime session variable store (never written to disk). */
 export default function SessionPanel(): JSX.Element {
@@ -8,6 +9,8 @@ export default function SessionPanel(): JSX.Element {
   const [error, setError] = useState<string | null>(null)
   const [newName, setNewName] = useState('')
   const [newValue, setNewValue] = useState('')
+  // Right-click "Browse file" menu; `name` is the target var, or null for the add row.
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; name: string | null } | null>(null)
 
   const refresh = useCallback(async () => {
     try {
@@ -48,6 +51,15 @@ export default function SessionPanel(): JSX.Element {
     setNewValue('')
   }
 
+  /** Pick a file via the system dialog and store its path as the value. */
+  async function browseValueFile(name: string | null): Promise<void> {
+    setCtxMenu(null)
+    const path = await fp().browseFile({ title: 'Select a file' })
+    if (path === null) return
+    if (name === null) setNewValue(path)
+    else await commit(name, path)
+  }
+
   const entries = Object.entries(vars).sort(([a], [b]) => a.localeCompare(b))
 
   return (
@@ -75,7 +87,16 @@ export default function SessionPanel(): JSX.Element {
             onKeyDown={(e) => {
               if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
             }}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              setCtxMenu({ x: e.clientX, y: e.clientY, name })
+            }}
           />
+          {looksLikeFilePathKey(name) && (
+            <span className="file-hint" title="Right-click the value to browse for a file">
+              📁
+            </span>
+          )}
         </div>
       ))}
       <div className="session-row session-add">
@@ -93,11 +114,42 @@ export default function SessionPanel(): JSX.Element {
           onKeyDown={(e) => {
             if (e.key === 'Enter') void add()
           }}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            setCtxMenu({ x: e.clientX, y: e.clientY, name: null })
+          }}
         />
+        {looksLikeFilePathKey(newName) && (
+          <span className="file-hint" title="Right-click the value to browse for a file">
+            📁
+          </span>
+        )}
         <button className="btn btn-small" onClick={() => void add()} disabled={newName.trim() === ''}>
           Add
         </button>
       </div>
+
+      {ctxMenu !== null && (
+        <>
+          <div
+            className="ctx-menu-backdrop"
+            onMouseDown={() => setCtxMenu(null)}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              setCtxMenu(null)
+            }}
+          />
+          <div className="ctx-menu" style={{ top: ctxMenu.y, left: ctxMenu.x }}>
+            <button
+              className="ctx-menu-item"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={() => void browseValueFile(ctxMenu.name)}
+            >
+              Browse file…
+            </button>
+          </div>
+        </>
+      )}
     </div>
   )
 }

@@ -18,7 +18,7 @@ import type {
   VariableMeta
 } from '../../../shared/model'
 import { errMsg, fp } from '../api'
-import { joinPath, looksLikeCommand, nextId } from '../util'
+import { joinPath, looksLikeCommand, looksLikeFilePathKey, nextId } from '../util'
 import { detectOperationType } from '../../../core/graphql/operation'
 import ResponsePanel from './ResponsePanel'
 import CodegenModal from './CodegenModal'
@@ -187,6 +187,8 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
   const [description, setDescription] = useState('')
   const [labelsText, setLabelsText] = useState('')
   const [varRows, setVarRows] = useState<VarRow[]>([])
+  // Right-click "Browse file" menu anchored over a meta variable's value cell.
+  const [varCtxMenu, setVarCtxMenu] = useState<{ x: number; y: number; rowId: number } | null>(null)
 
   // Variable resolution context for `${VAR}` highlighting + hover hints.
   const varSources = useVarSources(props.root, props.envPath)
@@ -569,6 +571,13 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
       setCaCert(path)
       touch()
     }
+  }
+
+  /** Pick a file via the system dialog and store its path as a variable's value. */
+  async function browseVarFile(rowId: number): Promise<void> {
+    setVarCtxMenu(null)
+    const path = await fp().browseFile({ title: 'Select a file' })
+    if (path !== null) updateVar(rowId, { def: path })
   }
 
   /**
@@ -1751,19 +1760,34 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
                           />
                         </td>
                         <td>
-                          <input
-                            className="cell-input mono"
-                            value={row.def}
-                            type={row.secret ? 'password' : 'text'}
-                            disabled={row.required}
-                            placeholder={row.required ? '' : 'value or ${OTHER}'}
-                            title={
-                              row.required
-                                ? 'Required variables take their value from the session or environment'
-                                : 'Highest-precedence value for this request. May reference other variables, e.g. ${env}-${id}. Leave blank to fall back to session/environment.'
-                            }
-                            onChange={(e) => updateVar(row.id, { def: e.target.value })}
-                          />
+                          <div className="cell-file">
+                            <input
+                              className="cell-input mono grow"
+                              value={row.def}
+                              type={row.secret ? 'password' : 'text'}
+                              disabled={row.required}
+                              placeholder={row.required ? '' : 'value or ${OTHER}'}
+                              title={
+                                row.required
+                                  ? 'Required variables take their value from the session or environment'
+                                  : 'Highest-precedence value for this request. May reference other variables, e.g. ${env}-${id}. Leave blank to fall back to session/environment.'
+                              }
+                              onChange={(e) => updateVar(row.id, { def: e.target.value })}
+                              onContextMenu={(e) => {
+                                if (row.required) return
+                                e.preventDefault()
+                                setVarCtxMenu({ x: e.clientX, y: e.clientY, rowId: row.id })
+                              }}
+                            />
+                            {!row.required && looksLikeFilePathKey(row.name) && (
+                              <span
+                                className="file-hint"
+                                title="Right-click the value to browse for a file"
+                              >
+                                📁
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="cell-check">
                           <input
@@ -1853,6 +1877,28 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
           }}
           onCancel={() => setPendingPaste(null)}
         />
+      )}
+
+      {varCtxMenu !== null && (
+        <>
+          <div
+            className="ctx-menu-backdrop"
+            onMouseDown={() => setVarCtxMenu(null)}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              setVarCtxMenu(null)
+            }}
+          />
+          <div className="ctx-menu" style={{ top: varCtxMenu.y, left: varCtxMenu.x }}>
+            <button
+              className="ctx-menu-item"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={() => void browseVarFile(varCtxMenu.rowId)}
+            >
+              Browse file…
+            </button>
+          </div>
+        </>
       )}
     </div>
   )

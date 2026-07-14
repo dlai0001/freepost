@@ -24,6 +24,7 @@
     <div class="docs-nav-title">Guides</div>
     <a class="active" href="./index.html">Overview</a>
     <a href="./creating-requests.html">Creating requests</a>
+    <a href="./mcp.html">MCP servers</a>
     <a href="./importing.html">Importing</a>
     <a href="./organizing.html">Saving &amp; organizing</a>
     <a href="./workflows.html">Workflows</a>
@@ -36,18 +37,23 @@
   <article class="docs-article">
     <h1>Freepost help</h1>
     <p class="lede">
-      Freepost is an offline API client: REST, GraphQL, and WebSocket requests, saved as
-      pretty-printed <code>curl</code> / <code>websocat</code> files in a folder you choose.
+      Freepost is an offline API client: REST, GraphQL, WebSocket, gRPC, MQTT, and MCP requests,
+      saved as pretty-printed <code>curl</code> / <code>websocat</code> / <code>grpcurl</code> /
+      <code>mosquitto</code> / MCP Inspector commands in a folder you choose.
       No account, no cloud, nothing leaves your machine except the requests you send. These
-      guides cover the everyday workflow — creating requests, importing existing collections,
-      organizing what you build, chaining requests into workflows, and writing pre-request /
-      test scripts.
+      guides cover the everyday workflow — creating requests, calling MCP servers, importing
+      existing collections, organizing what you build, chaining requests into workflows, and
+      writing pre-request / test scripts.
     </p>
 
     <div class="help-grid">
       <a class="help-card" href="./creating-requests.html">
         <h3>🌐 Creating requests</h3>
         <p>New REST, GraphQL, and WebSocket requests, sending them, and reading the response.</p>
+      </a>
+      <a class="help-card" href="./mcp.html">
+        <h3>🤖 MCP servers</h3>
+        <p>Call an MCP server's tools, resources, and prompts — then assert on the result and catch schema drift in CI.</p>
       </a>
       <a class="help-card" href="./importing.html">
         <h3>📥 Importing</h3>
@@ -88,7 +94,7 @@
       <dt>Collection</dt>
       <dd>Any folder you open with <strong>Open Collection</strong>. There's no separate "workspace" — the folder is the whole thing, and it's portable to any machine.</dd>
       <dt>Request</dt>
-      <dd>A single <code>.curl</code> file (REST or GraphQL) or <code>.ws</code> file (WebSocket). The filename is the request's name; the file is valid, runnable shell.</dd>
+      <dd>A single file: <code>.curl</code> (REST or GraphQL), <code>.ws</code> (WebSocket), <code>.grpc</code>, <code>.mqtt</code>, or <code>.mcp</code> (<a href="./mcp.html">an MCP server call</a>). The filename is the request's name; the file is valid, runnable shell.</dd>
       <dt>Folder</dt>
       <dd>A subfolder in your collection. The sidebar tree mirrors the folder tree on disk exactly — rename or move either side and the other follows.</dd>
       <dt>Workflow</dt>

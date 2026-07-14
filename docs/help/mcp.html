@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Freepost Help — MCP servers</title>
+<meta name="description" content="Call MCP (Model Context Protocol) servers from Freepost over stdio or Streamable HTTP, assert on tool calls with pm.* tests, and catch tool-schema drift with freepost mcp check.">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="topbar-logo" href="../index.html">$ freepost</a>
+    <span class="topbar-crumb">Help</span>
+    <div class="topbar-spacer"></div>
+    <a class="topbar-link" href="../index.html">Website</a>
+    <a class="topbar-link" href="https://github.com/dlai0001/freepost">GitHub</a>
+  </div>
+</header>
+
+<div class="docs-shell">
+  <nav class="docs-nav">
+    <div class="docs-nav-title">Guides</div>
+    <a href="./index.html">Overview</a>
+    <a href="./creating-requests.html">Creating requests</a>
+    <a class="active" href="./mcp.html">MCP servers</a>
+    <a href="./importing.html">Importing</a>
+    <a href="./organizing.html">Saving &amp; organizing</a>
+    <a href="./workflows.html">Workflows</a>
+    <a href="./authentication.html">Authentication</a>
+    <a href="./mock-server.html">Mock server</a>
+    <a href="./cli.html">Command line</a>
+    <a href="./scripting.html">Scripting (pm.*)</a>
+  </nav>
+
+  <article class="docs-article">
+    <h1>MCP servers</h1>
+    <p class="lede">
+      Freepost speaks the <strong>Model Context Protocol</strong> as a first-class request kind.
+      Point it at an MCP server over stdio or Streamable HTTP, browse the tools, resources, and
+      prompts it exposes, call them — and then do the thing an MCP inspector can't:
+      <strong>assert on the result with <a href="./scripting.html">pm.* tests</a> and run those
+      assertions headlessly in CI</strong>. A schema snapshot turns silent tool-signature drift
+      into a failing build.
+    </p>
+
+    <h2>The <code>.mcp</code> file</h2>
+    <p>
+      An MCP request is saved as a <code>.mcp</code> file, and — like every other request kind in
+      Freepost — it is a real, runnable command: an <a href="https://github.com/modelcontextprotocol/inspector">MCP
+      Inspector</a> CLI invocation, with the usual YAML-in-comments frontmatter on top. <code>bash</code>
+      runs it; the app executes the same call through the official MCP SDK.
+    </p>
+    <pre><code>#!/usr/bin/env bash
+# ---
+# description: Add two numbers via an MCP server
+# label: [mcp]
+# scripts:
+#   test: |-
+#     pm.test("sums 20 + 22", () =&gt; {
+#       pm.expect(pm.response.json().content[0].text).to.contain("42");
+#     });
+#     pm.test("is not a tool error", () =&gt; {
+#       pm.expect(pm.response.json().isError).to.not.equal(true);
+#     });
+# ---
+
+MCP_URL="${MCP_URL:-http://localhost:3011/mcp}"
+
+npx @modelcontextprotocol/inspector \
+  --cli \
+  "${MCP_URL}" \
+  --transport http \
+  --method 'tools/call' \
+  --tool-name 'get-sum' \
+  --tool-arg 'a=20' \
+  --tool-arg 'b=22'</code></pre>
+    <p>
+      Create one with <strong>New MCP</strong> from the sidebar's right-click menu.
+      <code>${VAR}</code> expansion works everywhere it does elsewhere — in the URL, headers, tool
+      arguments, the server command, and its environment — so the same request runs against local
+      and staging servers by switching <a href="./organizing.html">environment</a>.
+    </p>
+
+    <h2>Two transports</h2>
+    <table>
+      <thead><tr><th>Transport</th><th>What it is</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>Streamable HTTP</code></td>
+          <td>A server already listening on a URL. Add <code>Authorization</code> and other headers in the Headers box.</td>
+        </tr>
+        <tr>
+          <td><code>stdio</code></td>
+          <td>A server program on your machine that Freepost <strong>spawns</strong> as a subprocess and talks to over its stdin/stdout. You give the command (e.g. <code>npx</code>), its arguments, and any environment variables it needs.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout callout-warn">
+      <div class="callout-title">stdio asks before it runs anything</div>
+      A <code>.curl</code> file is inert data. A stdio <code>.mcp</code> file <em>names a program to
+      run</em> — so opening a collection somebody shared with you must never silently execute code.
+      The first time a given server command is spawned in a given collection, Freepost shows you the
+      exact command and asks for approval; the answer is remembered per collection + command, and it
+      is stored in the app's own data directory, <strong>never inside the collection</strong> (a
+      collection author could otherwise ship their own approval). The CLI doesn't prompt — running
+      <code>freepost run</code> on a collection is itself your authorization — so use
+      <code>--no-mcp-spawn</code> to skip stdio requests in CI.
+    </div>
+
+    <h2>The MCP tab</h2>
+    <p>Pick a transport and a method, fill in the target, and hit <strong>Send</strong>. Six methods are supported:</p>
+    <table>
+      <thead><tr><th>Method</th><th>Needs</th></tr></thead>
+      <tbody>
+        <tr><td><code>tools/list</code></td><td>—</td></tr>
+        <tr><td><code>tools/call</code></td><td>A tool name and tool arguments (<code>key=value</code>, one per line)</td></tr>
+        <tr><td><code>resources/list</code></td><td>—</td></tr>
+        <tr><td><code>resources/read</code></td><td>A resource URI, e.g. <code>demo://greeting</code></td></tr>
+        <tr><td><code>prompts/list</code></td><td>—</td></tr>
+        <tr><td><code>prompts/get</code></td><td>A prompt name and prompt arguments</td></tr>
+      </tbody>
+    </table>
+    <p>
+      <strong>Connect</strong> opens a live session instead of a one-shot call. Freepost introspects
+      the server and lists its tools, resources, and prompts — click any one of them to fill the
+      request in with its name and parameters, so you don't have to type a schema you can already
+      see. Server notifications (including progress) stream into the session log while you're
+      connected. <strong>Disconnect</strong> closes it.
+    </p>
+    <p>
+      Tool arguments are typed against the tool's own <code>inputSchema</code> before the call goes
+      out: a parameter declared <code>number</code> is sent as <code>20</code>, one declared
+      <code>string</code> stays <code>"20"</code>. You write <code>key=value</code>; the schema
+      decides what that value <em>is</em>.
+    </p>
+
+    <h2>Two failure axes, kept apart</h2>
+    <p>
+      MCP can fail in two very different ways, and collapsing them makes every assertion subtly
+      wrong. Freepost maps them onto distinct statuses so you can assert on either:
+    </p>
+    <table>
+      <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>200 OK</code></td><td>The call succeeded.</td></tr>
+        <tr><td><code>500 TOOL_ERROR</code></td><td>The tool <em>ran</em> and reported failure — the result carries <code>isError: true</code>. Its content is still there to assert on. (An unknown tool name lands here too, not in PROTOCOL_ERROR.)</td></tr>
+        <tr><td><code>502 PROTOCOL_ERROR</code></td><td>The call never got that far: the transport failed, the subprocess wouldn't spawn, the server rejected the request.</td></tr>
+      </tbody>
+    </table>
+    <p>
+      The response body is the raw MCP result, so <code>pm.response.json()</code> gives you
+      <code>content</code>, <code>structuredContent</code>, and <code>isError</code> directly:
+    </p>
+    <pre><code>pm.test("the tool did not error", () =&gt; {
+  pm.expect(pm.response.json().isError).to.not.equal(true);
+});
+pm.test("structured output has a total", () =&gt; {
+  pm.expect(pm.response.json().structuredContent.total).to.equal(42);
+});</code></pre>
+
+    <h2>Schema snapshots &amp; drift detection</h2>
+    <p>
+      The loudest complaint in the MCP ecosystem is <strong>silent schema drift</strong>: a server
+      renames a tool or retypes a parameter between versions, and everything downstream breaks with
+      no error anywhere. Freepost's answer is its whole thesis applied to MCP — write the server's
+      introspection surface to a file in your collection, review it in <code>git diff</code>, and
+      fail the build when it changes.
+    </p>
+    <p>
+      <strong>Snapshot schema</strong> records the server's tools, resources, and prompts as
+      <code>&lt;request&gt;.mcp.snapshot.json</code>, next to the request. Commit it.
+      <strong>Check drift</strong> re-introspects the live server and diffs it against that file:
+    </p>
+    <table>
+      <thead><tr><th>Change</th><th>Verdict</th></tr></thead>
+      <tbody>
+        <tr><td>A tool, resource, or prompt disappears</td><td><strong>Breaking</strong> — fails CI</td></tr>
+        <tr><td>A tool parameter disappears, changes type, or becomes newly required</td><td><strong>Breaking</strong> — fails CI</td></tr>
+        <tr><td>Anything new: a tool, a resource, a prompt, an optional parameter</td><td>Additive — warns only</td></tr>
+      </tbody>
+    </table>
+    <p>The same two actions exist on the command line, so this runs in CI:</p>
+    <pre><code>freepost mcp snapshot ./collection   # record each server's schema
+freepost mcp check ./collection      # exit 1 on breaking drift</code></pre>
+
+    <h2>When the server calls back</h2>
+    <p>
+      Some servers ask the <em>client</em> for something mid-call. Freepost never calls an LLM and
+      never blocks a headless run waiting for a human, so both callbacks are answered from
+      frontmatter — scripted, deterministic, reviewable:
+    </p>
+    <pre><code># ---
+# mcp:
+#   sampling:
+#     text: "a canned model completion"
+#   elicitation:
+#     action: accept        # accept | decline | cancel
+#     content:
+#       city: "Portland"
+# ---</code></pre>
+    <p>
+      Without an <code>mcp.sampling</code> block, a server that asks for an LLM completion gets a
+      protocol error rather than a silent stub. Without an <code>mcp.elicitation</code> block, an
+      elicitation request is <strong>declined</strong>.
+    </p>
+    <div class="callout callout-note">
+      <div class="callout-title">Callbacks need a session</div>
+      Sampling and elicitation are server-to-client calls, so they only work where a persistent
+      session exists: stdio, or a session-ful HTTP server. A stateless Streamable HTTP server that
+      builds a fresh instance per POST never sees the handshake and can't call back. Progress
+      notifications work either way — they stay within a single request.
+    </div>
+
+    <h2>Try it offline</h2>
+    <p>
+      The repo ships mock servers and a wired-up collection for every protocol, MCP included, so you
+      can exercise all of this without touching the internet:
+    </p>
+    <pre><code>npm run fixtures                 # starts MCP over http (:3011) and stdio, plus the rest
+freepost run fixtures/collection</code></pre>
+
+    <footer class="docs-footer">
+      Next: <a href="./cli.html">Run it all headlessly in CI →</a>
+    </footer>
+  </article>
+</div>
+
+</body>
+</html>

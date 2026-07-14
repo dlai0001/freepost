@@ -24,6 +24,7 @@
     <div class="docs-nav-title">Guides</div>
     <a href="./index.html">Overview</a>
     <a class="active" href="./creating-requests.html">Creating requests</a>
+    <a href="./mcp.html">MCP servers</a>
     <a href="./importing.html">Importing</a>
     <a href="./organizing.html">Saving &amp; organizing</a>
     <a href="./workflows.html">Workflows</a>
@@ -37,7 +38,9 @@
     <h1>Creating requests</h1>
     <p class="lede">
       Every request is a file in your collection: a <code>.curl</code> file for REST and
-      GraphQL, a <code>.ws</code> file for WebSocket. There's no separate "new GraphQL
+      GraphQL, a <code>.ws</code> file for WebSocket, <code>.grpc</code> for gRPC,
+      <code>.mqtt</code> for MQTT, and <code>.mcp</code> for an
+      <a href="./mcp.html">MCP server call</a>. There's no separate "new GraphQL
       request" — GraphQL is a body mode on an ordinary <code>.curl</code> request.
     </p>
 
@@ -259,7 +262,58 @@
       <li><strong>plaintext</strong> connects without TLS (typical for local dev);
         <strong>insecure TLS</strong> uses TLS but skips certificate verification.</li>
     </ul>
-    <p>
+    <figure class="docs-shot">
+      <svg viewBox="0 0 720 296" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="A gRPC tab: a host:50051 target bar, the method helloworld.Greeter/SayHello, Send, Stream and Save buttons, plaintext and insecure-TLS checkboxes, a JSON request panel, a proto files panel, and a response showing the reply message and status OK.">
+        <rect width="720" height="296" fill="#0a0d12"/>
+        <rect x="20" y="18" width="200" height="30" rx="6" fill="#161b22" stroke="#30363d"/>
+        <text x="34" y="38" font-family="ui-monospace, monospace" font-size="12.5" fill="#e6edf3">${GRPC_HOST}:50051</text>
+        <rect x="228" y="18" width="270" height="30" rx="6" fill="#161b22" stroke="#30363d"/>
+        <text x="242" y="38" font-family="ui-monospace, monospace" font-size="12.5" fill="#39c5cf">helloworld.Greeter/SayHello</text>
+        <rect x="506" y="18" width="62" height="30" rx="6" fill="#238636" stroke="#3fb950"/>
+        <text x="537" y="38" font-family="-apple-system, Segoe UI, sans-serif" font-size="12.5" font-weight="700" fill="#fff" text-anchor="middle">Send</text>
+        <rect x="576" y="18" width="66" height="30" rx="6" fill="#161b22" stroke="#30363d"/>
+        <text x="609" y="38" font-family="-apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#e6edf3" text-anchor="middle">Stream</text>
+        <rect x="650" y="18" width="50" height="30" rx="6" fill="#161b22" stroke="#30363d"/>
+        <text x="675" y="38" font-family="-apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#e6edf3" text-anchor="middle">Save</text>
+
+        <g font-family="-apple-system, Segoe UI, sans-serif" font-size="12">
+          <rect x="20" y="58" width="12" height="12" rx="3" fill="#3fb950"/>
+          <text x="26" y="68" font-size="10" font-weight="700" fill="#0a0d12" text-anchor="middle">&#10003;</text>
+          <text x="40" y="68" fill="#e6edf3">plaintext (no TLS)</text>
+          <rect x="160" y="58" width="12" height="12" rx="3" fill="none" stroke="#30363d" stroke-width="1.5"/>
+          <text x="180" y="68" fill="#8b949e">insecure TLS (skip verify)</text>
+        </g>
+
+        <g font-family="-apple-system, Segoe UI, sans-serif" font-size="11" font-weight="700">
+          <text x="20" y="96" fill="#8b949e">REQUEST (JSON)</text>
+          <text x="380" y="96" fill="#8b949e">PROTO FILES</text>
+        </g>
+        <rect x="20" y="104" width="336" height="66" rx="6" fill="#161b22" stroke="#30363d"/>
+        <g font-family="ui-monospace, Menlo, monospace" font-size="12.5">
+          <text x="34" y="126" fill="#e6edf3">{</text>
+          <text x="52" y="146" fill="#39c5cf">"name"<tspan fill="#e6edf3">: </tspan><tspan fill="#a5d6ff">"world"</tspan></text>
+          <text x="34" y="164" fill="#e6edf3">}</text>
+        </g>
+        <rect x="380" y="104" width="320" height="66" rx="6" fill="#161b22" stroke="#30363d"/>
+        <g font-family="ui-monospace, Menlo, monospace" font-size="12.5">
+          <text x="394" y="126" fill="#e6edf3">helloworld.proto</text>
+          <text x="394" y="150" fill="#8b949e" font-size="11.5">import paths: protos</text>
+        </g>
+
+        <line x1="20" y1="192" x2="700" y2="192" stroke="#30363d"/>
+        <text x="20" y="216" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" font-weight="700" fill="#8b949e">RESPONSE</text>
+        <rect x="100" y="204" width="40" height="18" rx="9" fill="#3fb950" fill-opacity="0.15" stroke="#3fb950" stroke-opacity="0.45"/>
+        <text x="120" y="217" font-family="ui-monospace, monospace" font-size="11" font-weight="700" fill="#3fb950" text-anchor="middle">OK</text>
+        <text x="152" y="217" font-family="ui-monospace, monospace" font-size="11.5" fill="#8b949e">18 ms</text>
+        <g font-family="ui-monospace, Menlo, monospace" font-size="12.5">
+          <text x="20" y="246" fill="#e6edf3">{</text>
+          <text x="38" y="264" fill="#39c5cf">"message"<tspan fill="#e6edf3">: </tspan><tspan fill="#a5d6ff">"Hello world"</tspan></text>
+          <text x="20" y="282" fill="#e6edf3">}</text>
+        </g>
+      </svg>
+    </figure>
+    <p class="shot-caption">
       Schema comes from local <code>.proto</code> files (server reflection isn't used), so the
       files travel with your collection and everything stays offline. Client-streaming and
       bidirectional methods aren't supported yet.
@@ -279,11 +333,131 @@
         allowed) and <strong>Subscribe</strong>; matching messages append to a live log until you
         disconnect. Subscriptions are long-lived, so the CLI skips them.</li>
     </ul>
-    <p>
+    <figure class="docs-shot">
+      <svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="An MQTT tab in Publish mode: a mode dropdown, broker host and port, the topic sensors/temp, QoS 1, a checked retain box, a JSON message payload, and a Publish button. Below it, a subscribe log receiving two messages from sensors/hash.">
+        <rect width="720" height="250" fill="#0a0d12"/>
+        <rect x="20" y="18" width="106" height="30" rx="6" fill="#161b22" stroke="#30363d"/>
+        <text x="34" y="38" font-family="-apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#e6edf3">Publish &#9662;</text>
+        <rect x="134" y="18" width="330" height="30" rx="6" fill="#161b22" stroke="#30363d"/>
+        <text x="148" y="38" font-family="ui-monospace, monospace" font-size="12.5" fill="#e6edf3">${BROKER_HOST}</text>
+        <rect x="472" y="18" width="70" height="30" rx="6" fill="#161b22" stroke="#30363d"/>
+        <text x="486" y="38" font-family="ui-monospace, monospace" font-size="12.5" fill="#e6edf3">1883</text>
+        <rect x="608" y="18" width="92" height="30" rx="6" fill="#238636" stroke="#3fb950"/>
+        <text x="654" y="38" font-family="-apple-system, Segoe UI, sans-serif" font-size="12.5" font-weight="700" fill="#fff" text-anchor="middle">Publish</text>
+
+        <text x="20" y="72" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" font-weight="700" fill="#8b949e">TOPIC</text>
+        <rect x="20" y="80" width="330" height="28" rx="6" fill="#161b22" stroke="#30363d"/>
+        <text x="34" y="99" font-family="ui-monospace, monospace" font-size="12.5" fill="#39c5cf">sensors/temp</text>
+        <g font-family="-apple-system, Segoe UI, sans-serif" font-size="12">
+          <text x="368" y="76" font-size="11" font-weight="700" fill="#8b949e">QOS</text>
+          <rect x="368" y="82" width="56" height="24" rx="6" fill="#161b22" stroke="#30363d"/>
+          <text x="382" y="99" font-family="ui-monospace, monospace" font-size="12.5" fill="#e6edf3">1 &#9662;</text>
+          <rect x="442" y="88" width="12" height="12" rx="3" fill="#3fb950"/>
+          <text x="448" y="98" font-size="10" font-weight="700" fill="#0a0d12" text-anchor="middle">&#10003;</text>
+          <text x="462" y="98" fill="#e6edf3">retain</text>
+        </g>
+
+        <text x="20" y="130" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" font-weight="700" fill="#8b949e">MESSAGE</text>
+        <rect x="20" y="138" width="330" height="40" rx="6" fill="#161b22" stroke="#30363d"/>
+        <text x="34" y="163" font-family="ui-monospace, monospace" font-size="12.5" fill="#e6edf3">{"c": <tspan fill="#79c0ff">21</tspan>}</text>
+
+        <line x1="380" y1="126" x2="380" y2="230" stroke="#30363d"/>
+        <text x="400" y="136" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" font-weight="700" fill="#8b949e">SUBSCRIBE MODE &#183; MESSAGES</text>
+        <text x="400" y="158" font-family="ui-monospace, monospace" font-size="12" fill="#8b949e">topic <tspan fill="#39c5cf">sensors/#</tspan></text>
+        <g font-family="ui-monospace, Menlo, monospace" font-size="12">
+          <text x="400" y="184" fill="#3fb950">&#8592; sensors/temp  {"c":21}</text>
+          <text x="400" y="206" fill="#3fb950">&#8592; sensors/hum   {"h":48}</text>
+        </g>
+      </svg>
+    </figure>
+    <p class="shot-caption">
       Username/password and a client id are optional; pointing <code>--cafile</code> at a CA
       certificate switches the connection to TLS. As always, <code>${VAR}</code> works in the host,
       topic, and message.
     </p>
+
+    <h2>MCP requests</h2>
+    <p>
+      An MCP request is stored as an annotated <a href="https://github.com/modelcontextprotocol/inspector">MCP
+      Inspector</a> CLI command (<code>.mcp</code> file). Pick a transport — <strong>Streamable
+      HTTP</strong> for a server already listening on a URL, or <strong>stdio</strong> for a server
+      program Freepost spawns for you — then a method (<code>tools/call</code>,
+      <code>resources/read</code>, <code>prompts/get</code>, and their <code>list</code>
+      counterparts) and send it. <strong>Connect</strong> opens a live session that lists everything
+      the server exposes, so you can click a tool to fill the request in rather than typing its
+      schema from memory.
+    </p>
+    <figure class="docs-shot">
+      <svg viewBox="0 0 720 316" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="An MCP tab: a Streamable HTTP transport dropdown, a server URL, Send and Connect buttons, the tools/call method with the tool name get-sum, Snapshot schema and Check drift buttons, a tool arguments box with a=20 and b=22, a connected session listing the server's tools, and a 200 OK response containing 42.">
+        <rect width="720" height="316" fill="#0a0d12"/>
+        <rect x="20" y="18" width="140" height="30" rx="6" fill="#161b22" stroke="#30363d"/>
+        <text x="34" y="38" font-family="-apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#e6edf3">Streamable HTTP &#9662;</text>
+        <rect x="168" y="18" width="300" height="30" rx="6" fill="#161b22" stroke="#30363d"/>
+        <text x="182" y="38" font-family="ui-monospace, monospace" font-size="12.5" fill="#e6edf3">${MCP_URL}/mcp</text>
+        <rect x="476" y="18" width="62" height="30" rx="6" fill="#238636" stroke="#3fb950"/>
+        <text x="507" y="38" font-family="-apple-system, Segoe UI, sans-serif" font-size="12.5" font-weight="700" fill="#fff" text-anchor="middle">Send</text>
+        <rect x="546" y="18" width="80" height="30" rx="6" fill="#161b22" stroke="#30363d"/>
+        <text x="586" y="38" font-family="-apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#e6edf3" text-anchor="middle">Connect</text>
+        <rect x="634" y="18" width="66" height="30" rx="6" fill="#161b22" stroke="#30363d"/>
+        <text x="667" y="38" font-family="-apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#e6edf3" text-anchor="middle">Save</text>
+
+        <rect x="20" y="58" width="120" height="28" rx="6" fill="#161b22" stroke="#30363d"/>
+        <text x="34" y="77" font-family="ui-monospace, monospace" font-size="12.5" fill="#e6edf3">tools/call &#9662;</text>
+        <rect x="148" y="58" width="170" height="28" rx="6" fill="#161b22" stroke="#30363d"/>
+        <text x="162" y="77" font-family="ui-monospace, monospace" font-size="12.5" fill="#39c5cf">get-sum</text>
+        <rect x="474" y="58" width="112" height="28" rx="6" fill="#161b22" stroke="#30363d"/>
+        <text x="530" y="77" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#e6edf3" text-anchor="middle">Snapshot schema</text>
+        <rect x="594" y="58" width="106" height="28" rx="6" fill="#161b22" stroke="#30363d"/>
+        <text x="647" y="77" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#e6edf3" text-anchor="middle">Check drift</text>
+
+        <text x="20" y="112" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" font-weight="700" fill="#8b949e">TOOL ARGUMENTS (key=value)</text>
+        <rect x="20" y="120" width="200" height="52" rx="6" fill="#161b22" stroke="#30363d"/>
+        <g font-family="ui-monospace, Menlo, monospace" font-size="12.5">
+          <text x="34" y="140" fill="#e6edf3">a=<tspan fill="#79c0ff">20</tspan></text>
+          <text x="34" y="160" fill="#e6edf3">b=<tspan fill="#79c0ff">22</tspan></text>
+        </g>
+
+        <rect x="240" y="102" width="460" height="70" rx="6" fill="#161b22" stroke="#30363d"/>
+        <g font-family="-apple-system, Segoe UI, sans-serif" font-size="12">
+          <text x="256" y="122" fill="#3fb950" font-weight="700">Connected</text>
+          <text x="330" y="122" fill="#8b949e" font-family="ui-monospace, monospace" font-size="11">demo-server 1.0.0</text>
+          <text x="256" y="144" fill="#e6edf3" font-weight="600">tools (2)</text>
+          <text x="326" y="144" fill="#8b949e">resources (1)</text>
+          <text x="424" y="144" fill="#8b949e">prompts (1)</text>
+          <line x1="256" y1="150" x2="312" y2="150" stroke="#3fb950" stroke-width="2"/>
+        </g>
+        <text x="256" y="165" font-family="ui-monospace, Menlo, monospace" font-size="12">
+          <tspan fill="#39c5cf">get-sum</tspan><tspan fill="#8b949e">(a: number, b: number)  — add two numbers</tspan>
+        </text>
+
+        <line x1="20" y1="196" x2="700" y2="196" stroke="#30363d"/>
+        <text x="20" y="220" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" font-weight="700" fill="#8b949e">RESPONSE</text>
+        <rect x="100" y="208" width="66" height="18" rx="9" fill="#3fb950" fill-opacity="0.15" stroke="#3fb950" stroke-opacity="0.45"/>
+        <text x="133" y="221" font-family="ui-monospace, monospace" font-size="11" font-weight="700" fill="#3fb950" text-anchor="middle">200 OK</text>
+        <text x="178" y="221" font-family="ui-monospace, monospace" font-size="11.5" fill="#8b949e">31 ms</text>
+        <g font-family="ui-monospace, Menlo, monospace" font-size="12.5">
+          <text x="20" y="250" fill="#e6edf3">{</text>
+          <text x="38" y="268" fill="#39c5cf">"content"<tspan fill="#e6edf3">: [{ </tspan><tspan fill="#39c5cf">"type"</tspan><tspan fill="#e6edf3">: </tspan><tspan fill="#a5d6ff">"text"</tspan><tspan fill="#e6edf3">, </tspan><tspan fill="#39c5cf">"text"</tspan><tspan fill="#e6edf3">: </tspan><tspan fill="#a5d6ff">"42"</tspan><tspan fill="#e6edf3"> }],</tspan></text>
+          <text x="38" y="286" fill="#39c5cf">"isError"<tspan fill="#e6edf3">: </tspan><tspan fill="#79c0ff">false</tspan></text>
+          <text x="20" y="304" fill="#e6edf3">}</text>
+        </g>
+      </svg>
+    </figure>
+    <p class="shot-caption">
+      The result comes back like any other response, so <a href="./scripting.html">test scripts</a>
+      can assert on it — and a stdio server never runs until you've seen the exact command and
+      approved it. See the <a href="./mcp.html">MCP guide</a> for the full story, including schema
+      snapshots and drift detection.
+    </p>
+
+    <div class="callout callout-warn">
+      <div class="callout-title">stdio spawns a program</div>
+      Switching the transport to <strong>stdio</strong> replaces the URL with a server command
+      (plus its arguments and environment). Freepost shows you that exact command and asks for
+      approval before it runs — see <a href="./mcp.html">MCP servers</a>.
+    </div>
 
     <h2>Sending &amp; the response</h2>
     <p>

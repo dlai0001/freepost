@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Freepost — the offline API client that saves requests as curl</title>
-<meta name="description" content="An open-source Postman alternative. No account, no cloud, zero network calls. Your requests are pretty-printed curl files on disk — runnable, diffable, yours.">
+<meta name="description" content="An open-source Postman alternative for REST, GraphQL, WebSocket, gRPC, MQTT, and MCP. No account, no cloud, zero network calls. Your requests are pretty-printed curl files on disk — runnable, diffable, yours.">
 <style>
   :root {
     --bg: #0d1117;
@@ -95,7 +95,7 @@
   <div class="logo">$ freepost</div>
   <h1>The API client that<br><span class="hl">never phones home.</span></h1>
   <p class="sub">
-    An open-source Postman alternative for REST, GraphQL, and WebSocket.
+    An open-source Postman alternative for REST, GraphQL, WebSocket, gRPC, MQTT, and MCP.
     No account. No cloud. Zero network calls except the requests you send.
     Your collections are plain curl files on disk — runnable, diffable, yours.
   </p>
@@ -432,6 +432,29 @@
         <div class="card-body">
           <h3><span class="ico">📡</span>MQTT publish &amp; subscribe</h3>
           <p>Talk to MQTT brokers with mosquitto-style <code>.mqtt</code> files. Publish a payload with QoS and retain, or subscribe to a topic (wildcards included) and watch messages stream in live. TLS, auth, and <code>${VAR}</code> all supported.</p>
+        </div>
+      </div>
+      <div class="card">
+        <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="An MCP tool call: the get-sum tool invoked with a=20 and b=22, returning 42, with two passing test assertions.">
+          <rect width="400" height="200" fill="#0a0d12"/>
+          <g font-family="ui-monospace, Menlo, monospace" font-size="11.5">
+            <text x="24" y="36" fill="#8b949e">tools/call <tspan fill="#39c5cf">get-sum</tspan></text>
+            <text x="24" y="58" fill="#e6edf3">a=<tspan fill="#79c0ff">20</tspan>  b=<tspan fill="#79c0ff">22</tspan></text>
+            <text x="24" y="84" fill="#3fb950">&#8592; {"content":[{"text":<tspan fill="#a5d6ff">"42"</tspan>}]}</text>
+          </g>
+          <rect x="296" y="22" width="80" height="20" rx="10" fill="#238636" stroke="#3fb950"/>
+          <text x="336" y="36" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">MCP</text>
+          <line x1="24" y1="102" x2="376" y2="102" stroke="#30363d"/>
+          <g font-family="ui-monospace, Menlo, monospace" font-size="12.5">
+            <text x="24" y="126"><tspan fill="#3fb950" font-weight="700">&#10003;</tspan><tspan fill="#e6edf3" dx="8">sums 20 + 22</tspan></text>
+            <text x="24" y="150"><tspan fill="#3fb950" font-weight="700">&#10003;</tspan><tspan fill="#e6edf3" dx="8">is not a tool error</tspan></text>
+          </g>
+          <rect x="24" y="164" width="278" height="22" rx="11" fill="#58a6ff" fill-opacity="0.12" stroke="#58a6ff" stroke-opacity="0.35"/>
+          <text x="37" y="179" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#58a6ff">freepost mcp check &#183; fails CI on schema drift</text>
+        </svg>
+        <div class="card-body">
+          <h3><span class="ico">🤖</span>MCP servers, testable</h3>
+          <p>Call an MCP server's tools, resources, and prompts over stdio or Streamable HTTP from a <code>.mcp</code> file — a real MCP Inspector invocation. Then assert on the result with <code>pm.*</code> tests and run them in CI, which no other MCP client does. <code>freepost mcp check</code> turns silent tool-schema drift into a failing build, and a stdio server never spawns until you've seen the exact command and approved it.</p>
         </div>
       </div>
       <div class="card">

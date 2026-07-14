@@ -3,7 +3,7 @@ import { useState } from 'react'
 import type { TreeNode } from '../../../shared/model'
 import MethodBadge from './MethodBadge'
 
-export type NewItemKind = 'curl' | 'websocat' | 'grpc' | 'mqtt' | 'workflow'
+export type NewItemKind = 'curl' | 'websocat' | 'grpc' | 'mqtt' | 'mcp' | 'workflow'
 
 /** Context-menu actions raised from a tree node (new-item stays on its own prop). */
 export type TreeAction =
@@ -84,6 +84,8 @@ function NodeView({
       <span className="wf-icon">▶</span>
     ) : node.kind === 'websocat' ? (
       <MethodBadge method="WS" />
+    ) : node.kind === 'mcp' ? (
+      <MethodBadge method="MCP" />
     ) : (
       <MethodBadge method={ctx.methods[node.path]} />
     )
@@ -148,13 +150,14 @@ function FolderView({
   )
 }
 
-/** The five "New X" entries shared by the + menu and the folder context menu. */
+/** The six "New X" entries shared by the + menu and the folder context menu. */
 function NewItemButtons({ folder, ctx }: { folder: string; ctx: TreeCtx }): JSX.Element {
   const items: { kind: NewItemKind; label: string }[] = [
     { kind: 'curl', label: 'New Request (.curl)' },
     { kind: 'websocat', label: 'New WebSocket (.ws)' },
     { kind: 'grpc', label: 'New gRPC (.grpc)' },
     { kind: 'mqtt', label: 'New MQTT (.mqtt)' },
+    { kind: 'mcp', label: 'New MCP (.mcp)' },
     { kind: 'workflow', label: 'New Workflow' }
   ]
   return (
@@ -220,6 +223,9 @@ function ContextMenu({ menu, ctx }: { menu: CtxMenu; ctx: TreeCtx }): JSX.Elemen
             </button>
             <button className="ctx-menu-item" onClick={() => newItem('mqtt')}>
               New MQTT
+            </button>
+            <button className="ctx-menu-item" onClick={() => newItem('mcp')}>
+              New MCP
             </button>
             <button className="ctx-menu-item" onClick={() => newItem('workflow')}>
               New Workflow

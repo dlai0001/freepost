@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# ---
+# description: Read an MCP resource by URI.
+# label:
+#   - mcp
+# scripts:
+#   test: |-
+#     pm.test("reads the greeting", () => {
+#       pm.expect(pm.response.json().contents[0].text).to.contain("freepost");
+#     });
+# ---
+
+MCP_URL="${MCP_URL:-http://localhost:3011/mcp}"
+
+npx @modelcontextprotocol/inspector \
+  --cli \
+  "${MCP_URL}" \
+  --transport http \
+  --method 'resources/read' \
+  --uri 'demo://greeting'

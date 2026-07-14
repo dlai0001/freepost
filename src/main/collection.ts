@@ -44,7 +44,7 @@ export async function scanCollection(root: string): Promise<TreeNode> {
         const kind = requestKindForPath(e.name)
         if (kind !== null) {
           children.push({
-            name: e.name.replace(/\.(curl|ws)$/i, ''),
+            name: e.name.replace(/\.(curl|ws|grpc|mqtt|mcp)$/i, ''),
             path: childRel,
             type: 'request',
             kind

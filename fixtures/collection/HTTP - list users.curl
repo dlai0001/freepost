@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# ---
+# description: 'REST fixture: list users.'
+# label:
+#   - http
+# scripts:
+#   test: |-
+#     pm.test("status is 200", () => pm.response.to.have.status(200));
+#     pm.test("returns users", () => pm.expect(pm.response.json()).to.have.length.of.at.least(2));
+# ---
+
+BASE_URL="${BASE_URL:-http://localhost:3010}"
+
+curl --request GET \
+  --url "${BASE_URL}/users" \
+  --header 'Accept: application/json'

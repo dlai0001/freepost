@@ -25,8 +25,13 @@ step produces the expected observable result.
 | GraphQL introspection | `core/graphql` | Type-ref SDL rendering; response → schema summary |
 | Engine | `engine` | HTTP redirects/cookies/gzip/timing; **mTLS client certs**; **OAuth2** grants; ws client |
 | Main integration | `main/execute`, `main/integration` | End-to-end send+scripts+session; **collection/folder script wrapping**; **default-header merge/override**; data-driven workflow |
+| **MCP format** | `core/format/mcp` | Inspector-CLI parse ↔ canonical-write idempotence (incl. a stdio server arg like `-y`, which must not be re-read as an Inspector flag); per-method argument rules; SSE rejected |
+| **MCP engine** | `engine/mcp` | Against a **real** MCP server (in-process Streamable HTTP + a genuinely spawned stdio subprocess): the two failure axes kept distinct (protocol error vs `isError`); schema-aware argument coercion (a `string` param keeps `"20"` as text); introspection; `-e` env reaches the subprocess; never rejects |
+| **MCP drift** | `core/mcp/snapshot` | Snapshot normalisation; breaking (removed tool, removed/retyped/newly-required param) vs additive (new tool, new optional param) classification |
+| **MCP spawn consent** | `main/mcp-consent` | An unapproved stdio server is denied; approval is scoped to the exact command AND the collection — a changed argument, or the same command in another collection, needs fresh approval |
+| **MCP end-to-end** | `main/execute-mcp`, `cli/cli-mcp` | `pm.*` assertions against a live tool call (http + real stdio subprocess); `500 TOOL_ERROR` vs `502 PROTOCOL_ERROR`; `${VAR}` substitution; `freepost mcp check` exits 1 on breaking drift; `--no-mcp-spawn` skips stdio |
 
-Run: `npm run test`. Expectation: all suites pass (400+ tests).
+Run: `npm run test`. Expectation: all suites pass (700+ tests).
 
 ## 2. Automated: system checks
 

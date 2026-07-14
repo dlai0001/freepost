@@ -16,18 +16,31 @@
  *   freepost mock <collection> [--port <n>]
  *     Serve the collection's saved response examples over HTTP until Ctrl-C.
  *
+ *   freepost mcp <snapshot|check> <collection>
+ *     snapshot: record each MCP server's schema surface next to its .mcp file.
+ *     check:    diff live vs recorded; exit 1 on a BREAKING change (F5 drift).
+ *
  * Exit code is 0 when everything passed, 1 when any request errored, any test
- * assertion failed, or a workflow halted.
+ * assertion failed, a workflow halted, or MCP schema drift is breaking.
  */
-import { existsSync, readFileSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { isAbsolute, resolve } from 'path'
-import type { ExecutionReport, TestResult, WorkflowStepResult } from '../shared/model'
+import type { ExecutionReport, RequestFile, TestResult, WorkflowStepResult } from '../shared/model'
 import { parseRequestFile, requestKindForPath } from '../core/format'
 import { parseWorkflow, runWorkflow, validateReferences } from '../core/workflow'
-import { executeRequest } from '../main/execute'
+import { executeRequest, readEnvFile } from '../main/execute'
 import { listFiles } from '../main/collection'
 import { buildRoutesForCollection } from '../main/mock'
-import { MockServer } from '../engine'
+import { MockServer, McpSessionClient, mcpConnectArgs } from '../engine'
+import { resolveVariables, substitute } from '../core/vars'
+import {
+  buildSnapshot,
+  diffSnapshots,
+  parseSnapshot,
+  serializeSnapshot,
+  snapshotPathFor,
+  type McpDriftReport
+} from '../core/mcp'
 
 export interface CliIo {
   cwd: string
@@ -45,6 +58,8 @@ interface RunOptions {
   filters: string[]
   bail: boolean
   reporter: 'cli' | 'json'
+  /** Skip .mcp files whose server is a subprocess (--no-mcp-spawn). */
+  noMcpSpawn: boolean
 }
 
 interface MockOptions {
@@ -53,13 +68,21 @@ interface MockOptions {
   port: number
 }
 
-type Options = RunOptions | MockOptions
+interface McpOptions {
+  command: 'mcp'
+  action: 'snapshot' | 'check'
+  collection: string
+  env?: string
+}
+
+type Options = RunOptions | MockOptions | McpOptions
 
 const HELP = `freepost — offline API client, headless runner
 
 Usage:
   freepost run <collection> [options]
   freepost mock <collection> [--port <n>]
+  freepost mcp <snapshot|check> <collection> [--env <file>]
 
 run options:
   --env <file>           environment JSON file
@@ -67,9 +90,15 @@ run options:
   --filter <substr>      only run requests whose path contains <substr>; repeatable
   --bail                 stop at the first failing request/step
   --reporter <cli|json>  output format (default: cli)
+  --no-mcp-spawn         skip .mcp requests that would spawn a stdio server
 
 mock options:
   --port <n>             port to listen on (default: an ephemeral port)
+
+mcp options:
+  snapshot               record each MCP server's schema next to its .mcp file
+  check                  fail (exit 1) when a recorded schema drifts breakingly
+  --env <file>           environment JSON file
 
   -h, --help             show this help
 `
@@ -77,10 +106,30 @@ mock options:
 function parseArgs(argv: string[]): { options?: Options; error?: string; help?: boolean } {
   if (argv.length === 0 || argv.includes('-h') || argv.includes('--help')) return { help: true }
   const command = argv[0]
-  if (command !== 'run' && command !== 'mock') {
+  if (command !== 'run' && command !== 'mock' && command !== 'mcp') {
     return { error: `Unknown command: ${command}. Try 'freepost run <collection>' or 'freepost mock <collection>'.` }
   }
   const rest = argv.slice(1)
+
+  if (command === 'mcp') {
+    const action = rest[0]
+    if (action !== 'snapshot' && action !== 'check') {
+      return { error: `freepost mcp needs an action: 'snapshot' or 'check'.` }
+    }
+    const opts: McpOptions = { command: 'mcp', action, collection: '' }
+    for (let i = 1; i < rest.length; i++) {
+      const a = rest[i]
+      if (a === '--env') {
+        opts.env = rest[++i]
+        continue
+      }
+      if (a.startsWith('-')) return { error: `Unknown option: ${a}` }
+      if (opts.collection === '') opts.collection = a
+      else return { error: `Unexpected argument: ${a}` }
+    }
+    if (opts.collection === '') return { error: 'Missing <collection> path.' }
+    return { options: opts }
+  }
 
   if (command === 'mock') {
     const opts: MockOptions = { command: 'mock', collection: '', port: 0 }
@@ -110,7 +159,8 @@ function parseArgs(argv: string[]): { options?: Options; error?: string; help?: 
     workflows: [],
     filters: [],
     bail: false,
-    reporter: 'cli'
+    reporter: 'cli',
+    noMcpSpawn: false
   }
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i]
@@ -120,6 +170,7 @@ function parseArgs(argv: string[]): { options?: Options; error?: string; help?: 
       case '--workflow': { const v = next(); if (v !== undefined) opts.workflows.push(v); break }
       case '--filter': { const v = next(); if (v !== undefined) opts.filters.push(v); break }
       case '--bail': opts.bail = true; break
+      case '--no-mcp-spawn': opts.noMcpSpawn = true; break
       case '--reporter': {
         const v = next()
         if (v !== 'cli' && v !== 'json') return { error: `--reporter must be 'cli' or 'json'` }
@@ -201,6 +252,125 @@ function reportStep(io: CliIo, s: WorkflowStepResult, totals: Totals): void {
 }
 
 /**
+ * Connect to the server a `.mcp` file names and read its full schema surface.
+ * Variables are resolved exactly as they are for a run, so a snapshot taken
+ * with `--env prod.env.json` targets the prod server.
+ */
+async function introspectRequest(
+  root: string,
+  rel: string,
+  file: RequestFile,
+  envPath: string | undefined
+): Promise<ReturnType<typeof buildSnapshot>> {
+  const m = file.mcp
+  if (m === undefined) throw new Error('not an MCP request')
+  const env = readEnvFile(root, envPath)
+  const { values, unresolved } = resolveVariables(file.variables, {}, env)
+  if (unresolved.length > 0) throw new Error(`unresolved required variables: ${unresolved.join(', ')}`)
+  const sub = (s: string): string => substitute(s, values)
+
+  const conn = mcpConnectArgs(m)
+  const client = new McpSessionClient()
+  const info = await new Promise<Awaited<ReturnType<McpSessionClient['introspect']>>>((res, rej) => {
+    client.on('open', res).on('error', rej)
+    void client.connect({
+      ...conn,
+      command: m.command !== undefined ? sub(m.command) : undefined,
+      args: m.args.map(sub),
+      env: conn.env !== undefined ? Object.fromEntries(m.env.map((e) => [e.name, sub(e.value)])) : undefined,
+      cwd: resolve(root, rel, '..'),
+      url: m.url !== undefined ? sub(m.url) : undefined,
+      headers: m.headers.map((h) => ({ name: h.name, value: sub(h.value) }))
+    })
+  })
+  await client.close()
+  return buildSnapshot(info)
+}
+
+/**
+ * `freepost mcp snapshot|check` — the F5 regression story.
+ *
+ * snapshot: introspect every .mcp server and write `<request>.mcp.snapshot.json`
+ *   beside the request, so the schema is reviewable in `git diff`.
+ * check:    introspect again and diff against what was recorded. Breaking drift
+ *   (a removed tool, a removed/retyped/newly-required param) exits 1; additive
+ *   drift is reported but passes.
+ */
+async function runMcpSchema(opts: McpOptions, root: string, io: CliIo): Promise<number> {
+  const c = paint(io)
+  const envPath = opts.env === undefined ? undefined : isAbsolute(opts.env) ? opts.env : resolve(io.cwd, opts.env)
+  const files = (await listFiles(root)).sort().filter((f) => requestKindForPath(f) === 'mcp')
+
+  if (files.length === 0) {
+    io.write('No .mcp requests in this collection.\n')
+    return 0
+  }
+
+  let breaking = 0
+  let drifted = 0
+  let failed = 0
+
+  for (const rel of files) {
+    const parsed = parseRequestFile(readFileSync(resolve(root, rel), 'utf8'), 'mcp')
+    if (!parsed.ok) {
+      io.write(c.red(`✗ ${rel} — parse error\n`))
+      failed++
+      continue
+    }
+
+    let live: ReturnType<typeof buildSnapshot>
+    try {
+      live = await introspectRequest(root, rel, parsed.file, envPath)
+    } catch (e) {
+      io.write(c.red(`✗ ${rel} — ${e instanceof Error ? e.message : String(e)}\n`))
+      failed++
+      continue
+    }
+
+    const snapAbs = resolve(root, snapshotPathFor(rel))
+    if (opts.action === 'snapshot') {
+      writeFileSync(snapAbs, serializeSnapshot(live))
+      io.write(
+        `${c.green('✓')} ${rel} ${c.dim(`— ${live.tools.length} tool(s), ${live.resources.length} resource(s), ${live.prompts.length} prompt(s) -> ${snapshotPathFor(rel)}`)}\n`
+      )
+      continue
+    }
+
+    // check
+    if (!existsSync(snapAbs)) {
+      io.write(c.red(`✗ ${rel} — no snapshot; run 'freepost mcp snapshot' first\n`))
+      failed++
+      continue
+    }
+    const stored = parseSnapshot(readFileSync(snapAbs, 'utf8'))
+    if (stored === null) {
+      io.write(c.red(`✗ ${rel} — snapshot is unreadable: ${snapshotPathFor(rel)}\n`))
+      failed++
+      continue
+    }
+    const report: McpDriftReport = diffSnapshots(stored, live)
+    if (report.clean) {
+      io.write(`${c.green('✓')} ${rel} ${c.dim('— no drift')}\n`)
+      continue
+    }
+    drifted++
+    if (report.breaking) breaking++
+    io.write(`${report.breaking ? c.red('✗') : c.dim('!')} ${rel}\n`)
+    for (const e of report.entries) {
+      const line = `    ${e.breaking ? 'BREAKING' : 'additive'}: ${e.message}\n`
+      io.write(e.breaking ? c.red(line) : c.dim(line))
+    }
+  }
+
+  if (opts.action === 'check') {
+    io.write(
+      `\n${files.length} server(s), ${drifted} drifted, ${breaking} with breaking changes${failed > 0 ? `, ${failed} failed` : ''}\n`
+    )
+  }
+  return breaking > 0 || failed > 0 ? 1 : 0
+}
+
+/**
  * Run the CLI. Returns a process exit code (0 = all passed). `io` is injectable
  * so tests can capture output and set the working directory.
  */
@@ -251,6 +421,7 @@ export async function run(argv: string[], io: CliIo): Promise<number> {
     return 2
   }
   if (opts.command === 'mock') return runMockServer(opts, root, io)
+  if (opts.command === 'mcp') return runMcpSchema(opts, root, io)
   // From here `opts` is narrowed to RunOptions.
   const envPath = opts.env === undefined ? undefined : isAbsolute(opts.env) ? opts.env : resolve(io.cwd, opts.env)
   const session = new Map<string, string>()
@@ -294,12 +465,21 @@ export async function run(argv: string[], io: CliIo): Promise<number> {
     }
   } else {
     // Request mode: every one-shot-runnable request, path-sorted, shared
-    // session. Runnable: HTTP (.curl), gRPC unary (.grpc), MQTT publish (.mqtt).
+    // session. Runnable: HTTP (.curl), gRPC unary (.grpc), MQTT publish
+    // (.mqtt), MCP (.mcp — all six methods are one-shot).
     // Not one-shot (skipped, like websocket): MQTT subscribe. gRPC
     // server-streaming can't be told apart without loading the proto, so it
     // runs and surfaces a clear "use the streaming client" error.
+    //
+    // Invoking `freepost run` on a collection IS the authorisation to spawn its
+    // stdio MCP servers (unlike the GUI, which confirms each server before the
+    // first spawn). --no-mcp-spawn opts out for locked-down CI.
     const files = (await listFiles(root)).sort()
-    const skipped: { websocket: number; mqttSubscribe: number } = { websocket: 0, mqttSubscribe: 0 }
+    const skipped: { websocket: number; mqttSubscribe: number; mcpSpawn: number } = {
+      websocket: 0,
+      mqttSubscribe: 0,
+      mcpSpawn: 0
+    }
     for (const rel of files) {
       const kind = requestKindForPath(rel)
       if (kind === null) continue
@@ -312,6 +492,13 @@ export async function run(argv: string[], io: CliIo): Promise<number> {
         const parsed = parseRequestFile(readFileSync(resolve(root, rel), 'utf8'), 'mqtt')
         if (parsed.ok && parsed.file.mqtt?.mode === 'subscribe') {
           skipped.mqttSubscribe++
+          continue
+        }
+      }
+      if (kind === 'mcp' && opts.noMcpSpawn) {
+        const parsed = parseRequestFile(readFileSync(resolve(root, rel), 'utf8'), 'mcp')
+        if (parsed.ok && parsed.file.mcp?.transport === 'stdio') {
+          skipped.mcpSpawn++
           continue
         }
       }
@@ -329,6 +516,9 @@ export async function run(argv: string[], io: CliIo): Promise<number> {
       if (skipped.mqttSubscribe > 0) notes.push(`${skipped.mqttSubscribe} MQTT subscribe`)
       if (notes.length > 0) {
         io.write(c.dim(`\n(${notes.join(', ')} request(s) skipped — not one-shot runnable)\n`))
+      }
+      if (skipped.mcpSpawn > 0) {
+        io.write(c.dim(`\n(${skipped.mcpSpawn} stdio MCP request(s) skipped — --no-mcp-spawn)\n`))
       }
     }
   }

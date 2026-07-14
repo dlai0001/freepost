@@ -9,6 +9,10 @@ import type {
   ExecutionReport,
   GqlIntrospectResult,
   HistoryEntry,
+  McpArg,
+  McpDriftReport,
+  McpIntrospectionSummary,
+  McpToolResponse,
   MockRequestLogEntry,
   OpenApiOperationSummary,
   ParseCommandResult,
@@ -107,6 +111,15 @@ export const IPC = {
   mqttUnsubscribe: 'mqtt:unsubscribe', // (id) => void
   mqttEvent: 'mqtt:event', // main -> renderer event ({ id, type: 'open'|'message'|'error'|'close', topic?, data? })
 
+  mcpConnect: 'mcp:connect', // ({ root, path, envPath?, model? }) => { id, introspection } | { error } — connect + introspect
+  mcpDisconnect: 'mcp:disconnect', // (id) => void
+  mcpCallTool: 'mcp:call-tool', // ({ id, name, args }) => McpResponse — invoke on the open session
+  mcpEvent: 'mcp:event', // main -> renderer event ({ id, type: 'log'|'notification'|'error'|'close', data? })
+  mcpConsentCheck: 'mcp:consent-check', // ({ root, model }) => { required, command } — stdio spawn gate
+  mcpConsentApprove: 'mcp:consent-approve', // ({ root, command }) => void — remembered per (collection, command)
+  mcpSnapshot: 'mcp:snapshot', // ({ root, path, envPath?, model? }) => { path } — write the schema snapshot
+  mcpDrift: 'mcp:drift', // ({ root, path, envPath?, model? }) => McpDriftReport — live vs snapshot
+
   gqlIntrospect: 'gql:introspect', // ({ root, path, envPath? }) => { schema: GqlSchemaSummary } | { error }
   gqlSubscribe: 'gql:subscribe', // ({ root, path, envPath?, query, variables?, url?, transport? }) => { id }
   gqlUnsubscribe: 'gql:unsubscribe', // (id) => void
@@ -143,7 +156,7 @@ export interface FreepostApi {
     strict?: boolean
     kind?: RequestKind
   }): Promise<ParseCommandResult>
-  createRequest(absPath: string, kind: 'curl' | 'websocat' | 'grpc' | 'mqtt'): Promise<void>
+  createRequest(absPath: string, kind: RequestKind): Promise<void>
   renameRequest(absPath: string, newAbsPath: string): Promise<void>
   /** Copy a request/workflow file to a new path (no workflow-ref healing — it's a new file). */
   duplicateRequest(absPath: string, newAbsPath: string): Promise<void>
@@ -325,6 +338,51 @@ export interface FreepostApi {
       data?: string
     }) => void
   ): () => void
+
+  /**
+   * Connect to the MCP server a `.mcp` file names and introspect it (tools,
+   * resources, prompts). Rejects if a stdio server has not been approved to
+   * spawn — call `checkMcpConsent` first and show the user the command.
+   */
+  connectMcp(args: {
+    root: string
+    path: string
+    envPath?: string
+    model?: RequestFile
+  }): Promise<{ id: string; introspection: McpIntrospectionSummary }>
+
+  disconnectMcp(id: string): Promise<void>
+  /** Invoke a tool on an open session (the GUI run button). */
+  callMcpTool(args: { id: string; name: string; args: McpArg[] }): Promise<McpToolResponse>
+  onMcpEvent(
+    cb: (e: {
+      id: string
+      type: 'log' | 'notification' | 'error' | 'close'
+      data?: unknown
+    }) => void
+  ): () => void
+  /** Does this stdio MCP server still need the user's approval to be spawned? */
+  checkMcpConsent(args: {
+    root: string
+    path: string
+    model?: RequestFile
+  }): Promise<{ required: boolean; command: string }>
+  /** Remember that the user approved spawning this exact command in this collection. */
+  approveMcpConsent(args: { root: string; command: string }): Promise<void>
+  /** F5: record the server's schema surface beside the request file. */
+  snapshotMcp(args: {
+    root: string
+    path: string
+    envPath?: string
+    model?: RequestFile
+  }): Promise<{ path: string }>
+  /** F5: diff the live server against the recorded snapshot. */
+  driftMcp(args: {
+    root: string
+    path: string
+    envPath?: string
+    model?: RequestFile
+  }): Promise<McpDriftReport>
 
   /** Native file picker for a CSV/JSON data file; returns the chosen path or null. */
   browseDataFile(): Promise<string | null>

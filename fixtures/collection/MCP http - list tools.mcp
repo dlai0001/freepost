@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# ---
+# description: 'Introspect the HTTP MCP fixture: what tools does it expose?'
+# label:
+#   - mcp
+#   - introspection
+# scripts:
+#   test: |-
+#     pm.test("exposes get-sum", () => {
+#       const names = pm.response.json().tools.map((t) => t.name);
+#       pm.expect(names).to.include("get-sum");
+#     });
+# ---
+
+MCP_URL="${MCP_URL:-http://localhost:3011/mcp}"
+
+npx @modelcontextprotocol/inspector \
+  --cli \
+  "${MCP_URL}" \
+  --transport http \
+  --method 'tools/list'

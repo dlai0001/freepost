@@ -12,6 +12,7 @@ import { mapCurlCommand } from './curl'
 import { mapWebsocatCommand } from './websocat'
 import { mapGrpcurlCommand } from './grpc'
 import { mapMosquittoCommand } from './mqtt'
+import { mapInspectorCommand } from './mcp'
 
 export { writeRequestFile, quoteShellValue } from './writer'
 export { extractFrontmatter, serializeFrontmatter } from './frontmatter'
@@ -20,6 +21,7 @@ export { mapCurlCommand } from './curl'
 export { mapWebsocatCommand } from './websocat'
 export { mapGrpcurlCommand } from './grpc'
 export { mapMosquittoCommand } from './mqtt'
+export { mapInspectorCommand } from './mcp'
 
 const stripCr = (s: string): string => (s.endsWith('\r') ? s.slice(0, -1) : s)
 
@@ -29,12 +31,14 @@ export function requestKindForPath(path: string): RequestKind | null {
   if (path.endsWith('.ws')) return 'websocat'
   if (path.endsWith('.grpc')) return 'grpc'
   if (path.endsWith('.mqtt')) return 'mqtt'
+  if (path.endsWith('.mcp')) return 'mcp'
   return null
 }
 
 /**
  * Head command(s) allowed for each kind. MQTT accepts two (pub/sub); the
- * mapper picks the mode from whichever is present.
+ * mapper picks the mode from whichever is present. MCP's head is `npx` — the
+ * runner, not the protocol — so the mapper checks the package name after it.
  */
 function allowedCommands(kind: RequestKind): string[] {
   switch (kind) {
@@ -46,6 +50,8 @@ function allowedCommands(kind: RequestKind): string[] {
       return ['grpcurl']
     case 'mqtt':
       return ['mosquitto_pub', 'mosquitto_sub']
+    case 'mcp':
+      return ['npx']
   }
 }
 
@@ -95,6 +101,13 @@ export function parseRequestFile(raw: string, kind: RequestKind): ParseResult {
     const mapped = mapMosquittoCommand(argv)
     if (!mapped.ok) return mapped
     const file: RequestFile = { kind, frontmatter: fm.frontmatter, variables, comments, mqtt: mapped.mqtt }
+    return { ok: true, file }
+  }
+
+  if (kind === 'mcp') {
+    const mapped = mapInspectorCommand(argv)
+    if (!mapped.ok) return mapped
+    const file: RequestFile = { kind, frontmatter: fm.frontmatter, variables, comments, mcp: mapped.mcp }
     return { ok: true, file }
   }
 

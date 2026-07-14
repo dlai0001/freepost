@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# ---
+# description: 'gRPC fixture: unary SayHello.'
+# label:
+#   - grpc
+# scripts:
+#   test: pm.test("greets dave", () => pm.expect(pm.response.json().message).to.equal("Hello dave"));
+# ---
+
+GRPC_TARGET="${GRPC_TARGET:-localhost:50051}"
+
+grpcurl \
+  -plaintext \
+  -proto '../servers/greeter.proto' \
+  -d '{"name":"dave"}' \
+  "${GRPC_TARGET}" \
+  'helloworld.Greeter/SayHello'

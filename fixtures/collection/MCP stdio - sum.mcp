@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# ---
+# description: 'stdio transport: the app SPAWNS this server. It asks for your approval the first time, showing the exact command.'
+# label:
+#   - mcp
+#   - stdio
+# scripts:
+#   test: |-
+#     pm.test("sums over stdio", () => {
+#       pm.expect(pm.response.json().content[0].text).to.contain("3");
+#     });
+# ---
+
+npx @modelcontextprotocol/inspector \
+  --cli \
+  'node' \
+  '../servers/mcp-stdio.mjs' \
+  --transport stdio \
+  -e 'WHO=freepost' \
+  --method 'tools/call' \
+  --tool-name 'get-sum' \
+  --tool-arg 'a=1' \
+  --tool-arg 'b=2'

@@ -10,7 +10,7 @@
 import type { Frontmatter, HttpRequestModel, SearchEntry, WsRequestModel } from '@shared/model'
 
 /** Known filename suffixes, longest first so `.workflow.json` wins over `.json`. */
-const KNOWN_SUFFIXES = ['.workflow.json', '.curl', '.ws']
+const KNOWN_SUFFIXES = ['.workflow.json', '.curl', '.ws', '.grpc', '.mqtt', '.mcp']
 
 /** Basename of `path` with the request/workflow extension stripped. */
 function nameFromPath(path: string): string {

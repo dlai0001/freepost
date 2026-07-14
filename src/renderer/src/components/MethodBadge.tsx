@@ -7,12 +7,13 @@ const CLASS_BY_METHOD: Record<string, string> = {
   DELETE: 'delete',
   HEAD: 'head',
   OPTIONS: 'options',
-  WS: 'ws'
+  WS: 'ws',
+  MCP: 'mcp'
 }
 
 const SHORT: Record<string, string> = { DELETE: 'DEL', OPTIONS: 'OPT', PATCH: 'PATCH' }
 
-/** Colored verb badge. `method` may be 'WS' for websocket files. */
+/** Colored verb badge. `method` may be 'WS' or 'MCP' for those file kinds. */
 export default function MethodBadge({ method }: { method?: string }): JSX.Element {
   const m = (method ?? '').toUpperCase()
   const cls = CLASS_BY_METHOD[m] ?? 'other'

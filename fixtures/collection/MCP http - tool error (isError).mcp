@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# ---
+# description: 'The TOOL failure axis: the call succeeds, the tool reports failure. Not a protocol error.'
+# label:
+#   - mcp
+# scripts:
+#   test: |-
+#     pm.test("reports a tool-level failure", () => {
+#       pm.expect(pm.response.json().isError).to.equal(true);
+#     });
+# ---
+
+MCP_URL="${MCP_URL:-http://localhost:3011/mcp}"
+
+npx @modelcontextprotocol/inspector \
+  --cli \
+  "${MCP_URL}" \
+  --transport http \
+  --method 'tools/call' \
+  --tool-name 'boom'

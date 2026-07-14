@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "server": {
+    "name": "freepost-fixture-http",
+    "version": "1.0.0"
+  },
+  "capabilities": [
+    "prompts",
+    "resources",
+    "tools"
+  ],
+  "tools": [
+    {
+      "name": "boom",
+      "params": {},
+      "required": [],
+      "description": "Always fails (tool-level)"
+    },
+    {
+      "name": "echo",
+      "params": {
+        "v": "string"
+      },
+      "required": [
+        "v"
+      ],
+      "description": "Echo a string back"
+    },
+    {
+      "name": "get-sum",
+      "params": {
+        "a": "number",
+        "b": "number"
+      },
+      "required": [
+        "a",
+        "b"
+      ],
+      "description": "Add two numbers"
+    },
+    {
+      "name": "slow",
+      "params": {
+        "steps": "number"
+      },
+      "required": [],
+      "description": "Emits progress notifications"
+    },
+    {
+      "name": "weather",
+      "params": {
+        "city": "string"
+      },
+      "required": [
+        "city"
+      ],
+      "description": "Structured output example",
+      "structured": true
+    }
+  ],
+  "resources": [
+    "demo://config",
+    "demo://greeting"
+  ],
+  "prompts": [
+    {
+      "name": "greet",
+      "args": [
+        "who"
+      ]
+    }
+  ]
+}

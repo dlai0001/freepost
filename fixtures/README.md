@@ -95,10 +95,14 @@ and `--no-mcp-spawn` skips stdio MCP requests entirely.
 **Introspection panes.** Hit **Connect** on any `.mcp` request to browse the
 server's tools, resources and prompts; clicking one loads it into the request.
 
-## Known: gRPC and MQTT fail under the *built* CLI
+## These servers also back the CLI smoke test
 
-`gRPC - say hello.grpc` and `MQTT - publish.mqtt` work in the app, but fail under
-`node out/cli/index.mjs` with `net module is not supported` / `Cannot read
-properties of null (reading 'readFileSync')`. That is a **pre-existing CLI
-bundling bug** (Node built-ins get browser shims in the CLI build), unrelated to
-MCP, and is tracked separately. MCP, HTTP and GraphQL are unaffected.
+```bash
+npm run build:cli && npm run smoke:cli
+```
+
+That starts the HTTP, gRPC and MQTT fixtures and runs the **built** CLI
+(`out/cli/index.mjs`) against them. The unit suite imports the TypeScript source,
+so it cannot see bundling faults — and a browser-vs-node resolution slip once
+left `.grpc` and `.mqtt` silently broken in the shipped CLI while every test
+stayed green. Anything that only breaks *after* bundling has to be caught there.

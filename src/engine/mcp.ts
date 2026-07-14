@@ -143,11 +143,18 @@ function makeTransport(args: McpConnectArgs): Transport {
   return new StreamableHTTPClientTransport(new URL(args.url), { requestInit: { headers } })
 }
 
-/** A client that declares sampling + elicitation, so servers may call back. */
+/**
+ * A client that declares sampling + elicitation, so servers may call back.
+ *
+ * `elicitation` needs the `form` SUB-capability — the SDK gates
+ * `server.elicitInput()` on `clientCapabilities.elicitation.form` and rejects
+ * with "Client does not support form elicitation" if only `elicitation: {}` is
+ * declared. (`url` elicitation is a separate sub-capability we do not answer.)
+ */
 function makeClient(): Client {
   return new Client(
     { name: 'freepost', version: '1.0.0' },
-    { capabilities: { sampling: {}, elicitation: {} } }
+    { capabilities: { sampling: {}, elicitation: { form: {} } } }
   )
 }
 

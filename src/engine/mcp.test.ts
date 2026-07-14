@@ -23,6 +23,24 @@ function buildServer(): McpServer {
     ({ a, b }) => ({ content: [{ type: 'text', text: `sum:${a + b}` }] })
   )
 
+  /** Emits progress notifications while it works. */
+  server.registerTool(
+    'slow',
+    { description: 'emits progress', inputSchema: { steps: z.number() } },
+    async ({ steps }, { sendNotification, _meta }) => {
+      const token = _meta?.progressToken
+      for (let i = 1; i <= steps; i++) {
+        if (token !== undefined) {
+          await sendNotification({
+            method: 'notifications/progress',
+            params: { progressToken: token, progress: i, total: steps, message: `step ${i}` }
+          })
+        }
+      }
+      return { content: [{ type: 'text', text: `done:${steps}` }] }
+    }
+  )
+
   server.registerTool(
     'stringy',
     { description: 'echo a string', inputSchema: { v: z.string() } },
@@ -51,7 +69,15 @@ function buildServer(): McpServer {
   return server
 }
 
-/** The same server, as a standalone stdio script (a real spawned subprocess). */
+/**
+ * The same server, as a standalone stdio script (a real spawned subprocess).
+ *
+ * The F4 call-back tools (sampling / elicitation) live HERE rather than on the
+ * HTTP fixture: a server->client request needs the session that carries the
+ * initialize handshake, and the HTTP fixture is deliberately stateless (a fresh
+ * server per POST), so its per-request server never learns what the client can
+ * do. stdio keeps one process — and one session — for the whole call.
+ */
 const STDIO_SERVER = `
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
@@ -63,6 +89,26 @@ server.registerTool('get-sum', { description: 'add', inputSchema: { a: z.number(
 server.registerTool('whoami', { description: 'read env' }, () => ({
   content: [{ type: 'text', text: 'env:' + (process.env.WHO ?? 'nobody') }]
 }))
+
+// F4: the server calls back to the client for an LLM completion.
+server.registerTool('ask-model', { description: 'requests sampling' }, async () => {
+  const reply = await server.server.createMessage({
+    messages: [{ role: 'user', content: { type: 'text', text: 'what is 2+2?' } }],
+    maxTokens: 100
+  })
+  const text = reply.content.type === 'text' ? reply.content.text : '(non-text)'
+  return { content: [{ type: 'text', text: 'model said: ' + text }] }
+})
+
+// F4: the server asks the user a question.
+server.registerTool('ask-user', { description: 'requests elicitation' }, async () => {
+  const reply = await server.server.elicitInput({
+    message: 'What city?',
+    requestedSchema: { type: 'object', properties: { city: { type: 'string' } }, required: ['city'] }
+  })
+  return { content: [{ type: 'text', text: 'user ' + reply.action + ': ' + JSON.stringify(reply.content ?? null) }] }
+})
+
 await server.connect(new StdioServerTransport())
 `
 
@@ -245,6 +291,89 @@ describe('callMcp over stdio (real subprocess)', () => {
   it('returns a protocol error when no command is given', async () => {
     const r = await callMcp({ transport: 'stdio', method: 'tools/list' })
     expect(r.error).toMatch(/requires a server command/)
+  })
+})
+
+/**
+ * F4 — a test client must be able to ANSWER a server that calls back mid-request.
+ * Doing this *scriptably* (rather than by hand in a UI) is the novel part.
+ * Sampling/elicitation run over stdio because they need a persistent session.
+ */
+describe('server-initiated flows', () => {
+  const stdio = (over: Record<string, unknown>): Parameters<typeof callMcp>[0] => ({
+    transport: 'stdio',
+    command: process.execPath,
+    args: [stdioScript],
+    method: 'tools/call',
+    ...over
+  })
+
+  it(
+    'answers a sampling request with the scripted response',
+    async () => {
+      const r = await callMcp(
+        stdio({
+          toolName: 'ask-model',
+          sampling: () => ({
+            role: 'assistant' as const,
+            content: { type: 'text' as const, text: 'four' },
+            model: 'canned'
+          })
+        })
+      )
+      expect(r.error).toBeUndefined()
+      expect(JSON.parse(r.body).content[0].text).toBe('model said: four')
+    },
+    SPAWN_TIMEOUT
+  )
+
+  it(
+    'refuses sampling when none is configured — Freepost never silently stubs an LLM',
+    async () => {
+      const r = await callMcp(stdio({ toolName: 'ask-model' }))
+      // The server's call-back is refused, so the TOOL fails: an isError result.
+      expect(r.isError).toBe(true)
+      expect(r.body).toMatch(/sampling/i)
+    },
+    SPAWN_TIMEOUT
+  )
+
+  it(
+    'answers an elicitation request with the scripted action and content',
+    async () => {
+      const r = await callMcp(
+        stdio({
+          toolName: 'ask-user',
+          elicitation: () => ({ action: 'accept' as const, content: { city: 'Oakland' } })
+        })
+      )
+      expect(JSON.parse(r.body).content[0].text).toBe('user accept: {"city":"Oakland"}')
+    },
+    SPAWN_TIMEOUT
+  )
+
+  it(
+    'declines elicitation by default, so a headless run never hangs waiting on a human',
+    async () => {
+      const r = await callMcp(stdio({ toolName: 'ask-user' }))
+      expect(JSON.parse(r.body).content[0].text).toContain('user decline')
+    },
+    SPAWN_TIMEOUT
+  )
+
+  it('captures progress notifications emitted during a call', async () => {
+    const seen: number[] = []
+    const r = await callMcp({
+      transport: 'http',
+      url,
+      method: 'tools/call',
+      toolName: 'slow',
+      toolArgs: [{ name: 'steps', value: '3' }],
+      onProgress: (p) => seen.push(p.progress)
+    })
+    expect(JSON.parse(r.body).content[0].text).toBe('done:3')
+    expect(seen).toEqual([1, 2, 3])
+    expect(r.progress.map((p) => p.message)).toEqual(['step 1', 'step 2', 'step 3'])
   })
 })
 

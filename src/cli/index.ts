@@ -25,6 +25,7 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { isAbsolute, resolve } from 'path'
+import { pathToFileURL } from 'url'
 import type { ExecutionReport, RequestFile, TestResult, WorkflowStepResult } from '../shared/model'
 import { parseRequestFile, requestKindForPath } from '../core/format'
 import { parseWorkflow, runWorkflow, validateReferences } from '../core/workflow'
@@ -532,17 +533,36 @@ export async function run(argv: string[], io: CliIo): Promise<number> {
   return totals.failures > 0 ? 1 : 0
 }
 
+/**
+ * Exit with `code`, but only once stdout has actually drained.
+ *
+ * On Windows, stdout to a PIPE is asynchronous, so a bare process.exit() throws
+ * away whatever is still buffered — the CLI would exit with the right code and
+ * print nothing at all when piped (into CI capture, `| tee`, another program).
+ * On POSIX pipes the write is synchronous and this is a no-op. Passing a chunk
+ * of '' still queues the callback behind every earlier write, so it fires once
+ * they have all flushed.
+ */
+function exitAfterFlush(code: number): void {
+  process.stdout.write('', () => process.exit(code))
+}
+
 // Entrypoint guard: only runs when executed directly, not when imported by tests.
-if (process.argv[1] !== undefined && import.meta.url === `file://${process.argv[1]}`) {
+//
+// This MUST go through pathToFileURL. Comparing against `file://${argv[1]}` is
+// wrong on Windows, where argv[1] is `C:\path\index.mjs` while import.meta.url
+// is `file:///C:/path/index.mjs` — the guard never matched, so the built CLI
+// silently did nothing and exited 0. `freepost run` was a no-op on Windows.
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   run(process.argv.slice(2), {
     cwd: process.cwd(),
     write: (s) => process.stdout.write(s),
     color: process.stdout.isTTY === true,
     onSigint: (cb) => process.once('SIGINT', cb)
   })
-    .then((code) => process.exit(code))
+    .then((code) => exitAfterFlush(code))
     .catch((e) => {
       process.stderr.write(`freepost: ${e instanceof Error ? e.message : String(e)}\n`)
-      process.exit(1)
+      exitAfterFlush(1)
     })
 }

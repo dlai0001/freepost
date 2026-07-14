@@ -115,6 +115,19 @@ try {
   servers.push(await startServer('grpc.mjs', 'gRPC fixture on'))
   servers.push(await startServer('mqtt.mjs', 'MQTT broker fixture on'))
 
+  // The entrypoint guard once compared import.meta.url against `file://${argv[1]}`,
+  // which never matches on Windows (`C:\x` vs `file:///C:/x`) — the CLI ran, did
+  // nothing, and exited 0. Piped stdout catches that AND the Windows async-pipe
+  // truncation, since both show up as an empty capture here.
+  console.log('[smoke] checking the CLI produces output when piped…')
+  const help = spawnSync(process.execPath, [CLI, '--help'], { encoding: 'utf8' })
+  if (!(help.stdout ?? '').includes('freepost')) {
+    throw new Error(
+      'the built CLI printed nothing when piped — the entrypoint guard did not fire, ' +
+        'or stdout was discarded before it flushed'
+    )
+  }
+
   console.log('[smoke] running the built CLI against them…\n')
   const run = spawnSync(process.execPath, [CLI, 'run', DIR], { encoding: 'utf8' })
   const out = (run.stdout ?? '') + (run.stderr ?? '')

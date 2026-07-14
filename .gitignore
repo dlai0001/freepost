@@ -7,3 +7,7 @@ out/
 *.local.env.json
 coverage/
 .claude/
+
+# Scratch dirs created by the MCP tests (a spawned stdio server script must
+# live inside the project so node can resolve @modelcontextprotocol/sdk).
+.tmp-*/

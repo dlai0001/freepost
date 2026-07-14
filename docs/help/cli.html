@@ -24,6 +24,7 @@
     <div class="docs-nav-title">Guides</div>
     <a href="./index.html">Overview</a>
     <a href="./creating-requests.html">Creating requests</a>
+    <a href="./mcp.html">MCP servers</a>
     <a href="./importing.html">Importing</a>
     <a href="./organizing.html">Saving &amp; organizing</a>
     <a href="./workflows.html">Workflows</a>
@@ -64,12 +65,13 @@ node out/cli/index.mjs run ./my-collection</code></pre>
         <tr><td><code>--filter &lt;substr&gt;</code></td><td>Only run requests whose path contains the substring. Repeatable.</td></tr>
         <tr><td><code>--bail</code></td><td>Stop at the first failing request or step.</td></tr>
         <tr><td><code>--reporter &lt;cli|json&gt;</code></td><td>Human output (default) or a JSON array of reports for machines.</td></tr>
+        <tr><td><code>--no-mcp-spawn</code></td><td>Skip <a href="./mcp.html">MCP</a> requests whose server is a stdio subprocess, so CI never spawns a program.</td></tr>
       </tbody>
     </table>
     <p><strong>Exit codes:</strong> <code>0</code> everything passed · <code>1</code> a request errored, a test failed, or a workflow halted · <code>2</code> a usage error (bad flag, missing collection).</p>
 
     <h3>What runs, what's skipped</h3>
-    <p>One-shot requests run: HTTP (<code>.curl</code>), gRPC <strong>unary</strong> (<code>.grpc</code>), and MQTT <strong>publish</strong> (<code>.mqtt</code>). Long-lived requests are skipped with a note at the end of the run: WebSocket (<code>.ws</code>) and MQTT <strong>subscribe</strong>. (gRPC server-streaming can't be told apart without loading the proto, so it runs and reports a clear "use the streaming client" error.) authorization_code OAuth needs a token cached by a prior interactive sign-in — see <a href="./authentication.html">Authentication</a>.</p>
+    <p>One-shot requests run: HTTP (<code>.curl</code>), gRPC <strong>unary</strong> (<code>.grpc</code>), MQTT <strong>publish</strong> (<code>.mqtt</code>), and <a href="./mcp.html">MCP</a> (<code>.mcp</code>) — including their <code>pm.*</code> assertions. Long-lived requests are skipped with a note at the end of the run: WebSocket (<code>.ws</code>) and MQTT <strong>subscribe</strong>. (gRPC server-streaming can't be told apart without loading the proto, so it runs and reports a clear "use the streaming client" error.) authorization_code OAuth needs a token cached by a prior interactive sign-in — see <a href="./authentication.html">Authentication</a>.</p>
 
     <h2><code>freepost mock &lt;collection&gt; [--port &lt;n&gt;]</code></h2>
     <p>
@@ -78,6 +80,19 @@ node out/cli/index.mjs run ./my-collection</code></pre>
       up fake dependencies in local dev or integration jobs.
     </p>
     <pre><code>freepost mock ./my-collection --port 8080</code></pre>
+
+    <h2><code>freepost mcp &lt;snapshot|check&gt; &lt;collection&gt;</code></h2>
+    <p>
+      Guards your <a href="./mcp.html">MCP</a> servers against silent schema drift.
+      <code>snapshot</code> introspects every <code>.mcp</code> server in the collection and records
+      its tools, resources, and prompts as <code>&lt;request&gt;.mcp.snapshot.json</code> next to the
+      request — a file you commit and review in a pull request. <code>check</code> re-introspects the
+      live servers and diffs them against those snapshots: a tool that vanished, a parameter that
+      changed type or became newly required, exits <code>1</code>. Anything purely additive is
+      reported as a warning. Both accept <code>--env &lt;file&gt;</code>.
+    </p>
+    <pre><code>freepost mcp snapshot ./my-collection
+freepost mcp check ./my-collection --env ci.env.json</code></pre>
 
     <h2>In CI (GitHub Actions)</h2>
     <p>A typical job that fails the build when any request or assertion fails:</p>

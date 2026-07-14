@@ -24,6 +24,7 @@
     <div class="docs-nav-title">Guides</div>
     <a href="./index.html">Overview</a>
     <a class="active" href="./creating-requests.html">Creating requests</a>
+    <a href="./mcp.html">MCP servers</a>
     <a href="./importing.html">Importing</a>
     <a href="./organizing.html">Saving &amp; organizing</a>
     <a href="./workflows.html">Workflows</a>
@@ -37,7 +38,9 @@
     <h1>Creating requests</h1>
     <p class="lede">
       Every request is a file in your collection: a <code>.curl</code> file for REST and
-      GraphQL, a <code>.ws</code> file for WebSocket. There's no separate "new GraphQL
+      GraphQL, a <code>.ws</code> file for WebSocket, <code>.grpc</code> for gRPC,
+      <code>.mqtt</code> for MQTT, and <code>.mcp</code> for an
+      <a href="./mcp.html">MCP server call</a>. There's no separate "new GraphQL
       request" — GraphQL is a body mode on an ordinary <code>.curl</code> request.
     </p>
 
@@ -283,6 +286,24 @@
       Username/password and a client id are optional; pointing <code>--cafile</code> at a CA
       certificate switches the connection to TLS. As always, <code>${VAR}</code> works in the host,
       topic, and message.
+    </p>
+
+    <h2>MCP requests</h2>
+    <p>
+      An MCP request is stored as an annotated <a href="https://github.com/modelcontextprotocol/inspector">MCP
+      Inspector</a> CLI command (<code>.mcp</code> file). Pick a transport — <strong>Streamable
+      HTTP</strong> for a server already listening on a URL, or <strong>stdio</strong> for a server
+      program Freepost spawns for you — then a method (<code>tools/call</code>,
+      <code>resources/read</code>, <code>prompts/get</code>, and their <code>list</code>
+      counterparts) and send it. <strong>Connect</strong> opens a live session that lists everything
+      the server exposes, so you can click a tool to fill the request in rather than typing its
+      schema from memory.
+    </p>
+    <p>
+      The result comes back like any other response, so <a href="./scripting.html">test scripts</a>
+      can assert on it — and a stdio server never runs until you've seen the exact command and
+      approved it. See the <a href="./mcp.html">MCP guide</a> for the full story, including schema
+      snapshots and drift detection.
     </p>
 
     <h2>Sending &amp; the response</h2>

@@ -31,14 +31,15 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "fence": "node scripts/check-network-fence.mjs",
-    "verify": "npm run typecheck && npm run test && npm run fence && npm run build && npm run build:cli",
+    "verify": "npm run typecheck && npm run test && npm run fence && npm run build && npm run build:cli && npm run smoke:cli",
     "fixtures": "node fixtures/start.mjs",
     "fixtures:http": "node fixtures/servers/http.mjs",
     "fixtures:mcp": "node fixtures/servers/mcp-http.mjs",
     "fixtures:ws": "node fixtures/servers/ws.mjs",
     "fixtures:graphql": "node fixtures/servers/graphql.mjs",
     "fixtures:grpc": "node fixtures/servers/grpc.mjs",
-    "fixtures:mqtt": "node fixtures/servers/mqtt.mjs"
+    "fixtures:mqtt": "node fixtures/servers/mqtt.mjs",
+    "smoke:cli": "node scripts/smoke-cli.mjs"
   },
   "dependencies": {
     "@grpc/grpc-js": "^1.14.4",

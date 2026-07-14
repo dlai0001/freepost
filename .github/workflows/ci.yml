@@ -29,3 +29,11 @@ jobs:
         run: npm run fence
       - name: Build
         run: npm run build
+      - name: Build CLI
+        run: npm run build:cli
+      # The unit suite imports the TypeScript source, so it cannot see bundling
+      # faults. This runs the BUILT CLI against real HTTP/gRPC/MQTT servers — the
+      # only check that would have caught .grpc and .mqtt being silently broken
+      # by browser-vs-node module resolution.
+      - name: CLI smoke test (built artifact)
+        run: npm run smoke:cli

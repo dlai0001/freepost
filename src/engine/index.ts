@@ -33,3 +33,14 @@ export type {
   MqttSubEvents,
   MqttMessage
 } from './mqtt'
+export { callMcp, McpSessionClient, mcpConnectArgs, coerceToolArgs } from './mcp'
+export type {
+  McpCallArgs,
+  McpConnectArgs,
+  McpResponse,
+  McpIntrospection,
+  McpSessionState,
+  McpSessionEvents,
+  McpSamplingResponder,
+  McpElicitationResponder
+} from './mcp'

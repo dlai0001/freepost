@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# ---
+# description: 'GraphQL fixture: query users (GraphQL mode — the body is generated from `graphql`).'
+# label:
+#   - graphql
+# graphql:
+#   query: |-
+#     query Users {
+#       users {
+#         id
+#         name
+#         email
+#       }
+#     }
+#   variableDefs: []
+# scripts:
+#   test: |-
+#     pm.test("returns users", () => {
+#       pm.expect(pm.response.json().data.users).to.have.length.of.at.least(2);
+#     });
+# ---
+
+GQL_URL="${GQL_URL:-http://localhost:3014/graphql}"
+
+curl --request POST \
+  --url "${GQL_URL}" \
+  --header 'Content-Type: application/json' \
+  --data '{"query":"query Users {\n  users {\n    id\n    name\n    email\n  }\n}"}'

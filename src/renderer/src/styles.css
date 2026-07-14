@@ -725,3 +725,25 @@ td .var-input.cell-var { width: 100%; }
   background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
   padding: 8px 10px; max-height: 40vh; overflow: auto; white-space: pre-wrap; font-size: 12px;
 }
+
+/* -------------------------------- MCP tab -------------------------------- */
+.badge-mcp { color: var(--teal); }
+.mcp-session { margin-top: 6px; }
+.mcp-list {
+  display: flex; flex-direction: column; gap: 2px;
+  max-height: 30vh; overflow-y: auto;
+  border: 1px solid var(--border); border-radius: 6px; padding: 6px;
+}
+.mcp-item {
+  text-align: left; background: none; border: none; cursor: pointer;
+  color: inherit; padding: 4px 6px; border-radius: 4px; font-size: 12px;
+}
+.mcp-item:hover { background: var(--panel); }
+.mcp-item-params { color: var(--muted); font-size: 11px; margin-left: 6px; }
+.mcp-drift-list { margin: 6px 0 0; padding-left: 18px; font-size: 12px; }
+/* The exact command the user is approving to run — never truncate it. */
+.mcp-consent-cmd {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+  padding: 8px 10px; margin: 8px 0; overflow-x: auto; white-space: pre-wrap;
+  word-break: break-all; font-size: 12px;
+}

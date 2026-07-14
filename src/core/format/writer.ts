@@ -14,6 +14,7 @@ import type {
   Frontmatter,
   GrpcRequestModel,
   HttpRequestModel,
+  McpRequestModel,
   MqttRequestModel,
   RequestFile,
   VariableDecl,
@@ -141,6 +142,34 @@ function mqttLines(mqtt: MqttRequestModel): string[] {
   return commandBlock(cmd, flags)
 }
 
+/**
+ * The Inspector CLI's positional target (stdio server command, or the http
+ * endpoint URL) is emitted immediately after --cli and BEFORE any Inspector
+ * flag, so a server argument like `-y` can never be mistaken for one on
+ * re-parse. --transport is always explicit for the same reason.
+ */
+function mcpLines(mcp: McpRequestModel): string[] {
+  const flags: string[] = ['--cli']
+  if (mcp.transport === 'http') {
+    if (mcp.url === undefined) throw new Error('writeRequestFile: mcp http transport requires a url')
+    flags.push(quoteShellValue(mcp.url))
+  } else {
+    if (mcp.command === undefined) throw new Error('writeRequestFile: mcp stdio transport requires a command')
+    flags.push(quoteShellValue(mcp.command))
+    for (const a of mcp.args) flags.push(quoteShellValue(a))
+  }
+  flags.push(`--transport ${mcp.transport}`)
+  for (const h of mcp.headers) flags.push(`--header ${quoteShellValue(`${h.name}: ${h.value}`)}`)
+  for (const e of mcp.env) flags.push(`-e ${quoteShellValue(`${e.name}=${e.value}`)}`)
+  flags.push(`--method ${quoteShellValue(mcp.method)}`)
+  if (mcp.toolName !== undefined) flags.push(`--tool-name ${quoteShellValue(mcp.toolName)}`)
+  for (const a of mcp.toolArgs) flags.push(`--tool-arg ${quoteShellValue(`${a.name}=${a.value}`)}`)
+  if (mcp.uri !== undefined) flags.push(`--uri ${quoteShellValue(mcp.uri)}`)
+  if (mcp.promptName !== undefined) flags.push(`--prompt-name ${quoteShellValue(mcp.promptName)}`)
+  for (const a of mcp.promptArgs) flags.push(`--prompt-args ${quoteShellValue(`${a.name}=${a.value}`)}`)
+  return commandBlock('npx @modelcontextprotocol/inspector', flags)
+}
+
 export function writeRequestFile(file: RequestFile): string {
   const out: string[] = ['#!/usr/bin/env bash']
 
@@ -179,6 +208,9 @@ export function writeRequestFile(file: RequestFile): string {
   } else if (file.kind === 'mqtt') {
     if (!file.mqtt) throw new Error('writeRequestFile: kind "mqtt" requires the mqtt model')
     out.push(...mqttLines(file.mqtt))
+  } else if (file.kind === 'mcp') {
+    if (!file.mcp) throw new Error('writeRequestFile: kind "mcp" requires the mcp model')
+    out.push(...mcpLines(file.mcp))
   } else {
     if (!file.ws) throw new Error('writeRequestFile: kind "websocat" requires the ws model')
     out.push(...websocatLines(file.ws))

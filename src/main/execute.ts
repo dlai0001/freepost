@@ -21,6 +21,8 @@ import {
   sendGrpcUnary,
   publishMqtt,
   mqttConnectArgs,
+  callMcp,
+  mcpConnectArgs,
   CookieJar,
   refreshToken,
   shouldBypassProxy
@@ -97,8 +99,12 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
     errored: false
   }
 
-  if (kind !== 'curl' && kind !== 'grpc' && kind !== 'mqtt') {
-    return { ...report, errored: true, transportError: 'Not a one-shot request file (.curl/.grpc/.mqtt)' }
+  if (kind !== 'curl' && kind !== 'grpc' && kind !== 'mqtt' && kind !== 'mcp') {
+    return {
+      ...report,
+      errored: true,
+      transportError: 'Not a one-shot request file (.curl/.grpc/.mqtt/.mcp)'
+    }
   }
 
   let file: RequestFile
@@ -121,6 +127,7 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
 
   if (kind === 'grpc') return executeGrpc(args, file, report)
   if (kind === 'mqtt') return executeMqtt(args, file, report)
+  if (kind === 'mcp') return executeMcp(args, file, report)
 
   const http = file.http
   if (http === undefined) {
@@ -632,6 +639,197 @@ async function executeMqtt(
     errored: report.errored
   })
   return report
+}
+
+/**
+ * Execute a one-shot MCP (.mcp) request: pre-scripts -> resolve -> call ->
+ * test-scripts. Runnable methods are tools/call, resources/read, prompts/get
+ * and the three introspection lists.
+ *
+ * MCP's two failure axes are BOTH preserved on the way onto the shared
+ * HttpResponseModel, because collapsing them would make every assertion subtly
+ * wrong (see engine/mcp.ts):
+ *   - protocol error -> status 502, statusText PROTOCOL_ERROR
+ *   - tool isError    -> status 500, statusText TOOL_ERROR
+ *   - success         -> status 200, statusText OK
+ * The body is the raw MCP result JSON, so a test script asserts with
+ * pm.response.json().isError / .structuredContent / .content[0].text.
+ *
+ * A stdio `.mcp` file names a program to SPAWN. The GUI gates that behind a
+ * per-server confirmation (see ipc-handlers); reaching this function means the
+ * spawn is already authorised — either by that confirmation, or by the user
+ * explicitly invoking `freepost run` on this collection.
+ */
+async function executeMcp(
+  args: ExecuteArgs,
+  file: RequestFile,
+  report: ExecutionReport
+): Promise<ExecutionReport> {
+  const { root, path, session } = args
+  const abs = join(root, path)
+  const m = file.mcp
+  if (m === undefined) {
+    return { ...report, errored: true, transportError: 'File has no MCP inspector command' }
+  }
+  const env = readEnvFile(root, args.envPath)
+  const sessionObj = Object.fromEntries(session)
+  const requestName = path.split('/').pop() ?? path
+  const { config: cfg } = await resolveConfigChain(root, path)
+
+  // The pm.* request shape: method = the MCP method, url = the server target.
+  const target = (mm: typeof m, values?: Record<string, string>): string => {
+    const raw = mm.transport === 'http' ? (mm.url ?? '') : [mm.command ?? '', ...mm.args].join(' ')
+    return values === undefined ? raw : substitute(raw, values)
+  }
+
+  const preScripts = [
+    ...cfg.preScripts,
+    ...(file.frontmatter.scripts?.['pre-request']
+      ? [{ source: file.frontmatter.scripts['pre-request'], origin: requestName }]
+      : [])
+  ]
+  const preOutcomes: import('../shared/model').ScriptOutcome[] = []
+  for (const s of preScripts) {
+    if (s.source.trim() === '') continue
+    const pre = await runScript({
+      source: s.source,
+      phase: 'pre-request',
+      request: { method: m.method, url: target(m), headers: m.headers },
+      session: sessionObj,
+      env,
+      requestName,
+      sendRequest: (r) => sandboxSend(r, args)
+    })
+    preOutcomes.push(pre)
+    for (const [k, v] of Object.entries(pre.sessionWrites)) {
+      session.set(k, v)
+      sessionObj[k] = v
+    }
+    if (pre.error !== undefined) report.errored = true
+  }
+  if (preOutcomes.length > 0) report.preScript = mergeOutcomes(preOutcomes)
+
+  const { values, unresolved } = resolveVariables(file.variables, sessionObj, env)
+  if (unresolved.length > 0) return { ...report, unresolved, errored: true }
+
+  const conn = mcpConnectArgs(m)
+  const resolvedUrl = target(m, values)
+  const sub = (s: string): string => substitute(s, values)
+
+  const mcpRes = await callMcp({
+    transport: m.transport,
+    command: m.command !== undefined ? sub(m.command) : undefined,
+    args: m.args.map(sub),
+    env: conn.env !== undefined ? Object.fromEntries(m.env.map((e) => [e.name, sub(e.value)])) : undefined,
+    // A stdio server command is spawned with the request's folder as cwd, so a
+    // relative script path in the file means what it looks like it means.
+    cwd: dirname(abs),
+    url: m.url !== undefined ? sub(m.url) : undefined,
+    headers: m.headers.map((h) => ({ name: h.name, value: sub(h.value) })),
+    method: m.method,
+    toolName: m.toolName !== undefined ? sub(m.toolName) : undefined,
+    toolArgs: m.toolArgs.map((a) => ({ name: a.name, value: sub(a.value) })),
+    uri: m.uri !== undefined ? sub(m.uri) : undefined,
+    promptName: m.promptName !== undefined ? sub(m.promptName) : undefined,
+    promptArgs: m.promptArgs.map((a) => ({ name: a.name, value: sub(a.value) })),
+    sampling: samplingResponder(file),
+    elicitation: elicitationResponder(file)
+  })
+
+  report.resolvedUrl = resolvedUrl
+  report.resolvedRequest = {
+    method: m.method,
+    url: resolvedUrl,
+    headers: m.headers.map((h) => ({ name: h.name, value: sub(h.value) })),
+    body: m.toolArgs.length > 0 ? JSON.stringify(Object.fromEntries(m.toolArgs.map((a) => [a.name, sub(a.value)]))) : undefined
+  }
+
+  const status = mcpRes.error !== undefined ? 502 : mcpRes.isError ? 500 : 200
+  const statusText =
+    mcpRes.error !== undefined ? 'PROTOCOL_ERROR' : mcpRes.isError ? 'TOOL_ERROR' : 'OK'
+  const response: HttpResponseModel = {
+    status,
+    statusText,
+    headers: [],
+    bodyText: mcpRes.body,
+    timeMs: mcpRes.timeMs,
+    sizeBytes: Buffer.byteLength(mcpRes.body)
+  }
+  report.response = response
+  if (mcpRes.error !== undefined) {
+    report.errored = true
+    report.transportError = mcpRes.error
+  } else if (mcpRes.isError) {
+    report.errored = true
+  }
+
+  const testScripts = [
+    ...(file.frontmatter.scripts?.test
+      ? [{ source: file.frontmatter.scripts.test, origin: requestName }]
+      : []),
+    ...cfg.testScripts
+  ]
+  const testOutcomes: import('../shared/model').ScriptOutcome[] = []
+  for (const s of testScripts) {
+    if (s.source.trim() === '') continue
+    const test = await runScript({
+      source: s.source,
+      phase: 'test',
+      request: { method: m.method, url: resolvedUrl, headers: m.headers },
+      response,
+      session: sessionObj,
+      env,
+      requestName,
+      sendRequest: (r) => sandboxSend(r, args)
+    })
+    testOutcomes.push(test)
+    for (const [k, v] of Object.entries(test.sessionWrites)) session.set(k, v)
+    if (test.error !== undefined || test.tests.some((t) => !t.passed)) report.errored = true
+  }
+  if (testOutcomes.length > 0) report.testScript = mergeOutcomes(testOutcomes)
+
+  appendHistory(root, {
+    at: new Date().toISOString(),
+    path,
+    method: m.method,
+    url: resolvedUrl,
+    status: response.status,
+    timeMs: response.timeMs,
+    errored: report.errored
+  })
+  return report
+}
+
+/**
+ * Scripted answer to a server's sampling request (F4). The `mcp.sampling` block
+ * in frontmatter supplies the canned model response; without it, a server that
+ * asks for an LLM completion gets a protocol error rather than a silent stub —
+ * Freepost never calls an LLM itself (no network without user action).
+ */
+function samplingResponder(file: RequestFile): import('../engine').McpSamplingResponder | undefined {
+  const cfg = file.frontmatter.mcp as { sampling?: { text?: string; model?: string } } | undefined
+  const text = cfg?.sampling?.text
+  if (text === undefined) return undefined
+  return () => ({
+    role: 'assistant' as const,
+    content: { type: 'text' as const, text },
+    model: cfg?.sampling?.model ?? 'freepost-canned'
+  })
+}
+
+/**
+ * Scripted answer to a server's elicitation request (F4): the `mcp.elicitation`
+ * frontmatter block decides accept/decline/cancel and the fields to return.
+ * Default (no block) is `decline` — a headless run must never hang waiting for
+ * a human.
+ */
+function elicitationResponder(file: RequestFile): import('../engine').McpElicitationResponder | undefined {
+  const cfg = file.frontmatter.mcp as
+    | { elicitation?: { action?: 'accept' | 'decline' | 'cancel'; content?: Record<string, unknown> } }
+    | undefined
+  const e = cfg?.elicitation
+  if (e === undefined) return undefined
+  return () => ({ action: e.action ?? 'decline', content: e.content })
 }
 
 /** Combine several script outcomes (folder + request level) into one. */

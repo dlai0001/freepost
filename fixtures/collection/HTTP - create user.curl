@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# ---
+# description: 'REST fixture: create a user (POST + JSON body).'
+# label:
+#   - http
+# scripts:
+#   test: |-
+#     pm.test("status is 201", () => pm.response.to.have.status(201));
+#     pm.test("echoes the name", () => pm.expect(pm.response.json().name).to.equal("Grace Hopper"));
+# ---
+
+BASE_URL="${BASE_URL:-http://localhost:3010}"
+
+curl --request POST \
+  --url "${BASE_URL}/users" \
+  --header 'Content-Type: application/json' \
+  --data '{"name":"Grace Hopper","email":"grace@example.com"}'

@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# ---
+# description: 'MQTT fixture: publish one message (watch the broker log).'
+# label:
+#   - mqtt
+# scripts:
+#   test: pm.test("published", () => pm.expect(pm.response.json().published).to.equal(true));
+# ---
+
+MQTT_HOST="${MQTT_HOST:-localhost}"
+
+mosquitto_pub \
+  -h "${MQTT_HOST}" \
+  -p 1883 \
+  -t 'freepost/demo' \
+  -m 'hello from freepost'

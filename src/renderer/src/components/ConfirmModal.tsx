@@ -1,8 +1,9 @@
-import type { JSX } from 'react'
+import type { JSX, ReactNode } from 'react'
 
 interface Props {
   title: string
-  message: string
+  /** Plain text, or rich content (e.g. a <pre> showing a command to approve). */
+  message: ReactNode
   /** Primary action (e.g. "Save"). */
   confirmText: string
   onConfirm: () => void

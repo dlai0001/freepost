@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# ---
+# description: 'A tool with an outputSchema: assert on structuredContent.'
+# label:
+#   - mcp
+# scripts:
+#   test: |-
+#     pm.test("returns structured content", () => {
+#       const s = pm.response.json().structuredContent;
+#       pm.expect(s.city).to.equal("Oakland");
+#       pm.expect(s.tempC).to.be.a("number");
+#     });
+# ---
+
+MCP_URL="${MCP_URL:-http://localhost:3011/mcp}"
+
+npx @modelcontextprotocol/inspector \
+  --cli \
+  "${MCP_URL}" \
+  --transport http \
+  --method 'tools/call' \
+  --tool-name 'weather' \
+  --tool-arg 'city=Oakland'

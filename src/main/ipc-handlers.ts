@@ -14,6 +14,7 @@ import type {
   Header,
   HistoryEntry,
   HttpResponseModel,
+  McpArg,
   OAuth2Config,
   OpenApiOperationSummary,
   ParseCommandResult,
@@ -24,7 +25,16 @@ import type {
   WorkflowRunReport,
   WorkflowValidationIssue
 } from '../shared/model'
+import type { McpIntrospection } from '../engine'
 import { parseRequestFile, requestKindForPath, writeRequestFile } from '../core/format'
+import {
+  buildSnapshot,
+  diffSnapshots,
+  parseSnapshot,
+  serializeSnapshot,
+  snapshotPathFor
+} from '../core/mcp'
+import { approveSpawn, isSpawnApproved, needsConsent, spawnCommand } from './mcp-consent'
 import { createEnv, deleteEnv, duplicateEnv, renameEnv, writeEnv } from './env-ops'
 import { buildSearchEntry, queryIndex } from '../core/search'
 import {
@@ -47,6 +57,8 @@ import {
 import {
   acquireToken,
   GrpcStreamClient,
+  McpSessionClient,
+  mcpConnectArgs,
   MockServer,
   MqttSubscribeClient,
   mqttConnectArgs,
@@ -86,6 +98,33 @@ const grpcStreams = new Map<string, GrpcStreamClient>()
 let mqttSubCounter = 0
 /** Active MQTT subscriptions by id → client. */
 const mqttSubs = new Map<string, MqttSubscribeClient>()
+let mcpSessionCounter = 0
+/** Open MCP sessions by id → client. */
+const mcpSessions = new Map<string, McpSessionClient>()
+
+/** Load a .mcp model from disk, or use the unsaved editor state. */
+async function mcpFileFor(args: { root: string; path: string; model?: RequestFile }): Promise<RequestFile> {
+  if (args.model !== undefined) return args.model
+  const raw = await fs.readFile(join(args.root, args.path), 'utf8')
+  const parsed = parseRequestFile(raw, 'mcp')
+  if (!parsed.ok) throw new Error('Cannot parse MCP request file')
+  return parsed.file
+}
+
+/**
+ * Throw unless this server is approved to spawn. http servers never spawn, so
+ * they always pass. This is the enforcement point — the renderer's dialog is
+ * just the UI in front of it.
+ */
+function requireSpawnConsent(root: string, file: RequestFile): void {
+  const m = file.mcp
+  if (m === undefined) throw new Error('File has no MCP inspector command')
+  if (!needsConsent(m)) return
+  if (isSpawnApproved(root, m)) return
+  throw new Error(
+    `This MCP server has not been approved to run: ${spawnCommand(m)}. Approve it before connecting.`
+  )
+}
 
 /** Map an http(s) endpoint to its ws(s) equivalent for the WebSocket transport. */
 function toWsUrl(url: string): string {
@@ -251,6 +290,24 @@ const STARTERS: Record<RequestKind, RequestFile> = {
       message: 'hello'
     },
     comments: []
+  },
+  mcp: {
+    kind: 'mcp',
+    frontmatter: { description: '' },
+    variables: [{ name: 'MCP_URL', defaultValue: 'http://localhost:3001/mcp', required: false }],
+    // The http transport is the safe default for a new file: it opens a socket
+    // the user chose, rather than naming a subprocess to spawn.
+    mcp: {
+      transport: 'http',
+      url: '${MCP_URL}',
+      args: [],
+      env: [],
+      headers: [],
+      method: 'tools/list',
+      toolArgs: [],
+      promptArgs: []
+    },
+    comments: []
   }
 }
 
@@ -381,6 +438,13 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(
     IPC.requestExecute,
     async (_e, args: { root: string; path: string; envPath?: string; model?: RequestFile }) => {
+      // Defense in depth: a one-shot .mcp run spawns the same subprocess a
+      // session would, so it passes through the same consent gate. The renderer
+      // asks first; this makes it impossible to skip.
+      if (requestKindForPath(args.path) === 'mcp') {
+        const file = await mcpFileFor(args)
+        requireSpawnConsent(args.root, file)
+      }
       const report = await executeRequest({ ...args, session })
       if (report.response !== undefined && report.resolvedRequest !== undefined) {
         lastResponses.set(`${args.root}::${args.path}`, {
@@ -662,6 +726,142 @@ export function registerIpcHandlers(): void {
     mqttSubs.get(id)?.close()
     mqttSubs.delete(id)
   })
+
+  // ---- MCP ----
+  //
+  // A stdio .mcp file names a PROGRAM TO SPAWN, so every path that could spawn
+  // one is gated on per-server consent (mcp-consent.ts). The renderer asks first
+  // and shows the exact command, but the gate is enforced HERE too: a renderer
+  // bug must never be able to execute a command the user has not approved.
+
+  ipcMain.handle(IPC.mcpConsentCheck, async (_e, args: { root: string; path: string; model?: RequestFile }) => {
+    const file = await mcpFileFor(args)
+    const m = file.mcp
+    if (m === undefined) return { required: false, command: '' }
+    return {
+      required: needsConsent(m) && !isSpawnApproved(args.root, m),
+      command: spawnCommand(m)
+    }
+  })
+
+  ipcMain.handle(IPC.mcpConsentApprove, (_e, args: { root: string; command: string }) => {
+    approveSpawn(args.root, args.command)
+  })
+
+  ipcMain.handle(
+    IPC.mcpConnect,
+    async (_e, args: { root: string; path: string; envPath?: string; model?: RequestFile }) => {
+      const file = await mcpFileFor(args)
+      requireSpawnConsent(args.root, file)
+      const m = file.mcp!
+      const env = readEnvFile(args.root, args.envPath)
+      const { values, unresolved } = resolveVariables(file.variables, Object.fromEntries(session), env)
+      if (unresolved.length > 0) throw new Error(`Unresolved required variables: ${unresolved.join(', ')}`)
+      const sub = (s: string): string => substitute(s, values)
+
+      const id = `mcp${++mcpSessionCounter}`
+      const client = new McpSessionClient()
+      mcpSessions.set(id, client)
+      client
+        .on('log', (l) => broadcast(IPC.mcpEvent, { id, type: 'log', data: l }))
+        .on('notification', (n) => broadcast(IPC.mcpEvent, { id, type: 'notification', data: n }))
+        .on('error', (err: Error) => broadcast(IPC.mcpEvent, { id, type: 'error', data: err.message }))
+        .on('close', () => {
+          broadcast(IPC.mcpEvent, { id, type: 'close' })
+          mcpSessions.delete(id)
+        })
+
+      const conn = mcpConnectArgs(m)
+      const introspection = await new Promise<McpIntrospection>((res, rej) => {
+        client.on('open', res).on('error', rej)
+        void client.connect({
+          ...conn,
+          command: m.command !== undefined ? sub(m.command) : undefined,
+          args: m.args.map(sub),
+          env: conn.env !== undefined ? Object.fromEntries(m.env.map((x) => [x.name, sub(x.value)])) : undefined,
+          cwd: dirname(join(args.root, args.path)),
+          url: m.url !== undefined ? sub(m.url) : undefined,
+          headers: m.headers.map((h) => ({ name: h.name, value: sub(h.value) }))
+        })
+      }).catch((e: unknown) => {
+        mcpSessions.delete(id)
+        throw e instanceof Error ? e : new Error(String(e))
+      })
+
+      return { id, introspection }
+    }
+  )
+
+  ipcMain.handle(IPC.mcpCallTool, async (_e, args: { id: string; name: string; args: McpArg[] }) => {
+    const client = mcpSessions.get(args.id)
+    if (client === undefined) throw new Error('MCP session is not open')
+    return await client.callTool(args.name, args.args ?? [])
+  })
+
+  ipcMain.handle(IPC.mcpDisconnect, async (_e, id: string) => {
+    await mcpSessions.get(id)?.close()
+    mcpSessions.delete(id)
+  })
+
+  /** F5: record the server's schema surface next to the request file. */
+  ipcMain.handle(
+    IPC.mcpSnapshot,
+    async (_e, args: { root: string; path: string; envPath?: string; model?: RequestFile }) => {
+      const { introspection } = await connectAndIntrospect(args)
+      const rel = snapshotPathFor(args.path)
+      await fs.writeFile(join(args.root, rel), serializeSnapshot(buildSnapshot(introspection)), 'utf8')
+      return { path: rel }
+    }
+  )
+
+  /** F5: diff the live server against the recorded snapshot. */
+  ipcMain.handle(
+    IPC.mcpDrift,
+    async (_e, args: { root: string; path: string; envPath?: string; model?: RequestFile }) => {
+      const snapAbs = join(args.root, snapshotPathFor(args.path))
+      if (!existsSync(snapAbs)) throw new Error('No snapshot recorded yet for this request')
+      const stored = parseSnapshot(await fs.readFile(snapAbs, 'utf8'))
+      if (stored === null) throw new Error('Snapshot file is unreadable')
+      const { introspection } = await connectAndIntrospect(args)
+      return diffSnapshots(stored, buildSnapshot(introspection))
+    }
+  )
+
+  /** Connect, introspect, disconnect — the snapshot/drift helper. */
+  async function connectAndIntrospect(args: {
+    root: string
+    path: string
+    envPath?: string
+    model?: RequestFile
+  }): Promise<{ introspection: McpIntrospection }> {
+    const file = await mcpFileFor(args)
+    requireSpawnConsent(args.root, file)
+    const m = file.mcp!
+    const env = readEnvFile(args.root, args.envPath)
+    const { values, unresolved } = resolveVariables(file.variables, Object.fromEntries(session), env)
+    if (unresolved.length > 0) throw new Error(`Unresolved required variables: ${unresolved.join(', ')}`)
+    const sub = (s: string): string => substitute(s, values)
+
+    const client = new McpSessionClient()
+    const conn = mcpConnectArgs(m)
+    try {
+      const introspection = await new Promise<McpIntrospection>((res, rej) => {
+        client.on('open', res).on('error', rej)
+        void client.connect({
+          ...conn,
+          command: m.command !== undefined ? sub(m.command) : undefined,
+          args: m.args.map(sub),
+          env: conn.env !== undefined ? Object.fromEntries(m.env.map((x) => [x.name, sub(x.value)])) : undefined,
+          cwd: dirname(join(args.root, args.path)),
+          url: m.url !== undefined ? sub(m.url) : undefined,
+          headers: m.headers.map((h) => ({ name: h.name, value: sub(h.value) }))
+        })
+      })
+      return { introspection }
+    } finally {
+      await client.close()
+    }
+  }
 
   ipcMain.handle(
     IPC.importPostman,

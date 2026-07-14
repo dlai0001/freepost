@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# ---
+# description: Render a parameterised prompt template.
+# label:
+#   - mcp
+# scripts:
+#   test: |-
+#     pm.test("greets Ada", () => {
+#       pm.expect(pm.response.json().messages[0].content.text).to.contain("Ada");
+#     });
+# ---
+
+MCP_URL="${MCP_URL:-http://localhost:3011/mcp}"
+
+npx @modelcontextprotocol/inspector \
+  --cli \
+  "${MCP_URL}" \
+  --transport http \
+  --method 'prompts/get' \
+  --prompt-name 'greet' \
+  --prompt-args 'who=Ada'

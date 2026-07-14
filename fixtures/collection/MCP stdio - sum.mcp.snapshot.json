@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "server": {
+    "name": "freepost-fixture-stdio",
+    "version": "1.0.0"
+  },
+  "capabilities": [
+    "prompts",
+    "resources",
+    "tools"
+  ],
+  "tools": [
+    {
+      "name": "boom",
+      "params": {},
+      "required": [],
+      "description": "Always fails (tool-level)"
+    },
+    {
+      "name": "get-sum",
+      "params": {
+        "a": "number",
+        "b": "number"
+      },
+      "required": [
+        "a",
+        "b"
+      ],
+      "description": "Add two numbers"
+    },
+    {
+      "name": "whoami",
+      "params": {},
+      "required": [],
+      "description": "Read the WHO env var"
+    }
+  ],
+  "resources": [
+    "demo://greeting"
+  ],
+  "prompts": [
+    {
+      "name": "greet",
+      "args": [
+        "who"
+      ]
+    }
+  ]
+}

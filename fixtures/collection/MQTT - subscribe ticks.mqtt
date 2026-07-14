@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# ---
+# description: 'MQTT fixture: subscribe to the heartbeat (long-lived — connect from the app).'
+# label:
+#   - mqtt
+#   - streaming
+# ---
+
+MQTT_HOST="${MQTT_HOST:-localhost}"
+
+mosquitto_sub \
+  -h "${MQTT_HOST}" \
+  -p 1883 \
+  -t 'freepost/tick'

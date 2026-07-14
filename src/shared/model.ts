@@ -3,8 +3,8 @@
  * process, and the renderer. See PLAN.md for the format specification.
  */
 
-/** Request file type, discriminated by extension: .curl | .ws | .grpc | .mqtt */
-export type RequestKind = 'curl' | 'websocat' | 'grpc' | 'mqtt'
+/** Request file type, discriminated by extension: .curl | .ws | .grpc | .mqtt | .mcp */
+export type RequestKind = 'curl' | 'websocat' | 'grpc' | 'mqtt' | 'mcp'
 
 /** Optional per-variable metadata carried in frontmatter `variables`. */
 export interface VariableMeta {
@@ -182,6 +182,143 @@ export interface MqttRequestModel {
   caFile?: string
 }
 
+/**
+ * MCP transport. `stdio` spawns the server as a subprocess and speaks JSON-RPC
+ * over its stdin/stdout; `http` POSTs JSON-RPC to a Streamable HTTP endpoint.
+ * SSE is deliberately unsupported — it is deprecated in the MCP spec.
+ */
+export type McpTransport = 'stdio' | 'http'
+
+/**
+ * The MCP methods a `.mcp` file can invoke, matching the Inspector CLI's
+ * `--method` surface. The three list methods are introspection; the other three
+ * (tools/call, resources/read, prompts/get) are the invocations. All six are
+ * one-shot, so all six are runnable headlessly.
+ */
+export type McpMethod =
+  | 'tools/list'
+  | 'tools/call'
+  | 'resources/list'
+  | 'resources/read'
+  | 'prompts/list'
+  | 'prompts/get'
+
+/** One `--tool-arg`/`--prompt-args` entry: key=value, order preserved. */
+export interface McpArg {
+  name: string
+  /** Raw text as written; the server coerces per inputSchema. */
+  value: string
+}
+
+/**
+ * Parsed MCP Inspector CLI command (supported-flag subset; see
+ * core/format/mcp.ts). stdio uses `command`/`args`; http uses `url`/`headers`.
+ */
+export interface McpRequestModel {
+  transport: McpTransport
+  /** stdio: the server program to spawn (may contain ${VAR}). */
+  command?: string
+  /** stdio: argv passed to the server program. */
+  args: string[]
+  /** stdio: -e entries, exported into the server subprocess's environment. */
+  env: McpArg[]
+  /** http: the Streamable HTTP endpoint (may contain ${VAR}). */
+  url?: string
+  /** http: --header entries. */
+  headers: Header[]
+  method: McpMethod
+  /** tools/call: --tool-name. */
+  toolName?: string
+  /** tools/call: --tool-arg entries, in file order. */
+  toolArgs: McpArg[]
+  /** resources/read: --uri. */
+  uri?: string
+  /** prompts/get: --prompt-name. */
+  promptName?: string
+  /** prompts/get: --prompt-args entries, in file order. */
+  promptArgs: McpArg[]
+}
+
+/**
+ * An MCP result as it crosses the IPC boundary. Both failure axes are carried:
+ * `error` is a protocol failure (transport, spawn, JSON-RPC), `isError` is a
+ * tool that ran and reported failure. They are NOT the same thing.
+ */
+export interface McpToolResponse {
+  method: McpMethod
+  error?: string
+  isError: boolean
+  /** The result payload as pretty-printed JSON. */
+  body: string
+  structuredContent?: Record<string, unknown>
+  progress: { progress: number; total?: number; message?: string }[]
+  logs: { level: string; data: unknown }[]
+  timeMs: number
+}
+
+/** What a server said it can do, read at connect time. */
+export interface McpIntrospectionSummary {
+  tools: unknown[]
+  resources: unknown[]
+  resourceTemplates: unknown[]
+  prompts: unknown[]
+  capabilities: Record<string, unknown>
+  serverInfo: Record<string, unknown>
+}
+
+/** The recorded schema surface of an MCP server (F5 drift detection). */
+export interface McpSnapshot {
+  version: 1
+  server: { name?: string; version?: string }
+  capabilities: string[]
+  tools: McpSnapshotTool[]
+  resources: string[]
+  prompts: McpSnapshotPrompt[]
+}
+
+export interface McpSnapshotTool {
+  name: string
+  description?: string
+  /** Parameter name -> declared JSON Schema type (or 'unknown'). */
+  params: Record<string, string>
+  required: string[]
+  /** Whether the tool declares an outputSchema. */
+  structured?: boolean
+}
+
+export interface McpSnapshotPrompt {
+  name: string
+  args: string[]
+}
+
+export type McpDriftKind =
+  | 'tool-removed'
+  | 'tool-added'
+  | 'param-removed'
+  | 'param-added'
+  | 'param-retyped'
+  | 'param-now-required'
+  | 'param-now-optional'
+  | 'resource-removed'
+  | 'resource-added'
+  | 'prompt-removed'
+  | 'prompt-added'
+  | 'prompt-arg-removed'
+  | 'prompt-arg-added'
+
+export interface McpDriftEntry {
+  kind: McpDriftKind
+  /** Whether this change can break an existing caller (fails CI). */
+  breaking: boolean
+  message: string
+}
+
+export interface McpDriftReport {
+  clean: boolean
+  breaking: boolean
+  entries: McpDriftEntry[]
+}
+
 /** Standalone comment line in the body, preserved on rewrite. */
 export interface BodyComment {
   /** Index of the statement (assignment or command) this comment precedes;
@@ -204,6 +341,8 @@ export interface RequestFile {
   grpc?: GrpcRequestModel
   /** Present when kind === 'mqtt'. */
   mqtt?: MqttRequestModel
+  /** Present when kind === 'mcp'. */
+  mcp?: McpRequestModel
   comments: BodyComment[]
 }
 

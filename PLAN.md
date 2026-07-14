@@ -19,6 +19,16 @@
 > gRPC (unary + server-streaming via grpcurl-style `.grpc` files on
 > `@grpc/grpc-js`); mock server (replays saved examples over HTTP, `freepost
 > mock`); MQTT (publish/subscribe via mosquitto-style `.mqtt` files on mqtt.js).
+>
+> **M11 (MCP, implemented & CI-verified):** Model Context Protocol as a
+> first-class kind — `.mcp` files are real MCP Inspector CLI invocations, run
+> through `@modelcontextprotocol/sdk` over stdio + Streamable HTTP (never SSE:
+> deprecated in the spec). Introspection panes (tools/resources/prompts),
+> `pm.*` assertions against tool results in `freepost run` (the differentiator —
+> no other MCP client has a headless assertion story), scripted answers to
+> server-initiated sampling/elicitation, and schema snapshot + drift detection
+> (`freepost mcp snapshot|check`, breaking drift exits 1). stdio servers are
+> spawned only after explicit per-server user consent (see Network policy).
 > **Still deferred:** plugin API. See TEST_PLAN.md for verification coverage.
 
 An open-source Postman clone: offline-only, no registration, builds from source on
@@ -435,6 +445,29 @@ allowed to open a socket — inbound or outbound — making the promise mechanic
 auditable (`grep` for network APIs finds one module) — exactly the audit that
 locked-down corporate security teams perform. CI enforces it via
 `scripts/check-network-fence.mjs` (fencing network imports/APIs to `src/engine`).
+
+**Subprocesses (M11, MCP stdio).** MCP is the first protocol whose transport is
+not a socket but a *child process*: a stdio `.mcp` file names a program to run.
+Two consequences, both deliberate:
+
+1. **Consent before spawn.** A `.curl` file is inert data we parse; a stdio
+   `.mcp` file is a command someone else may have written. Opening a shared
+   collection must never silently execute anything, so the app shows the exact
+   command and requires per-server approval before the first spawn, remembered
+   per (collection, command) in the app's userData — deliberately *not* in the
+   collection, since consent shipped inside a collection could be forged by
+   whoever authored it. `src/main/mcp-consent.ts` is the enforcement point, and
+   every spawn path in `ipc-handlers.ts` goes through it (a renderer bug cannot
+   skip the gate). `freepost run` does not prompt — invoking it on a collection
+   *is* the authorisation — and `--no-mcp-spawn` opts out.
+2. **The fence does not model subprocesses.** `check-network-fence.mjs` scans
+   for network APIs only; `child_process` is not on its list, and
+   `src/main/security.ts` already shells out to `git` outside the engine. Rather
+   than a blanket clause with carve-outs, the rule stands by convention: MCP
+   server spawning lives in `src/engine/mcp.ts` with the rest of the transports.
+   A stdio server command like `npx -y @some/server` will reach the npm registry
+   on first run — that is user-initiated, and so consistent with the guarantee,
+   but it is stated here rather than left for a suspicious user to discover.
 
 ## 4. Tech stack
 

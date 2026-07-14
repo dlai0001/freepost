@@ -12,6 +12,7 @@ import WebSocketTab from './components/WebSocketTab'
 import WorkflowTab from './components/WorkflowTab'
 import GrpcTab from './components/GrpcTab'
 import MqttTab from './components/MqttTab'
+import McpTab from './components/McpTab'
 import PromptModal from './components/PromptModal'
 import ConfirmModal from './components/ConfirmModal'
 import ImportModal from './components/ImportModal'
@@ -188,7 +189,9 @@ function Shell(): JSX.Element {
             ? 'grpc'
             : kind === 'mqtt' || path.toLowerCase().endsWith('.mqtt')
               ? 'mqtt'
-              : 'request'
+              : kind === 'mcp' || path.toLowerCase().endsWith('.mcp')
+                ? 'mcp'
+                : 'request'
     const tab: Tab = { id: path, path, name: displayName(path), type: tabType, dirty: false }
     dispatch({ type: 'open-tab', tab })
   }
@@ -218,7 +221,9 @@ function Shell(): JSX.Element {
             ? '.grpc'
             : itemKind === 'mqtt'
               ? '.mqtt'
-              : '.workflow.json'
+              : itemKind === 'mcp'
+                ? '.mcp'
+                : '.workflow.json'
     const folderRel = folder === '.' ? '' : folder
     const rel = folderRel === '' ? `${name}${ext}` : `${folderRel}/${name}${ext}`
     const abs = joinPath(root, rel)
@@ -474,6 +479,15 @@ function Shell(): JSX.Element {
                       onDirty={(dirty) => dispatch({ type: 'set-dirty', id: tab.id, dirty })}
                     />
                   )}
+                  {tab.type === 'mcp' && (
+                    <McpTab
+                      ref={(h) => setTabHandle(tab.id, h)}
+                      root={state.root as string}
+                      relPath={tab.path}
+                      envPath={state.envPath}
+                      onDirty={(dirty) => dispatch({ type: 'set-dirty', id: tab.id, dirty })}
+                    />
+                  )}
                 </div>
               ))}
           </div>
@@ -528,7 +542,9 @@ function Shell(): JSX.Element {
                   ? 'New gRPC'
                   : modal.itemKind === 'mqtt'
                     ? 'New MQTT'
-                    : 'New Workflow'
+                    : modal.itemKind === 'mcp'
+                      ? 'New MCP'
+                      : 'New Workflow'
           }
           label={`Name (becomes the filename${modal.folder !== '' && modal.folder !== '.' ? ` in ${modal.folder}` : ''})`}
           placeholder={modal.itemKind === 'workflow' ? 'Signup smoke test' : 'Get user by id'}

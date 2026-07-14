@@ -15,7 +15,7 @@ export function baseName(p: string): string {
 }
 
 /** Longest first so `.workflow.json` wins over `.json`. */
-const KNOWN_SUFFIXES = ['.workflow.json', '.env.json', '.curl', '.ws', '.grpc', '.mqtt']
+const KNOWN_SUFFIXES = ['.workflow.json', '.env.json', '.curl', '.ws', '.grpc', '.mqtt', '.mcp']
 
 /** Display name for a request/workflow/env path: basename minus known suffix. */
 export function displayName(p: string): string {

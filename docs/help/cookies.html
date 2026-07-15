@@ -110,6 +110,12 @@
       scoped deletion — one cookie, everything for a domain, all session cookies, or the whole
       jar.
     </p>
+    <figure>
+      <img src="./images/cookie-manager.png" alt="The Cookie Manager showing cookies grouped by domain with editable name, value, domain, path, expires, Secure, HttpOnly and SameSite columns; one cookie is highlighted red for a validation error.">
+      <figcaption>Cookies grouped by domain, every attribute editable inline. The
+        <code>tracking</code> cookie is flagged red — <code>SameSite=None</code> without
+        <code>Secure</code>.</figcaption>
+    </figure>
     <p>
       Edits are validated against RFC&nbsp;6265bis as you type: <strong>errors</strong> (red)
       mark cookies a real user agent would reject, <strong>warnings</strong> (amber) mark values
@@ -132,6 +138,12 @@
       <li><strong>Edit raw</strong> — edit the cookie as a literal <code>Set-Cookie</code> line,
         with live parse feedback showing exactly what will be stored.</li>
     </ul>
+    <figure>
+      <img src="./images/cookie-context-menu.png" alt="Right-click context menu on a cookie showing Encode value as Base64, URL-encode value, View JWT, Copy value, Copy as Set-Cookie, Copy as Cookie header, Edit raw, and red scoped-deletion items.">
+      <figcaption>Right-clicking a cookie: value utilities up top, scoped deletion below. Decode
+        options appear only when the value actually decodes — here the JWT value offers
+        <strong>View JWT</strong>.</figcaption>
+    </figure>
 
     <h2>Import &amp; export</h2>
     <p>The manager reads and writes four formats:</p>
@@ -153,6 +165,11 @@
       buttons. <strong>Import</strong> auto-detects the format of whatever you paste and lets
       you either merge into the jar or replace it.
     </p>
+    <figure>
+      <img src="./images/cookie-export.png" alt="The Export cookies dialog with the format set to Netscape cookies.txt, showing a live preview with the Netscape header, HttpOnly-prefixed lines and a Download cookies.txt button.">
+      <figcaption>Exporting as Netscape <code>cookies.txt</code> — the live preview updates with
+        the format, ready for <code>curl -b</code>.</figcaption>
+    </figure>
 
     <div class="callout callout-tip">
       <div class="callout-title">curl interop</div>

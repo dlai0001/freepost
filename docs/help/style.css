@@ -145,6 +145,18 @@ pre .k { color: var(--keyword); }
 .docs-article th { background: var(--panel); color: var(--muted); font-weight: 600; }
 .docs-article td code { white-space: nowrap; }
 
+/* ---- screenshots ---- */
+.docs-article figure {
+  margin: 20px 0 24px; max-width: 820px;
+}
+.docs-article figure img {
+  display: block; width: 100%; height: auto;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
+}
+.docs-article figcaption {
+  margin-top: 8px; color: var(--muted); font-size: .85rem;
+}
+
 /* ---- landing-page card grid (help index) ---- */
 .help-grid {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px;

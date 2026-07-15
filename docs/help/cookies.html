@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/png" href="../favicon.png">
+<link rel="apple-touch-icon" href="../apple-touch-icon.png">
+<title>Cookies — Freepost Help</title>
+<meta name="description" content="Freepost's per-collection cookie jar: automatic Set-Cookie capture, the Cookie Manager with RFC 6265bis validation and SameSite editing, per-request opt-out, and curl-compatible cookies.txt import/export.">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="topbar-logo" href="../index.html">$ freepost</a>
+    <span class="topbar-crumb">Help / Cookies</span>
+    <div class="topbar-spacer"></div>
+    <a class="topbar-link" href="../index.html">Website</a>
+    <a class="topbar-link" href="https://github.com/dlai0001/freepost">GitHub</a>
+  </div>
+</header>
+
+<div class="docs-shell">
+  <nav class="docs-nav">
+    <div class="docs-nav-title">Guides</div>
+    <a href="./index.html">Overview</a>
+    <a href="./installing.html">Installing</a>
+    <a href="./creating-requests.html">Creating requests</a>
+    <a href="./mcp.html">MCP servers</a>
+    <a href="./importing.html">Importing</a>
+    <a href="./organizing.html">Saving &amp; organizing</a>
+    <a href="./workflows.html">Workflows</a>
+    <a href="./authentication.html">Authentication</a>
+    <a class="active" href="./cookies.html">Cookies</a>
+    <a href="./mock-server.html">Mock server</a>
+    <a href="./cli.html">Command line</a>
+    <a href="./scripting.html">Scripting (pm.*)</a>
+  </nav>
+
+  <article class="docs-article">
+    <h1>Cookies</h1>
+    <p class="lede">
+      Each collection has its own browser-like cookie jar: <code>Set-Cookie</code> headers from
+      responses are captured automatically, and matching requests send them back — so login
+      flows, CSRF tokens, and sticky sessions just work. The jar is a local file inside your
+      collection; like everything else in Freepost, nothing about it leaves your machine.
+    </p>
+
+    <h2>The cookie jar</h2>
+    <p>
+      The jar behaves the way a browser does, with one deliberate simplification: cookies are
+      matched by <strong>exact host</strong> (the <code>Domain</code> attribute is ignored, so a
+      cookie set by <code>api.example.com</code> is never sent to <code>app.example.com</code>).
+      Within a host, standard RFC&nbsp;6265 rules apply:
+    </p>
+    <ul>
+      <li><strong>Path matching</strong> — a cookie with <code>Path=/api</code> is sent to
+        <code>/api</code> and <code>/api/users</code>, not to <code>/apiv2</code>; more specific
+        paths are sent first.</li>
+      <li><strong>Expiry</strong> — <code>Max-Age</code> wins over <code>Expires</code>; expired
+        cookies are dropped, and a server can delete a cookie by setting it already-expired.
+        Cookies with no expiry are <strong>session cookies</strong> and live until you clear
+        them.</li>
+      <li><strong>Secure</strong> — cookies marked <code>Secure</code> are withheld from plain
+        <code>http://</code> requests.</li>
+    </ul>
+    <p>
+      The jar persists to <code>.freepost/cookies.json</code> in the collection root — a plain
+      JSON file with owner-only (0600) permissions, inside the always-git-ignored
+      <code>.freepost/</code> folder, alongside the <a href="./authentication.html">OAuth token
+      cache</a>. Delete the file and the jar is empty; copy the collection folder and the jar
+      travels with it.
+    </p>
+
+    <div class="callout callout-note">
+      <div class="callout-title">Same jar in the CLI</div>
+      Headless <a href="./cli.html"><code>freepost run</code></a> uses the same engine and the
+      same <code>.freepost/cookies.json</code>, so a workflow that logs in with request one and
+      hits an authenticated endpoint with request two works identically in the desktop app and
+      in CI.
+    </div>
+
+    <h2>Opting a request out</h2>
+    <p>
+      Cookies are on by default for every request. To keep a request out of the jar entirely —
+      it neither sends stored cookies nor stores what the response sets — uncheck
+      <strong>Send and store cookies</strong> under the request's <strong>Meta</strong> tab
+      (Options section), or set it directly in the frontmatter:
+    </p>
+    <pre><code><span class="c"># ---</span>
+<span class="c"># description: Health check — must work without a session</span>
+<span class="c"># cookies: false</span>
+<span class="c"># ---</span>
+
+<span class="k">curl</span> --request GET \
+  --url <span class="s">"https://api.example.com/healthz"</span></code></pre>
+    <p>
+      Only the opt-out is written to disk — a request without a <code>cookies:</code> key has
+      cookies enabled, so existing files don't change.
+    </p>
+
+    <h2>The Cookie Manager</h2>
+    <p>
+      Click <strong>Cookies</strong> in the top bar to open the manager. Cookies are grouped by
+      domain, searchable, and every attribute is editable inline: name, value, domain, path,
+      expiry, <code>Secure</code>, <code>HttpOnly</code>, and <code>SameSite</code>
+      (Strict / Lax / None). Expired cookies stay visible but dimmed until the jar purges them.
+      <strong>Add cookie</strong> creates a new row; right-clicking a domain or cookie offers
+      scoped deletion — one cookie, everything for a domain, all session cookies, or the whole
+      jar.
+    </p>
+    <p>
+      Edits are validated against RFC&nbsp;6265bis as you type: <strong>errors</strong> (red)
+      mark cookies a real user agent would reject, <strong>warnings</strong> (amber) mark values
+      that are out of spec but commonly tolerated. The rules include the <code>__Host-</code>
+      and <code>__Secure-</code> name-prefix requirements, <code>SameSite=None</code> requiring
+      <code>Secure</code>, and the 4096-byte name+value limit. A
+      <strong>"Only show cookies with issues"</strong> filter narrows a big jar down to the
+      problems.
+    </p>
+
+    <h3>Value utilities</h3>
+    <p>Right-click a cookie for quick operations on its value:</p>
+    <ul>
+      <li><strong>Base64</strong> and <strong>URL</strong> encode / decode in place.</li>
+      <li><strong>View JWT</strong> — decodes and pretty-prints the header and payload of a JWT
+        value (locally, of course).</li>
+      <li><strong>Pretty-print JSON</strong> for JSON-shaped values.</li>
+      <li><strong>Copy as</strong> — the raw value, a full <code>Set-Cookie</code> line with all
+        attributes, or a <code>Cookie</code> request-header pair.</li>
+      <li><strong>Edit raw</strong> — edit the cookie as a literal <code>Set-Cookie</code> line,
+        with live parse feedback showing exactly what will be stored.</li>
+    </ul>
+
+    <h2>Import &amp; export</h2>
+    <p>The manager reads and writes four formats:</p>
+    <table>
+      <thead><tr><th>Format</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>JSON</td><td>Freepost's own shape, plus common browser-extension export shapes
+          (<code>expirationDate</code> in seconds, <code>session</code> flags).</td></tr>
+        <tr><td>Netscape <code>cookies.txt</code></td><td>The curl/wget format, including
+          <code>#HttpOnly_</code>-prefixed lines.</td></tr>
+        <tr><td><code>Cookie</code> header</td><td>A single <code>a=1; b=2</code> line — handy
+          for pasting straight out of devtools.</td></tr>
+        <tr><td><code>Set-Cookie</code> lines</td><td>One cookie per line with full
+          attributes.</td></tr>
+      </tbody>
+    </table>
+    <p>
+      <strong>Export</strong> shows a live preview of the selected format with copy and download
+      buttons. <strong>Import</strong> auto-detects the format of whatever you paste and lets
+      you either merge into the jar or replace it.
+    </p>
+
+    <div class="callout callout-tip">
+      <div class="callout-title">curl interop</div>
+      The Netscape export is directly usable by curl: export as <code>cookies.txt</code> and run
+      <code>curl -b cookies.txt https://api.example.com/me</code> to replay the same session
+      from a terminal. <code>curl -c</code> output imports back in the other direction.
+    </div>
+
+    <footer class="docs-footer">
+      Next: <a href="./mock-server.html">Serve saved examples with the mock server →</a>
+    </footer>
+  </article>
+</div>
+
+</body>
+</html>

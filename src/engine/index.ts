@@ -14,7 +14,7 @@ export {
 } from './oauth'
 export type { AuthorizeFlowArgs, AuthorizeResult } from './oauth'
 export { CookieJar } from './cookies'
-export type { StoredCookie } from './cookies'
+export type { CookieRecord } from './cookies'
 export { WsClient } from './ws'
 export type { WsState, WsConnectArgs, WsClientEvents } from './ws'
 export { subscribeGraphql } from './gql-subscribe'

@@ -79,7 +79,24 @@ export interface Frontmatter {
   messages?: Record<string, string>
   /** OAuth2 config for this request (overrides inherited collection/folder auth). */
   auth?: OAuth2Config
+  /** Cookie jar opt-out: `false` disables sending AND storing cookies. Absent = enabled. */
+  cookies?: boolean
   [key: string]: unknown
+}
+
+/** One stored cookie — the wire/persistence shape shared by the jar, IPC, and UI. */
+export interface CookieRecord {
+  name: string
+  value: string
+  /** Host the cookie is scoped to (lowercase; exact-host model). */
+  domain: string
+  path: string
+  /** Epoch milliseconds; null = session cookie. */
+  expires: number | null
+  secure: boolean
+  httpOnly: boolean
+  /** Stored/displayed metadata only; same-site send semantics are not enforced. */
+  sameSite?: 'Strict' | 'Lax' | 'None'
 }
 
 /** One entry of the shell assignment block. */

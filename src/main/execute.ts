@@ -28,15 +28,16 @@ import {
   shouldBypassProxy
 } from '../engine'
 import { ensureFreepostDir } from './collection'
+import { loadJar, saveJar } from './cookie-store'
 import { isExpired, readCachedToken, writeCachedToken } from './oauth-cache'
 import { resolveConfigChain } from './config-resolve'
 
-/** One in-memory cookie jar per collection root. */
+/** One in-memory cookie jar per collection root, loaded from disk on first access. */
 const jars = new Map<string, CookieJar>()
 export function jarFor(root: string): CookieJar {
   let jar = jars.get(root)
   if (jar === undefined) {
-    jar = new CookieJar()
+    jar = loadJar(root)
     jars.set(root, jar)
   }
   return jar
@@ -302,7 +303,8 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
     body: bodyBuffer !== undefined ? bodyBuffer.toString('utf8') : bodyText
   }
 
-  // Send.
+  // Send. cookies: false in frontmatter opts this request out of the jar entirely.
+  const cookieJar = file.frontmatter.cookies === false ? undefined : jarFor(root)
   let response: HttpResponseModel | undefined
   try {
     response = await sendHttp(
@@ -327,13 +329,14 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
           proxy
         }
       },
-      jarFor(root)
+      cookieJar
     )
     report.response = response
   } catch (e) {
     report.transportError = e instanceof Error ? e.message : String(e)
     report.errored = true
   }
+  if (cookieJar !== undefined && response !== undefined) await saveJar(root, cookieJar)
 
   // Test scripts: the request's own first, then collection/folder (outermost first).
   const testScripts = [
@@ -915,8 +918,11 @@ async function sandboxSend(
     name,
     value
   }))
-  return sendHttp(
+  const jar = jarFor(args.root)
+  const response = await sendHttp(
     { method: r.method ?? 'GET', url: r.url, headers, bodyText: r.body },
-    jarFor(args.root)
+    jar
   )
+  await saveJar(args.root, jar)
+  return response
 }

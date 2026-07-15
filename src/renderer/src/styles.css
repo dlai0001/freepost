@@ -750,3 +750,44 @@ td .var-input.cell-var { width: 100%; }
   padding: 8px 10px; margin: 8px 0; overflow-x: auto; white-space: pre-wrap;
   word-break: break-all; font-size: 12px;
 }
+
+/* ------------------------------ cookie manager ---------------------------- */
+.cookie-modal { width: 920px; max-width: 95vw; }
+.cookie-toolbar { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+.cookie-toolbar .search-input { flex: 1; }
+.cookie-toolbar .opt-check { white-space: nowrap; color: var(--muted); }
+.cookie-scroll { max-height: 55vh; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; }
+.cookie-table .cell-input { width: 100%; min-width: 60px; }
+.cookie-table .cookie-path { min-width: 40px; }
+.cookie-domain-row td { padding: 6px 4px 4px; cursor: pointer; border-bottom: 1px solid var(--border); }
+.cookie-domain-row:hover td { background: rgba(255, 255, 255, 0.04); }
+.cookie-domain-name { font-weight: 600; margin-left: 2px; }
+.cookie-domain-count { color: var(--muted); font-size: 11px; margin-left: 8px; }
+.cookie-row-error .cell-input { border-color: var(--danger); }
+.cookie-row-error td:first-child { box-shadow: inset 2px 0 0 var(--danger); }
+.cookie-row-warn td:first-child { box-shadow: inset 2px 0 0 var(--warn); }
+.cookie-row-expired .cell-input, .cookie-row-expired .cookie-select { opacity: 0.55; }
+.cookie-expires { display: flex; align-items: center; gap: 6px; }
+.cookie-expires .cell-input { min-width: 150px; }
+.cookie-expired-tag { color: var(--warn); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.4px; }
+.cookie-input-bad { border-color: var(--danger) !important; }
+.cookie-select {
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  font-size: 12px; padding: 4px 6px;
+}
+.cookie-select:focus { outline: none; border-color: var(--blue); }
+.cookie-format-select { display: block; margin-bottom: 8px; }
+.cookie-view-text { min-height: 220px; white-space: pre; }
+.cookie-fmt-badge {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+  color: var(--teal); font-size: 11px; padding: 1px 8px; font-weight: 400;
+}
+.cookie-import-opts { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.cookie-import-opts .modal-label { margin-bottom: 0; }
+.cookie-import-opts .opt-check { color: var(--muted); }
+.cookie-import-domain { flex: 1; }
+.cookie-issue-error { color: var(--danger); }
+.cookie-issue-warn { color: var(--warn); }
+.opt-check + .opt-check { margin-top: 6px; }
+.topbar .btn .fa-icon { margin-right: 4px; }

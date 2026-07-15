@@ -6,6 +6,7 @@ import type {
   AcquiredToken,
   CodegenTarget,
   CodegenTargetInfo,
+  CookieRecord,
   ExecutionReport,
   GqlIntrospectResult,
   HistoryEntry,
@@ -55,6 +56,12 @@ export const IPC = {
   envDelete: 'env:delete', // ({ root, path }) => void
   envRename: 'env:rename', // ({ root, path, newName }) => string (new rel path)
   envDuplicate: 'env:duplicate', // ({ root, path, newName }) => string (new rel path)
+
+  cookieList: 'cookie:list', // (root) => CookieRecord[]
+  cookieSet: 'cookie:set', // (root, cookie) => void (upsert by domain+path+name)
+  cookieDelete: 'cookie:delete', // (root, domain, path, name) => void
+  cookieClear: 'cookie:clear', // (root, scope?) => void
+  cookieSetMany: 'cookie:set-many', // (root, cookies, replace) => void (import; replace clears first)
 
   sessionGet: 'session:get', // () => Record<string,string>
   sessionSet: 'session:set', // (name, value) => void
@@ -185,6 +192,14 @@ export interface FreepostApi {
   deleteEnv(args: { root: string; path: string }): Promise<void>
   renameEnv(args: { root: string; path: string; newName: string }): Promise<string>
   duplicateEnv(args: { root: string; path: string; newName: string }): Promise<string>
+
+  cookieList(root: string): Promise<CookieRecord[]>
+  /** Upsert a cookie by domain+path+name. */
+  cookieSet(root: string, cookie: CookieRecord): Promise<void>
+  cookieDelete(root: string, domain: string, path: string, name: string): Promise<void>
+  cookieClear(root: string, scope?: { domain?: string; sessionOnly?: boolean }): Promise<void>
+  /** Bulk import; `replace` clears the jar first. */
+  cookieSetMany(root: string, cookies: CookieRecord[], replace: boolean): Promise<void>
 
   getSession(): Promise<Record<string, string>>
   setSessionVar(name: string, value: string): Promise<void>

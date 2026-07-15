@@ -20,22 +20,27 @@ files:
   - '!{tsconfig.json,PLAN.md,TEST_PLAN.md}'
 # No auto-update / publish provider: Freepost never phones home, including for
 # update checks. Installers are distributed manually (e.g. GitHub Releases).
+# Artifact names are intentionally version-less so the website can link to
+# stable URLs (github.com/.../releases/latest/download/<name>) that never break
+# between releases. The release tag carries the version.
 win:
   executableName: freepost
   target:
     - nsis
 nsis:
-  artifactName: ${name}-${version}-setup.${ext}
+  artifactName: ${name}-setup.${ext}
   shortcutName: ${productName}
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
 mac:
   category: public.app-category.developer-tools
+  # Universal binary so a single .dmg runs on both Intel and Apple Silicon.
   target:
-    - dmg
+    - target: dmg
+      arch: universal
 dmg:
-  artifactName: ${name}-${version}.${ext}
+  artifactName: ${name}-mac.${ext}
 linux:
   target:
     - AppImage
@@ -43,5 +48,7 @@ linux:
   category: Development
   maintainer: dlaisoft
 appImage:
-  artifactName: ${name}-${version}.${ext}
+  artifactName: ${name}.${ext}
+deb:
+  artifactName: ${name}.${ext}
 npmRebuild: false

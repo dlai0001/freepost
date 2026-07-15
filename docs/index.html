@@ -87,6 +87,36 @@
   .card { padding: 0; overflow: hidden; }
   .card .shot { display: block; width: 100%; height: auto; border-bottom: 1px solid var(--border); background: var(--code-bg); }
   .card-body { padding: 18px 20px 20px; }
+
+  /* ---- downloads ---- */
+  .dl-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px; max-width: 760px; margin: 0 auto;
+  }
+  .dl-btn {
+    display: flex; flex-direction: column; gap: 4px; text-decoration: none;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px 22px; color: var(--text);
+    transition: transform .1s ease, border-color .15s ease;
+  }
+  .dl-btn:hover { transform: translateY(-2px); border-color: var(--accent); }
+  .dl-btn .os { font-size: 1.1rem; font-weight: 600; }
+  .dl-btn .os .ico { margin-right: 10px; }
+  .dl-btn .meta { color: var(--muted); font-size: .88rem; }
+  .dl-btn.recommended { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-dim) inset; }
+  .dl-btn .badge {
+    display: none; align-self: flex-start; margin-top: 6px;
+    background: var(--accent-dim); color: #fff; border-radius: 999px;
+    padding: 2px 10px; font-size: .72rem; font-weight: 600; letter-spacing: .02em;
+  }
+  .dl-btn.recommended .badge { display: inline-block; }
+  .dl-secondary { text-align: center; color: var(--muted); margin-top: 18px; font-size: .92rem; }
+  .dl-secondary a { color: var(--accent); }
+  .dl-note {
+    max-width: 620px; margin: 26px auto 0; text-align: center;
+    color: var(--muted); font-size: .9rem;
+  }
+  .dl-note a { color: var(--accent); }
 </style>
 </head>
 <body>
@@ -100,8 +130,8 @@
     Your collections are plain curl files on disk — runnable, diffable, yours.
   </p>
   <div class="cta-row">
-    <a class="btn btn-primary" href="https://github.com/dlai0001/freepost">View on GitHub</a>
-    <a class="btn btn-ghost" href="help/index.html">Read the docs</a>
+    <a class="btn btn-primary" href="#download">Download</a>
+    <a class="btn btn-ghost" href="https://github.com/dlai0001/freepost">View on GitHub</a>
     <a class="btn btn-donate" href="https://github.com/sponsors/dlai0001">♥ Donate</a>
   </div>
 </header>
@@ -525,9 +555,43 @@
   </div>
 </section>
 
+<section id="download">
+  <div class="wrap">
+    <h2>Download Freepost</h2>
+    <div class="dl-grid">
+      <a class="dl-btn" data-os="mac" href="https://github.com/dlai0001/freepost/releases/latest/download/freepost-mac.dmg">
+        <span class="os"><span class="ico">🍎</span>macOS</span>
+        <span class="meta">Universal .dmg · Intel &amp; Apple Silicon</span>
+        <span class="badge">Recommended for your system</span>
+      </a>
+      <a class="dl-btn" data-os="win" href="https://github.com/dlai0001/freepost/releases/latest/download/freepost-setup.exe">
+        <span class="os"><span class="ico">🪟</span>Windows</span>
+        <span class="meta">Installer .exe · 64-bit</span>
+        <span class="badge">Recommended for your system</span>
+      </a>
+      <a class="dl-btn" data-os="linux" href="https://github.com/dlai0001/freepost/releases/latest/download/freepost.AppImage">
+        <span class="os"><span class="ico">🐧</span>Linux</span>
+        <span class="meta">.AppImage · portable</span>
+        <span class="badge">Recommended for your system</span>
+      </a>
+    </div>
+    <p class="dl-secondary">
+      Always the latest build from <code>main</code>. Debian/Ubuntu users can grab the
+      <a href="https://github.com/dlai0001/freepost/releases/latest/download/freepost.deb">.deb</a> instead.
+      See <a href="https://github.com/dlai0001/freepost/releases">all releases</a> for older versions and checksums.
+    </p>
+    <p class="dl-note">
+      Freepost is open source and unsigned — your OS may warn about an unidentified
+      developer. On macOS, right-click the app and choose <strong>Open</strong>; on Windows,
+      click <strong>More info → Run anyway</strong>.
+      <a href="help/installing.html">Full install &amp; troubleshooting guide →</a>
+    </p>
+  </div>
+</section>
+
 <section>
   <div class="wrap">
-    <h2>Build it yourself</h2>
+    <h2>Prefer to build it yourself?</h2>
     <div class="steps">
       <pre><code><span class="c"># Windows &amp; macOS. Node is the only prerequisite.</span>
 <span class="k">git</span> clone https://github.com/dlai0001/freepost
@@ -569,6 +633,20 @@
     Made for everyone who just wants to send a request.
   </div>
 </footer>
+
+<script>
+  // Highlight and float the download button matching the visitor's OS. Pure
+  // progressive enhancement — every button still works with JS disabled.
+  (function () {
+    var ua = navigator.userAgent;
+    var os = /Mac/i.test(ua) ? 'mac' : /Win/i.test(ua) ? 'win' : /Linux|X11/i.test(ua) ? 'linux' : null;
+    if (!os) return;
+    var btn = document.querySelector('.dl-btn[data-os="' + os + '"]');
+    if (!btn) return;
+    btn.classList.add('recommended');
+    btn.parentNode.insertBefore(btn, btn.parentNode.firstChild);
+  })();
+</script>
 
 </body>
 </html>

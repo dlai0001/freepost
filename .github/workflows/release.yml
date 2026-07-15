@@ -1,0 +1,83 @@
+name: Release
+
+# Build installers for macOS, Windows, and Linux and publish them to a GitHub
+# Release. Fires only when a version tag is pushed (e.g. `git tag v0.1.0 && git
+# push origin v0.1.0`) — merging to main never ships to users on its own.
+#
+# Binaries are built with `--publish never`: electron-builder only produces the
+# artifacts, it does not write auto-update metadata or phone home. The final
+# `publish` job attaches everything to one Release using the built-in gh CLI.
+on:
+  push:
+    tags:
+      - 'v*'
+  # Manual dry-run: build all three platforms without creating a Release.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            build: build:mac
+          - os: windows-latest
+            build: build:win
+          - os: ubuntu-latest
+            build: build:linux
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build installer
+        run: npm run ${{ matrix.build }} -- --publish never
+      # Only the distributable installers — skip the unpacked app dirs,
+      # blockmap, and builder metadata.
+      - name: Collect installers
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          cd dist
+          shopt -s nullglob
+          for f in *.dmg *.exe *.AppImage *.deb; do
+            cp "$f" ../artifacts/
+          done
+          ls -la ../artifacts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.os }}
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-latest
+    # Skip the Release step on manual dry-runs (no tag to release against).
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          echo "Publishing ${GITHUB_REF_NAME} with:"
+          ls -la artifacts
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "Freepost ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            artifacts/*

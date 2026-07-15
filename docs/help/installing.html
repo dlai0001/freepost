@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Installing — Freepost Help</title>
+<meta name="description" content="Download and install Freepost on macOS, Windows, and Linux. How to open the unsigned app past Gatekeeper and SmartScreen, and how to build from source instead.">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="topbar-logo" href="../index.html">$ freepost</a>
+    <span class="topbar-crumb">Help / Installing</span>
+    <div class="topbar-spacer"></div>
+    <a class="topbar-link" href="../index.html">Website</a>
+    <a class="topbar-link" href="https://github.com/dlai0001/freepost">GitHub</a>
+  </div>
+</header>
+
+<div class="docs-shell">
+  <nav class="docs-nav">
+    <div class="docs-nav-title">Guides</div>
+    <a href="./index.html">Overview</a>
+    <a class="active" href="./installing.html">Installing</a>
+    <a href="./creating-requests.html">Creating requests</a>
+    <a href="./mcp.html">MCP servers</a>
+    <a href="./importing.html">Importing</a>
+    <a href="./organizing.html">Saving &amp; organizing</a>
+    <a href="./workflows.html">Workflows</a>
+    <a href="./authentication.html">Authentication</a>
+    <a href="./mock-server.html">Mock server</a>
+    <a href="./cli.html">Command line</a>
+    <a href="./scripting.html">Scripting (pm.*)</a>
+  </nav>
+
+  <article class="docs-article">
+    <h1>Installing Freepost</h1>
+    <p class="lede">
+      Download the installer for your platform, or build from source. Every release is
+      published straight from <code>main</code> by GitHub Actions — the same source you can
+      audit and build yourself.
+    </p>
+
+    <h2>Download</h2>
+    <table>
+      <thead><tr><th>Platform</th><th>File</th></tr></thead>
+      <tbody>
+        <tr><td>macOS (Intel &amp; Apple Silicon)</td><td><a href="https://github.com/dlai0001/freepost/releases/latest/download/freepost-mac.dmg">freepost-mac.dmg</a></td></tr>
+        <tr><td>Windows (64-bit)</td><td><a href="https://github.com/dlai0001/freepost/releases/latest/download/freepost-setup.exe">freepost-setup.exe</a></td></tr>
+        <tr><td>Linux (portable)</td><td><a href="https://github.com/dlai0001/freepost/releases/latest/download/freepost.AppImage">freepost.AppImage</a></td></tr>
+        <tr><td>Linux (Debian/Ubuntu)</td><td><a href="https://github.com/dlai0001/freepost/releases/latest/download/freepost.deb">freepost.deb</a></td></tr>
+      </tbody>
+    </table>
+    <p>
+      These links always resolve to the newest release. Browse
+      <a href="https://github.com/dlai0001/freepost/releases">all releases</a> for older versions.
+    </p>
+
+    <h2>Opening an unsigned build</h2>
+    <p>
+      Freepost's binaries are <strong>not code-signed</strong> — buying signing certificates
+      would mean either a paid tier or a corporate identity, and there will never be either.
+      The source is public and the builds are reproducible, so you can trust the app the same
+      way you'd trust any dependency: by reading it. Because it's unsigned, your OS will show a
+      one-time warning the first time you open it.
+    </p>
+
+    <h3>macOS</h3>
+    <p>
+      Open the <code>.dmg</code> and drag Freepost to Applications. The first time you launch it,
+      macOS Gatekeeper says the app "cannot be opened because the developer cannot be verified."
+    </p>
+    <ol>
+      <li>Right-click (or Control-click) the Freepost app and choose <strong>Open</strong>.</li>
+      <li>Click <strong>Open</strong> in the dialog that appears.</li>
+    </ol>
+    <p>
+      You only need to do this once. If the app is reported as "damaged," clear the quarantine
+      flag in Terminal:
+    </p>
+    <pre><code>xattr -dr com.apple.quarantine /Applications/Freepost.app</code></pre>
+
+    <h3>Windows</h3>
+    <p>
+      Run <code>freepost-setup.exe</code>. Windows SmartScreen may show a blue
+      "Windows protected your PC" screen for an unrecognized publisher.
+    </p>
+    <ol>
+      <li>Click <strong>More info</strong>.</li>
+      <li>Click <strong>Run anyway</strong>.</li>
+    </ol>
+
+    <h3>Linux</h3>
+    <p>The AppImage is self-contained — make it executable and run it:</p>
+    <pre><code>chmod +x freepost.AppImage
+./freepost.AppImage</code></pre>
+    <p>Or install the Debian package:</p>
+    <pre><code>sudo dpkg -i freepost.deb</code></pre>
+
+    <h2>Build from source instead</h2>
+    <p>
+      If you'd rather not run a downloaded binary at all, build your own from a checkout
+      (Node v20+):
+    </p>
+    <pre><code>git clone https://github.com/dlai0001/freepost
+cd freepost
+npm install
+npm start</code></pre>
+    <p>
+      That runs the desktop app in dev mode. To produce an installer for your own platform, use
+      <code>npm run build:mac</code>, <code>build:win</code>, or <code>build:linux</code>.
+    </p>
+
+    <footer class="docs-footer">
+      Next: <a href="./creating-requests.html">Create your first request →</a>
+    </footer>
+  </article>
+</div>
+
+</body>
+</html>

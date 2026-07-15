@@ -38,6 +38,14 @@ const api = {
   renameEnv: (args: unknown) => ipcRenderer.invoke(IPC.envRename, args),
   duplicateEnv: (args: unknown) => ipcRenderer.invoke(IPC.envDuplicate, args),
 
+  cookieList: (root: string) => ipcRenderer.invoke(IPC.cookieList, root),
+  cookieSet: (root: string, cookie: unknown) => ipcRenderer.invoke(IPC.cookieSet, root, cookie),
+  cookieDelete: (root: string, domain: string, path: string, name: string) =>
+    ipcRenderer.invoke(IPC.cookieDelete, root, domain, path, name),
+  cookieClear: (root: string, scope?: unknown) => ipcRenderer.invoke(IPC.cookieClear, root, scope),
+  cookieSetMany: (root: string, cookies: unknown, replace: boolean) =>
+    ipcRenderer.invoke(IPC.cookieSetMany, root, cookies, replace),
+
   getSession: () => ipcRenderer.invoke(IPC.sessionGet),
   setSessionVar: (n: string, v: string) => ipcRenderer.invoke(IPC.sessionSet, n, v),
   clearSession: () => ipcRenderer.invoke(IPC.sessionClear),

@@ -1,4 +1,5 @@
 import type { JSX } from 'react'
+import { CookieIcon } from './Icon'
 interface Props {
   root: string | null
   notice: string | null
@@ -6,6 +7,7 @@ interface Props {
   onImport: () => void
   onHistory: () => void
   onMock: () => void
+  onCookies: () => void
 }
 
 export default function TopBar(props: Props): JSX.Element {
@@ -29,6 +31,9 @@ export default function TopBar(props: Props): JSX.Element {
       </button>
       <button className="btn" onClick={props.onMock} disabled={props.root === null}>
         Mock Server
+      </button>
+      <button className="btn" onClick={props.onCookies} disabled={props.root === null}>
+        <CookieIcon /> Cookies
       </button>
       <button className="btn" onClick={props.onImport} disabled={props.root === null}>
         Import

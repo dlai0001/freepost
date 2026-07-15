@@ -10,6 +10,7 @@ import { IPC } from '../shared/ipc'
 import type {
   AcquiredToken,
   CodegenTarget,
+  CookieRecord,
   GqlIntrospectResult,
   Header,
   HistoryEntry,
@@ -75,6 +76,7 @@ import { resolveVariables, substitute, substituteModel } from '../core/vars'
 import { ensureFreepostDir, listFiles, scanCollection } from './collection'
 import { exampleFilePath, readExamples } from './examples'
 import { executeRequest, jarFor, readEnvFile } from './execute'
+import { saveJar } from './cookie-store'
 import { getLastRoot, setLastRoot } from './settings'
 import { trackedSecrets } from './security'
 
@@ -484,6 +486,38 @@ export function registerIpcHandlers(): void {
   )
   ipcMain.handle(IPC.envDuplicate, (_e, args: { root: string; path: string; newName: string }) =>
     duplicateEnv(args)
+  )
+
+  ipcMain.handle(IPC.cookieList, (_e, root: string) => jarFor(root).list())
+  ipcMain.handle(IPC.cookieSet, async (_e, root: string, cookie: CookieRecord) => {
+    const jar = jarFor(root)
+    jar.setCookie(cookie)
+    await saveJar(root, jar)
+  })
+  ipcMain.handle(
+    IPC.cookieDelete,
+    async (_e, root: string, domain: string, path: string, name: string) => {
+      const jar = jarFor(root)
+      jar.deleteCookie(domain, path, name)
+      await saveJar(root, jar)
+    }
+  )
+  ipcMain.handle(
+    IPC.cookieClear,
+    async (_e, root: string, scope?: { domain?: string; sessionOnly?: boolean }) => {
+      const jar = jarFor(root)
+      jar.clear(scope)
+      await saveJar(root, jar)
+    }
+  )
+  ipcMain.handle(
+    IPC.cookieSetMany,
+    async (_e, root: string, cookies: CookieRecord[], replace: boolean) => {
+      const jar = jarFor(root)
+      if (replace) jar.clear()
+      for (const c of cookies) jar.setCookie(c)
+      await saveJar(root, jar)
+    }
   )
 
   ipcMain.handle(IPC.sessionGet, () => Object.fromEntries(session))
@@ -1204,6 +1238,7 @@ export function registerIpcHandlers(): void {
           },
           jarFor(args.root)
         )
+        await saveJar(args.root, jarFor(args.root))
         const schema = parseIntrospection(res.bodyText)
         if (schema === null) return { ok: false, error: 'Introspection failed or not a GraphQL endpoint' }
         return { ok: true, schema, introspection: extractIntrospectionData(res.bodyText) ?? undefined }

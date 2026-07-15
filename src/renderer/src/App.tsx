@@ -19,6 +19,7 @@ import ImportModal from './components/ImportModal'
 import HistoryPanel from './components/HistoryPanel'
 import MockServerModal from './components/MockServerModal'
 import EnvironmentManager from './components/EnvironmentManager'
+import CookieManager from './components/CookieManager'
 import MoveModal from './components/MoveModal'
 import type { NewItemKind, TreeAction } from './components/Tree'
 
@@ -26,6 +27,7 @@ type ModalSpec =
   | { kind: 'import' }
   | { kind: 'history' }
   | { kind: 'mock' }
+  | { kind: 'cookies' }
   | { kind: 'env-manager' }
   | { kind: 'new-item'; folder: string; itemKind: NewItemKind }
   | { kind: 'new-folder'; parent: string }
@@ -389,6 +391,7 @@ function Shell(): JSX.Element {
         onImport={() => setModal({ kind: 'import' })}
         onHistory={() => setModal({ kind: 'history' })}
         onMock={() => setModal({ kind: 'mock' })}
+        onCookies={() => setModal({ kind: 'cookies' })}
       />
       <div className="app-body">
         <Sidebar
@@ -518,6 +521,9 @@ function Shell(): JSX.Element {
       )}
       {modal?.kind === 'mock' && state.root !== null && (
         <MockServerModal root={state.root} onCancel={() => setModal(null)} />
+      )}
+      {modal?.kind === 'cookies' && state.root !== null && (
+        <CookieManager root={state.root} onClose={() => setModal(null)} />
       )}
       {modal?.kind === 'env-manager' && state.root !== null && (
         <EnvironmentManager

@@ -142,6 +142,8 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
   // Per-request transport options (curl --insecure / -k, --cacert).
   const [insecure, setInsecure] = useState(false)
   const [caCert, setCaCert] = useState('')
+  // Cookie jar opt-out (frontmatter cookies: false); absent = enabled.
+  const [sendCookies, setSendCookies] = useState(true)
   const [formRows, setFormRows] = useState<FormRow[]>([])
   const [gqlQuery, setGqlQuery] = useState('')
   const [gqlVars, setGqlVars] = useState('')
@@ -282,6 +284,7 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
     setBodyMode(fm.graphql !== undefined ? 'graphql' : fm.form !== undefined ? 'multipart' : 'raw')
     setInsecure(http?.options.insecure === true)
     setCaCert(http?.options.caCert ?? '')
+    setSendCookies(fm.cookies !== false)
 
     // Auth: frontmatter.auth => oauth2; --user => basic; Bearer header => bearer.
     const user = http?.options.user
@@ -398,6 +401,10 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
     if (testScript.trim() !== '') scripts.test = testScript
     if (Object.keys(scripts).length > 0) fm.scripts = scripts
     else delete fm.scripts
+
+    // Cookie jar opt-out: only `cookies: false` is persisted; enabled is the default.
+    if (!sendCookies) fm.cookies = false
+    else delete fm.cookies
 
     // Variable metadata (preserve descriptions; secret comes from the table).
     const varMeta: Record<string, VariableMeta | null> = {}
@@ -1715,6 +1722,20 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
                     }}
                   />
                   Skip HTTPS validation (do not verify the server certificate)
+                </label>
+                <label
+                  className="opt-check"
+                  title="Uncheck to keep this request out of the collection cookie jar"
+                >
+                  <input
+                    type="checkbox"
+                    checked={sendCookies}
+                    onChange={(e) => {
+                      setSendCookies(e.target.checked)
+                      touch()
+                    }}
+                  />
+                  Send and store cookies
                 </label>
                 <label className="field-label">CA certificate</label>
                 <div className="opt-file">

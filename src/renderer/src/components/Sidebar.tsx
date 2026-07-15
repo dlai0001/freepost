@@ -6,6 +6,7 @@ import { displayName } from '../util'
 import Tree, { type NewItemKind, type TreeAction } from './Tree'
 import SearchResults from './SearchResults'
 import SessionPanel from './SessionPanel'
+import { GearIcon } from './Icon'
 
 interface Props {
   root: string | null
@@ -115,7 +116,7 @@ export default function Sidebar(props: Props): JSX.Element {
           disabled={root === null}
           onClick={props.onManageEnvs}
         >
-          ⚙
+          <GearIcon />
         </button>
         <button
           className={'btn' + (props.sessionOpen ? ' btn-toggled' : '')}

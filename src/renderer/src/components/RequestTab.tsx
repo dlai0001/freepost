@@ -28,6 +28,7 @@ import GqlSchemaExplorer from './GqlSchemaExplorer'
 import StreamLog, { streamEntry, type StreamEntry } from './StreamLog'
 import ConfirmModal from './ConfirmModal'
 import VarInput from './VarInput'
+import { FolderIcon } from './Icon'
 import type { VarLookup } from './varHighlight'
 import { makeVarLookup, useVarSources, type VarDecl } from './varContext'
 import type { TabHandle } from '../state'
@@ -1784,7 +1785,7 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
                                 className="file-hint"
                                 title="Right-click the value to browse for a file"
                               >
-                                📁
+                                <FolderIcon />
                               </span>
                             )}
                           </div>

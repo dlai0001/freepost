@@ -2,6 +2,7 @@ import type { JSX } from 'react'
 import { useCallback, useEffect, useState } from 'react'
 import { errMsg, fp } from '../api'
 import { looksLikeFilePathKey } from '../util'
+import { FolderIcon } from './Icon'
 
 /** Inspect/edit the runtime session variable store (never written to disk). */
 export default function SessionPanel(): JSX.Element {
@@ -94,7 +95,7 @@ export default function SessionPanel(): JSX.Element {
           />
           {looksLikeFilePathKey(name) && (
             <span className="file-hint" title="Right-click the value to browse for a file">
-              📁
+              <FolderIcon />
             </span>
           )}
         </div>
@@ -121,7 +122,7 @@ export default function SessionPanel(): JSX.Element {
         />
         {looksLikeFilePathKey(newName) && (
           <span className="file-hint" title="Right-click the value to browse for a file">
-            📁
+            <FolderIcon />
           </span>
         )}
         <button className="btn btn-small" onClick={() => void add()} disabled={newName.trim() === ''}>

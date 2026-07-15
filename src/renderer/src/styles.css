@@ -81,6 +81,9 @@ button { cursor: pointer; }
 }
 .icon-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.08); }
 
+/* Self-hosted Font Awesome Free (solid) glyphs — see components/Icon.tsx. */
+.fa-icon { width: 1em; height: 1em; fill: currentColor; vertical-align: -0.125em; }
+
 /* --------------------------------- sidebar ------------------------------- */
 .sidebar {
   width: 280px; flex-shrink: 0;

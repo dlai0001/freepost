@@ -2,6 +2,7 @@ import type { JSX } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { errMsg, fp } from '../api'
 import { displayName, joinPath, looksLikeFilePathKey, nextId } from '../util'
+import { EyeIcon, EyeSlashIcon, FolderIcon } from './Icon'
 
 interface Props {
   root: string
@@ -600,7 +601,7 @@ export default function EnvironmentManager(props: Props): JSX.Element {
                         />
                         {looksLikeFilePathKey(r.name) && (
                           <span className="file-hint" title="Right-click the value to browse for a file">
-                            📁
+                            <FolderIcon />
                           </span>
                         )}
                         <button
@@ -608,7 +609,7 @@ export default function EnvironmentManager(props: Props): JSX.Element {
                           title={revealed.has(r.id) ? 'Hide value' : 'Reveal value'}
                           onClick={() => toggleReveal(r.id)}
                         >
-                          {revealed.has(r.id) ? '🙈' : '👁'}
+                          {revealed.has(r.id) ? <EyeSlashIcon /> : <EyeIcon />}
                         </button>
                         <button
                           className="icon-btn"

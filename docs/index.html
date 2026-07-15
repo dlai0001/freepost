@@ -56,6 +56,10 @@
   }
   .card h3 { font-size: 1.05rem; margin-bottom: 8px; }
   .card h3 .ico { margin-right: 8px; }
+  /* ---- inline Font Awesome Free icons (self-hosted SVG paths, no CDN) ---- */
+  .ico { display: inline-flex; vertical-align: -0.14em; }
+  .ico svg { width: 1em; height: 1em; fill: currentColor; }
+  .btn .ico { margin-right: 7px; }
   .card p { color: var(--muted); font-size: .95rem; }
   pre {
     background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px;
@@ -134,7 +138,7 @@
   <div class="cta-row">
     <a class="btn btn-primary" href="#download">Download</a>
     <a class="btn btn-ghost" href="https://github.com/dlai0001/freepost">View on GitHub</a>
-    <a class="btn btn-donate" href="https://github.com/sponsors/dlai0001">♥ Donate</a>
+    <a class="btn btn-donate" href="https://github.com/sponsors/dlai0001"><span class="ico"><svg viewBox="0 0 512 512" aria-hidden="true"><path d="M47.6 300.4L228.3 469.1c7.5 7 17.4 10.9 27.7 10.9s20.2-3.9 27.7-10.9L464.4 300.4c30.4-28.3 47.6-68 47.6-109.5v-5.8c0-69.9-50.5-129.5-119.4-141C347 36.5 300.6 51.4 268 84L256 96 244 84c-32.6-32.6-79-47.5-124.6-39.9C50.5 55.6 0 115.2 0 185.1v5.8c0 41.5 17.2 81.2 47.6 109.5z"/></svg></span>Donate</a>
   </div>
 </header>
 
@@ -298,7 +302,7 @@
           <text x="176" y="172" font-family="ui-monospace, Menlo, monospace" font-size="12" fill="#8b949e">outbound connections: <tspan fill="#3fb950" font-weight="700">0</tspan></text>
         </svg>
         <div class="card-body">
-          <h3><span class="ico">🔌</span>Truly offline</h3>
+          <h3><span class="ico"><svg viewBox="0 0 384 512" aria-hidden="true"><path d="M96 0C78.3 0 64 14.3 64 32l0 96 64 0 0-96c0-17.7-14.3-32-32-32zM288 0c-17.7 0-32 14.3-32 32l0 96 64 0 0-96c0-17.7-14.3-32-32-32zM32 160c-17.7 0-32 14.3-32 32s14.3 32 32 32l0 32c0 77.4 55 142 128 156.8l0 67.2c0 17.7 14.3 32 32 32s32-14.3 32-32l0-67.2C297 398 352 333.4 352 256l0-32c17.7 0 32-14.3 32-32s-14.3-32-32-32L32 160z"/></svg></span>Truly offline</h3>
           <p>No registration, no login, no sync, no telemetry, no update pings. The only module that can open a socket is the request engine — and CI enforces it.</p>
         </div>
       </div>
@@ -316,7 +320,7 @@
           <text x="37" y="177" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#58a6ff">git: commit &#183; diff &#183; review in a PR</text>
         </svg>
         <div class="card-body">
-          <h3><span class="ico">📁</span>Files, anywhere</h3>
+          <h3><span class="ico"><svg viewBox="0 0 512 512" aria-hidden="true"><path d="M64 480H448c35.3 0 64-28.7 64-64V160c0-35.3-28.7-64-64-64H288c-10.1 0-19.6-4.7-25.6-12.8L243.2 57.6C231.1 41.5 212.1 32 192 32H64C28.7 32 0 60.7 0 96V416c0 35.3 28.7 64 64 64z"/></svg></span>Files, anywhere</h3>
           <p>Collections are folders you choose. Filenames are request names. Version them with git, review them in pull requests, carry them on a USB stick.</p>
         </div>
       </div>
@@ -335,7 +339,7 @@
           </g>
         </svg>
         <div class="card-body">
-          <h3><span class="ico">🧪</span>Postman-compatible scripting</h3>
+          <h3><span class="ico"><svg viewBox="0 0 448 512" aria-hidden="true"><path d="M288 0L160 0 128 0C110.3 0 96 14.3 96 32s14.3 32 32 32l0 132.8c0 11.8-3.3 23.5-9.5 33.5L10.3 406.2C3.6 417.2 0 429.7 0 442.6C0 480.9 31.1 512 69.4 512l309.2 0c38.3 0 69.4-31.1 69.4-69.4c0-12.8-3.6-25.4-10.3-36.4L329.5 230.4c-6.2-10.1-9.5-21.7-9.5-33.5L320 64c17.7 0 32-14.3 32-32s-14.3-32-32-32L288 0zM192 196.8L192 64l64 0 0 132.8c0 23.7 6.6 46.9 19 67.1L309.5 320l-171 0L173 263.9c12.4-20.2 19-43.4 19-67.1z"/></svg></span>Postman-compatible scripting</h3>
           <p>Pre-request and test scripts with the pm.* API and Chai assertions. Import your existing Postman collections and keep your tests.</p>
         </div>
       </div>
@@ -369,7 +373,7 @@
           <text x="24" y="190" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#8b949e">2 of 3 selected &#183; importing into <tspan fill="#58a6ff">orders/</tspan></text>
         </svg>
         <div class="card-body">
-          <h3><span class="ico">📥</span>Import OpenAPI &amp; Swagger</h3>
+          <h3><span class="ico"><svg viewBox="0 0 512 512" aria-hidden="true"><path d="M128 64c0-35.3 28.7-64 64-64L352 0l0 128c0 17.7 14.3 32 32 32l128 0 0 288c0 35.3-28.7 64-64 64l-256 0c-35.3 0-64-28.7-64-64l0-112 174.1 0-39 39c-9.4 9.4-9.4 24.6 0 33.9s24.6 9.4 33.9 0l80-80c9.4-9.4 9.4-24.6 0-33.9l-80-80c-9.4-9.4-24.6-9.4-33.9 0s-9.4 24.6 0 33.9l39 39L128 288l0-224zm0 224l0 48L24 336c-13.3 0-24-10.7-24-24s10.7-24 24-24l104 0zM512 128l-128 0L384 0 512 128z"/></svg></span>Import OpenAPI &amp; Swagger</h3>
           <p>Point Freepost at any OpenAPI/Swagger spec URL, preview every endpoint, and pick exactly which ones to bring in. Each becomes a runnable curl file with sensible placeholder values already filled in.</p>
         </div>
       </div>
@@ -394,7 +398,7 @@
           <text x="24" y="186" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#8b949e">PKCE &#183; cached &amp; auto-refreshed under <tspan fill="#58a6ff">.freepost/</tspan></text>
         </svg>
         <div class="card-body">
-          <h3><span class="ico">🔐</span>OAuth2, including interactive sign-in</h3>
+          <h3><span class="ico"><svg viewBox="0 0 448 512" aria-hidden="true"><path d="M144 144l0 48 160 0 0-48c0-44.2-35.8-80-80-80s-80 35.8-80 80zM80 192l0-48C80 64.5 144.5 0 224 0s144 64.5 144 144l0 48 16 0c35.3 0 64 28.7 64 64l0 192c0 35.3-28.7 64-64 64L64 512c-35.3 0-64-28.7-64-64L0 256c0-35.3 28.7-64 64-64l16 0z"/></svg></span>OAuth2, including interactive sign-in</h3>
           <p>client_credentials, password, and the browser-based authorization_code flow — PKCE by default, the token cached under <code>.freepost/</code> and refreshed automatically. The sign-in opens your system browser and catches the redirect on a local loopback port.</p>
         </div>
       </div>
@@ -418,7 +422,7 @@
           </g>
         </svg>
         <div class="card-body">
-          <h3><span class="ico">🧩</span>Mock server from your examples</h3>
+          <h3><span class="ico"><svg viewBox="0 0 512 512" aria-hidden="true"><path d="M192 104.8c0-9.2-5.8-17.3-13.2-22.8C167.2 73.3 160 61.3 160 48c0-26.5 28.7-48 64-48s64 21.5 64 48c0 13.3-7.2 25.3-18.8 34c-7.4 5.5-13.2 13.6-13.2 22.8c0 12.8 10.4 23.2 23.2 23.2l56.8 0c26.5 0 48 21.5 48 48l0 56.8c0 12.8 10.4 23.2 23.2 23.2c9.2 0 17.3-5.8 22.8-13.2c8.7-11.6 20.7-18.8 34-18.8c26.5 0 48 28.7 48 64s-21.5 64-48 64c-13.3 0-25.3-7.2-34-18.8c-5.5-7.4-13.6-13.2-22.8-13.2c-12.8 0-23.2 10.4-23.2 23.2L384 464c0 26.5-21.5 48-48 48l-56.8 0c-12.8 0-23.2-10.4-23.2-23.2c0-9.2 5.8-17.3 13.2-22.8c11.6-8.7 18.8-20.7 18.8-34c0-26.5-28.7-48-64-48s-64 21.5-64 48c0 13.3 7.2 25.3 18.8 34c7.4 5.5 13.2 13.6 13.2 22.8c0 12.8-10.4 23.2-23.2 23.2L48 512c-26.5 0-48-21.5-48-48L0 343.2C0 330.4 10.4 320 23.2 320c9.2 0 17.3 5.8 22.8 13.2C54.7 344.8 66.7 352 80 352c26.5 0 48-28.7 48-64s-21.5-64-48-64c-13.3 0-25.3 7.2-34 18.8C40.5 250.2 32.4 256 23.2 256C10.4 256 0 245.6 0 232.8L0 176c0-26.5 21.5-48 48-48l120.8 0c12.8 0 23.2-10.4 23.2-23.2z"/></svg></span>Mock server from your examples</h3>
           <p>Serve your saved response examples over a local HTTP port — no real backend needed. Mark an example active, or force one with a query param. Unmatched paths return 404 and never proxy out, so it stays fully offline. Runs from the app or <code>freepost mock</code> in CI.</p>
         </div>
       </div>
@@ -440,7 +444,7 @@
           <text x="338" y="142" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">gRPC</text>
         </svg>
         <div class="card-body">
-          <h3><span class="ico">🔌</span>gRPC, the curl way</h3>
+          <h3><span class="ico"><svg viewBox="0 0 384 512" aria-hidden="true"><path d="M96 0C78.3 0 64 14.3 64 32l0 96 64 0 0-96c0-17.7-14.3-32-32-32zM288 0c-17.7 0-32 14.3-32 32l0 96 64 0 0-96c0-17.7-14.3-32-32-32zM32 160c-17.7 0-32 14.3-32 32s14.3 32 32 32l0 32c0 77.4 55 142 128 156.8l0 67.2c0 17.7 14.3 32 32 32s32-14.3 32-32l0-67.2C297 398 352 333.4 352 256l0-32c17.7 0 32-14.3 32-32s-14.3-32-32-32L32 160z"/></svg></span>gRPC, the curl way</h3>
           <p>Call unary and server-streaming gRPC methods with a grpcurl-style <code>.grpc</code> file. Bring your <code>.proto</code> files, edit the request as JSON, and read the reply (or a live stream) — schema stays local, so it works fully offline.</p>
         </div>
       </div>
@@ -462,7 +466,7 @@
           <path d="M330 76 C 330 110, 120 110, 60 128" stroke="#3fb950" stroke-width="1.2" fill="none" stroke-dasharray="3 3"/>
         </svg>
         <div class="card-body">
-          <h3><span class="ico">📡</span>MQTT publish &amp; subscribe</h3>
+          <h3><span class="ico"><svg viewBox="0 0 512 512" aria-hidden="true"><path d="M192 32c0-17.7 14.3-32 32-32C383.1 0 512 128.9 512 288c0 17.7-14.3 32-32 32s-32-14.3-32-32C448 164.3 347.7 64 224 64c-17.7 0-32-14.3-32-32zM60.6 220.6L164.7 324.7l28.4-28.4c-.7-2.6-1.1-5.4-1.1-8.3c0-17.7 14.3-32 32-32s32 14.3 32 32s-14.3 32-32 32c-2.9 0-5.6-.4-8.3-1.1l-28.4 28.4L291.4 451.4c14.5 14.5 11.8 38.8-7.3 46.3C260.5 506.9 234.9 512 208 512C93.1 512 0 418.9 0 304c0-26.9 5.1-52.5 14.4-76.1c7.5-19 31.8-21.8 46.3-7.3zM224 96c106 0 192 86 192 192c0 17.7-14.3 32-32 32s-32-14.3-32-32c0-70.7-57.3-128-128-128c-17.7 0-32-14.3-32-32s14.3-32 32-32z"/></svg></span>MQTT publish &amp; subscribe</h3>
           <p>Talk to MQTT brokers with mosquitto-style <code>.mqtt</code> files. Publish a payload with QoS and retain, or subscribe to a topic (wildcards included) and watch messages stream in live. TLS, auth, and <code>${VAR}</code> all supported.</p>
         </div>
       </div>
@@ -485,7 +489,7 @@
           <text x="37" y="179" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#58a6ff">freepost mcp check &#183; fails CI on schema drift</text>
         </svg>
         <div class="card-body">
-          <h3><span class="ico">🤖</span>MCP servers, testable</h3>
+          <h3><span class="ico"><svg viewBox="0 0 640 512" aria-hidden="true"><path d="M320 0c17.7 0 32 14.3 32 32l0 64 120 0c39.8 0 72 32.2 72 72l0 272c0 39.8-32.2 72-72 72l-304 0c-39.8 0-72-32.2-72-72l0-272c0-39.8 32.2-72 72-72l120 0 0-64c0-17.7 14.3-32 32-32zM208 384c-8.8 0-16 7.2-16 16s7.2 16 16 16l32 0c8.8 0 16-7.2 16-16s-7.2-16-16-16l-32 0zm96 0c-8.8 0-16 7.2-16 16s7.2 16 16 16l32 0c8.8 0 16-7.2 16-16s-7.2-16-16-16l-32 0zm96 0c-8.8 0-16 7.2-16 16s7.2 16 16 16l32 0c8.8 0 16-7.2 16-16s-7.2-16-16-16l-32 0zM264 256a40 40 0 1 0 -80 0 40 40 0 1 0 80 0zm152 40a40 40 0 1 0 0-80 40 40 0 1 0 0 80zM48 224l16 0 0 192-16 0c-26.5 0-48-21.5-48-48l0-96c0-26.5 21.5-48 48-48zm544 0c26.5 0 48 21.5 48 48l0 96c0 26.5-21.5 48-48 48l-16 0 0-192 16 0z"/></svg></span>MCP servers, testable</h3>
           <p>Call an MCP server's tools, resources, and prompts over stdio or Streamable HTTP from a <code>.mcp</code> file — a real MCP Inspector invocation. Then assert on the result with <code>pm.*</code> tests and run them in CI, which no other MCP client does. <code>freepost mcp check</code> turns silent tool-schema drift into a failing build, and a stdio server never spawns until you've seen the exact command and approved it.</p>
         </div>
       </div>
@@ -502,7 +506,7 @@
           <text x="24" y="183" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#8b949e">4 steps &#183; <tspan fill="#3fb950">3 passed</tspan> &#183; <tspan fill="#d29922">1 expected-fail</tspan></text>
         </svg>
         <div class="card-body">
-          <h3><span class="ico">🔀</span>Workflows</h3>
+          <h3><span class="ico"><svg viewBox="0 0 512 512" aria-hidden="true"><path d="M403.8 34.4c12-5 25.7-2.2 34.9 6.9l64 64c6 6 9.4 14.1 9.4 22.6s-3.4 16.6-9.4 22.6l-64 64c-9.2 9.2-22.9 11.9-34.9 6.9s-19.8-16.6-19.8-29.6l0-32-32 0c-10.1 0-19.6 4.7-25.6 12.8L284 229.3 244 176l31.2-41.6C293.3 110.2 321.8 96 352 96l32 0 0-32c0-12.9 7.8-24.6 19.8-29.6zM164 282.7L204 336l-31.2 41.6C154.7 401.8 126.2 416 96 416l-64 0c-17.7 0-32-14.3-32-32s14.3-32 32-32l64 0c10.1 0 19.6-4.7 25.6-12.8L164 282.7zm274.6 188c-9.2 9.2-22.9 11.9-34.9 6.9s-19.8-16.6-19.8-29.6l0-32-32 0c-30.2 0-58.7-14.2-76.8-38.4L121.6 172.8c-6-8.1-15.5-12.8-25.6-12.8l-64 0c-17.7 0-32-14.3-32-32s14.3-32 32-32l64 0c30.2 0 58.7 14.2 76.8 38.4L326.4 339.2c6 8.1 15.5 12.8 25.6 12.8l32 0 0-32c0-12.9 7.8-24.6 19.8-29.6s25.7-2.2 34.9 6.9l64 64c6 6 9.4 14.1 9.4 22.6s-3.4 16.6-9.4 22.6l-64 64z"/></svg></span>Workflows</h3>
           <p>Chain requests into ordered runs. Mark steps that are expected to fail. Capture a token in step one, use it in step three.</p>
         </div>
       </div>
@@ -526,7 +530,7 @@
           <text x="103" y="171" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" fill="#58a6ff" text-anchor="middle">users</text>
         </svg>
         <div class="card-body">
-          <h3><span class="ico">🔍</span>Search &amp; labels</h3>
+          <h3><span class="ico"><svg viewBox="0 0 512 512" aria-hidden="true"><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352a144 144 0 1 0 0-288 144 144 0 1 0 0 288z"/></svg></span>Search &amp; labels</h3>
           <p>Label requests in frontmatter and find anything instantly — by name, label, description, URL, or method.</p>
         </div>
       </div>
@@ -549,7 +553,7 @@
           </g>
         </svg>
         <div class="card-body">
-          <h3><span class="ico">🌐</span>REST, GraphQL, WebSocket</h3>
+          <h3><span class="ico"><svg viewBox="0 0 512 512" aria-hidden="true"><path d="M352 256c0 22.2-1.2 43.6-3.3 64l-185.3 0c-2.2-20.4-3.3-41.8-3.3-64s1.2-43.6 3.3-64l185.3 0c2.2 20.4 3.3 41.8 3.3 64zm28.8-64l123.1 0c5.3 20.5 8.1 41.9 8.1 64s-2.8 43.5-8.1 64l-123.1 0c2.1-20.6 3.2-42 3.2-64s-1.1-43.4-3.2-64zm112.6-32l-116.7 0c-10-63.9-29.8-117.4-55.3-151.6c78.3 20.7 142 77.5 171.9 151.6zm-149.1 0l-176.6 0c6.1-36.4 15.5-68.6 27-94.7c10.5-23.6 22.2-40.7 33.5-51.5C239.4 3.2 248.7 0 256 0s16.6 3.2 27.8 13.8c11.3 10.8 23 27.9 33.5 51.5c11.6 26 20.9 58.2 27 94.7zm-209 0L18.6 160C48.6 85.9 112.2 29.1 190.6 8.4C165.1 42.6 145.3 96.1 135.3 160zM8.1 192l123.1 0c-2.1 20.6-3.2 42-3.2 64s1.1 43.4 3.2 64L8.1 320C2.8 299.5 0 278.1 0 256s2.8-43.5 8.1-64zM194.7 446.6c-11.6-26-20.9-58.2-27-94.6l176.6 0c-6.1 36.4-15.5 68.6-27 94.6c-10.5 23.6-22.2 40.7-33.5 51.5C272.6 508.8 263.3 512 256 512s-16.6-3.2-27.8-13.8c-11.3-10.8-23-27.9-33.5-51.5zM135.3 352c10 63.9 29.8 117.4 55.3 151.6C112.2 482.9 48.6 426.1 18.6 352l116.7 0zm358.1 0c-30 74.1-93.6 130.9-171.9 151.6c25.5-34.2 45.2-87.7 55.3-151.6l116.7 0z"/></svg></span>REST, GraphQL, WebSocket</h3>
           <p>GraphQL queries stored readable, not JSON-escaped. WebSocket sessions saved as websocat commands with message presets.</p>
         </div>
       </div>
@@ -562,17 +566,17 @@
     <h2>Download Freepost</h2>
     <div class="dl-grid">
       <a class="dl-btn" data-os="mac" href="https://github.com/dlai0001/freepost/releases/latest/download/freepost-mac.dmg">
-        <span class="os"><span class="ico">🍎</span>macOS</span>
+        <span class="os"><span class="ico"><svg viewBox="0 0 384 512" aria-hidden="true"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg></span>macOS</span>
         <span class="meta">Universal .dmg · Intel &amp; Apple Silicon</span>
         <span class="badge">Recommended for your system</span>
       </a>
       <a class="dl-btn" data-os="win" href="https://github.com/dlai0001/freepost/releases/latest/download/freepost-setup.exe">
-        <span class="os"><span class="ico">🪟</span>Windows</span>
+        <span class="os"><span class="ico"><svg viewBox="0 0 448 512" aria-hidden="true"><path d="M0 93.7l183.6-25.3v177.4H0V93.7zm0 324.6l183.6 25.3V268.4H0v149.9zm203.8 28L448 480V268.4H203.8v177.9zm0-380.6v180.1H448V32L203.8 65.7z"/></svg></span>Windows</span>
         <span class="meta">Installer .exe · 64-bit</span>
         <span class="badge">Recommended for your system</span>
       </a>
       <a class="dl-btn" data-os="linux" href="https://github.com/dlai0001/freepost/releases/latest/download/freepost.AppImage">
-        <span class="os"><span class="ico">🐧</span>Linux</span>
+        <span class="os"><span class="ico"><svg viewBox="0 0 448 512" aria-hidden="true"><path d="M220.8 123.3c1 .5 1.8 1.7 3 1.7 1.1 0 2.8-.4 2.9-1.5.2-1.4-1.9-2.3-3.2-2.9-1.7-.7-3.9-1-5.5-.1-.4.2-.8.7-.6 1.1.3 1.3 2.3 1.1 3.4 1.7zm-21.9 1.7c1.2 0 2-1.2 3-1.7 1.1-.6 3.1-.4 3.5-1.6.2-.4-.2-.9-.6-1.1-1.6-.9-3.8-.6-5.5.1-1.3.6-3.4 1.5-3.2 2.9.1 1 1.8 1.5 2.8 1.4zM420 403.8c-3.6-4-5.3-11.6-7.2-19.7-1.8-8.1-3.9-16.8-10.5-22.4-1.3-1.1-2.6-2.1-4-2.9-1.3-.8-2.7-1.5-4.1-2 9.2-27.3 5.6-54.5-3.7-79.1-11.4-30.1-31.3-56.4-46.5-74.4-17.1-21.5-33.7-41.9-33.4-72C311.1 85.4 315.7.1 234.8 0 132.4-.2 158 103.4 156.9 135.2c-1.7 23.4-6.4 41.8-22.5 64.7-18.9 22.5-45.5 58.8-58.1 96.7-6 17.9-8.8 36.1-6.2 53.3-6.5 5.8-11.4 14.7-16.6 20.2-4.2 4.3-10.3 5.9-17 8.3s-14 6-18.5 14.5c-2.1 3.9-2.8 8.1-2.8 12.4 0 3.9.6 7.9 1.2 11.8 1.2 8.1 2.5 15.7.8 20.8-5.2 14.4-5.9 24.4-2.2 31.7 3.8 7.3 11.4 10.5 20.1 12.3 17.3 3.6 40.8 2.7 59.3 12.5 19.8 10.4 39.9 14.1 55.9 10.4 11.6-2.6 21.1-9.6 25.9-20.2 12.5-.1 26.3-5.4 48.3-6.6 14.9-1.2 33.6 5.3 55.1 4.1.6 2.3 1.4 4.6 2.5 6.7v.1c8.3 16.7 23.8 24.3 40.3 23 16.6-1.3 34.1-11 48.3-27.9 13.6-16.4 36-23.2 50.9-32.2 7.4-4.5 13.4-10.1 13.9-18.3.4-8.2-4.4-17.3-15.5-29.7zM223.7 87.3c9.8-22.2 34.2-21.8 44-.4 6.5 14.2 3.6 30.9-4.3 40.4-1.6-.8-5.9-2.6-12.6-4.9 1.1-1.2 3.1-2.7 3.9-4.6 4.8-11.8-.2-27-9.1-27.3-7.3-.5-13.9 10.8-11.8 23-4.1-2-9.4-3.5-13-4.4-1-6.9-.3-14.6 2.9-21.8zM183 75.8c10.1 0 20.8 14.2 19.1 33.5-3.5 1-7.1 2.5-10.2 4.6 1.2-8.9-3.3-20.1-9.6-19.6-8.4.7-9.8 21.2-1.8 28.1 1 .8 1.9-.2-5.9 5.5-15.6-14.6-10.5-52.1 8.4-52.1zm-13.6 60.7c6.2-4.6 13.6-10 14.1-10.5 4.7-4.4 13.5-14.2 27.9-14.2 7.1 0 15.6 2.3 25.9 8.9 6.3 4.1 11.3 4.4 22.6 9.3 8.4 3.5 13.7 9.7 10.5 18.2-2.6 7.1-11 14.4-22.7 18.1-11.1 3.6-19.8 16-38.2 14.9-3.9-.2-7-1-9.6-2.1-8-3.5-12.2-10.4-20-15-8.6-4.8-13.2-10.4-14.7-15.3-1.4-4.9 0-9 4.2-12.3zm3.3 334c-2.7 35.1-43.9 34.4-75.3 18-29.9-15.8-68.6-6.5-76.5-21.9-2.4-4.7-2.4-12.7 2.6-26.4v-.2c2.4-7.6.6-16-.6-23.9-1.2-7.8-1.8-15 .9-20 3.5-6.7 8.5-9.1 14.8-11.3 10.3-3.7 11.8-3.4 19.6-9.9 5.5-5.7 9.5-12.9 14.3-18 5.1-5.5 10-8.1 17.7-6.9 8.1 1.2 15.1 6.8 21.9 16l19.6 35.6c9.5 19.9 43.1 48.4 41 68.9zm-1.4-25.9c-4.1-6.6-9.6-13.6-14.4-19.6 7.1 0 14.2-2.2 16.7-8.9 2.3-6.2 0-14.9-7.4-24.9-13.5-18.2-38.3-32.5-38.3-32.5-13.5-8.4-21.1-18.7-24.6-29.9s-3-23.3-.3-35.2c5.2-22.9 18.6-45.2 27.2-59.2 2.3-1.7.8 3.2-8.7 20.8-8.5 16.1-24.4 53.3-2.6 82.4.6-20.7 5.5-41.8 13.8-61.5 12-27.4 37.3-74.9 39.3-112.7 1.1.8 4.6 3.2 6.2 4.1 4.6 2.7 8.1 6.7 12.6 10.3 12.4 10 28.5 9.2 42.4 1.2 6.2-3.5 11.2-7.5 15.9-9 9.9-3.1 17.8-8.6 22.3-15 7.7 30.4 25.7 74.3 37.2 95.7 6.1 11.4 18.3 35.5 23.6 64.6 3.3-.1 7 .4 10.9 1.4 13.8-35.7-11.7-74.2-23.3-84.9-4.7-4.6-4.9-6.6-2.6-6.5 12.6 11.2 29.2 33.7 35.2 59 2.8 11.6 3.3 23.7.4 35.7 16.4 6.8 35.9 17.9 30.7 34.8-2.2-.1-3.2 0-4.2 0 3.2-10.1-3.9-17.6-22.8-26.1-19.6-8.6-36-8.6-38.3 12.5-12.1 4.2-18.3 14.7-21.4 27.3-2.8 11.2-3.6 24.7-4.4 39.9-.5 7.7-3.6 18-6.8 29-32.1 22.9-76.7 32.9-114.3 7.2zm257.4-11.5c-.9 16.8-41.2 19.9-63.2 46.5-13.2 15.7-29.4 24.4-43.6 25.5s-26.5-4.8-33.7-19.3c-4.7-11.1-2.4-23.1 1.1-36.3 3.7-14.2 9.2-28.8 9.9-40.6.8-15.2 1.7-28.5 4.2-38.7 2.6-10.3 6.6-17.2 13.7-21.1.3-.2.7-.3 1-.5.8 13.2 7.3 26.6 18.8 29.5 12.6 3.3 30.7-7.5 38.4-16.3 9-.3 15.7-.9 22.6 5.1 9.9 8.5 7.1 30.3 17.1 41.6 10.6 11.6 14 19.5 13.7 24.6zM173.3 148.7c2 1.9 4.7 4.5 8 7.1 6.6 5.2 15.8 10.6 27.3 10.6 11.6 0 22.5-5.9 31.8-10.8 4.9-2.6 10.9-7 14.8-10.4s5.9-6.3 3.1-6.6-2.6 2.6-6 5.1c-4.4 3.2-9.7 7.4-13.9 9.8-7.4 4.2-19.5 10.2-29.9 10.2s-18.7-4.8-24.9-9.7c-3.1-2.5-5.7-5-7.7-6.9-1.5-1.4-1.9-4.6-4.3-4.9-1.4-.1-1.8 3.7 1.7 6.5z"/></svg></span>Linux</span>
         <span class="meta">.AppImage · portable</span>
         <span class="badge">Recommended for your system</span>
       </a>
@@ -624,7 +628,7 @@
       Freepost is free, open source, and funded by donations — not by selling
       a cloud tier, because there will never be one.
     </p>
-    <a class="btn btn-donate" href="https://github.com/sponsors/dlai0001">♥ Sponsor on GitHub</a>
+    <a class="btn btn-donate" href="https://github.com/sponsors/dlai0001"><span class="ico"><svg viewBox="0 0 512 512" aria-hidden="true"><path d="M47.6 300.4L228.3 469.1c7.5 7 17.4 10.9 27.7 10.9s20.2-3.9 27.7-10.9L464.4 300.4c30.4-28.3 47.6-68 47.6-109.5v-5.8c0-69.9-50.5-129.5-119.4-141C347 36.5 300.6 51.4 268 84L256 96 244 84c-32.6-32.6-79-47.5-124.6-39.9C50.5 55.6 0 115.2 0 185.1v5.8c0 41.5 17.2 81.2 47.6 109.5z"/></svg></span>Sponsor on GitHub</a>
   </div>
 </section>
 
@@ -633,6 +637,7 @@
     MIT License · <a href="https://github.com/dlai0001/freepost">Source</a> ·
     <a href="help/index.html">Docs</a> ·
     Made for everyone who just wants to send a request.
+    Icons by <a href="https://fontawesome.com">Font Awesome</a> (CC BY 4.0).
   </div>
 </footer>
 

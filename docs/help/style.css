@@ -157,7 +157,12 @@ pre .k { color: var(--keyword); }
 }
 .help-card:hover { border-color: var(--accent-dim); }
 .help-card h3 { font-size: 1rem; margin-bottom: 6px; }
+.help-card h3 .ico { margin-right: 8px; }
 .help-card p { color: var(--muted); font-size: .87rem; margin: 0; }
+
+/* ---- inline Font Awesome Free icons (self-hosted SVG paths, no CDN) ---- */
+.ico { display: inline-flex; vertical-align: -0.14em; }
+.ico svg { width: 1em; height: 1em; fill: currentColor; }
 
 /* ---- glossary ---- */
 .glossary dt { color: var(--text); font-weight: 700; margin-top: 10px; }

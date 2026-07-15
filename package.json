@@ -1,6 +1,6 @@
 {
   "name": "freepost",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "The API client that never phones home. Open-source Postman alternative; collections are runnable curl files on disk.",
   "license": "MIT",
   "author": "dlaisoft <david@dlaisoft.com>",

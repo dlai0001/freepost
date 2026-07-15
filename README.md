@@ -24,6 +24,10 @@ MCP testing — built for developers behind corporate firewalls.
   command and asks before it ever spawns one.
 - **Postman-compatible scripting.** Pre-request and test scripts with the `pm.*`
   API and Chai assertions.
+- **A browser-like cookie jar, per collection.** Set-Cookie capture and replay
+  just work — login flows included — with a Cookie Manager for editing every
+  attribute (SameSite and all) and curl-compatible `cookies.txt` import/export.
+  The jar is a git-ignored local file; it's never sent anywhere.
 - **Workflows.** Ordered request runs with expect-error steps and reference
   validation.
 - **Run headlessly in CI.** `freepost run ./collection` executes the same files

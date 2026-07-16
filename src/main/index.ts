@@ -2,6 +2,8 @@ import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { join } from 'path'
 import { IPC } from '../shared/ipc'
 import { registerIpcHandlers } from './ipc-handlers'
+import { installApplicationMenu } from './menu'
+import { stopAppMcpServer } from './mcp-server/app-toggle'
 
 function createWindow(): void {
   // Once the renderer has dealt with unsaved changes it confirms; we then let
@@ -54,10 +56,17 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   registerIpcHandlers()
+  installApplicationMenu()
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+// Never leave the MCP listener behind: it is bound to the app's lifetime, and a
+// stray port that still answers after the window is gone would be a surprise.
+app.on('will-quit', () => {
+  void stopAppMcpServer()
 })
 
 app.on('window-all-closed', () => {

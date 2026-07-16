@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/png" href="../favicon.png">
+<link rel="apple-touch-icon" href="../apple-touch-icon.png">
+<title>Freepost Help — Use Freepost from an AI app</title>
+<meta name="description" content="Expose a Freepost collection to Claude Desktop or any MCP client, so an AI can create requests, write pm.* test scripts, run them, and iterate — without your secrets leaving the machine.">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="topbar-logo" href="../index.html">$ freepost</a>
+    <span class="topbar-crumb">Help</span>
+    <div class="topbar-spacer"></div>
+    <a class="topbar-link" href="../index.html">Website</a>
+    <a class="topbar-link" href="https://github.com/dlai0001/freepost">GitHub</a>
+  </div>
+</header>
+
+<div class="docs-shell">
+  <nav class="docs-nav">
+    <div class="docs-nav-title">Guides</div>
+    <a href="./index.html">Overview</a>
+    <a href="./installing.html">Installing</a>
+    <a href="./creating-requests.html">Creating requests</a>
+    <a href="./mcp.html">MCP servers</a>
+    <a class="active" href="./ai-apps.html">Use from an AI app</a>
+    <a href="./importing.html">Importing</a>
+    <a href="./organizing.html">Saving &amp; organizing</a>
+    <a href="./workflows.html">Workflows</a>
+    <a href="./authentication.html">Authentication</a>
+    <a href="./cookies.html">Cookies</a>
+    <a href="./mock-server.html">Mock server</a>
+    <a href="./cli.html">Command line</a>
+    <a href="./scripting.html">Scripting (pm.*)</a>
+  </nav>
+
+  <article class="docs-article">
+    <h1>Use Freepost from an AI app</h1>
+    <p class="lede">
+      <a href="./mcp.html">MCP servers</a> covers Freepost calling <em>out</em> to an MCP server.
+      This is the reverse: Freepost <strong>is</strong> an MCP server, so Claude Desktop — or any
+      MCP client — can open your collection and work in it. Hand it an OpenAPI spec or a GraphQL
+      schema and ask for tests; it writes the request files, runs them, reads the assertion
+      results, and fixes what fails. Everything it does is a file on your disk and a
+      <code>git diff</code> you review.
+    </p>
+
+    <h2>What you can ask for</h2>
+    <p>Once connected, prompts like these do the whole job end to end:</p>
+    <ul>
+      <li><em>"Create test cases for the endpoints in this Swagger schema: <code>./openapi.json</code>"</em></li>
+      <li><em>"Cover every query and mutation in the GraphQL schema at <code>http://localhost:4000/graphql</code>"</em></li>
+      <li><em>"Run the Users folder and fix any test that fails."</em></li>
+      <li><em>"Add an assertion to every request that the response time is under 500ms."</em></li>
+    </ul>
+    <p>
+      The app is watching the folder, so files the AI writes appear in your sidebar as they land.
+    </p>
+
+    <h2>Connect: from the app</h2>
+    <p>
+      <strong>Tools ▸ MCP Server</strong> starts a listener for the collection you currently have
+      open. The menu shows the URL it's listening on — <code>http://127.0.0.1:7599/mcp</code> by
+      default — and <strong>Copy AI app config snippet</strong> puts the config on your clipboard:
+    </p>
+    <pre><code>{
+  "mcpServers": {
+    "freepost": {
+      "type": "http",
+      "url": "http://127.0.0.1:7599/mcp"
+    }
+  }
+}</code></pre>
+    <p>
+      It is <strong>off by default, and stays off until you ask for it</strong> — every session.
+      That's deliberate: an always-on server means every AI conversation you have carries
+      Freepost's tools whether or not that conversation is about your API. Turn it on for the work,
+      turn it off after.
+    </p>
+    <p>
+      If you open a different collection while the server is running, it stops. A server started
+      for one collection will not quietly begin serving another. To change the port, set
+      <code>"mcpServerPort"</code> in <code>settings.json</code> in the app's user-data folder.
+    </p>
+
+    <h2>Connect: from the command line</h2>
+    <p>
+      No app needed — the AI app launches Freepost itself, which is what Claude Desktop expects.
+      Point it at the collection folder:
+    </p>
+    <pre><code>{
+  "mcpServers": {
+    "freepost": {
+      "command": "freepost",
+      "args": ["mcp", "serve", "/path/to/your/collection"]
+    }
+  }
+}</code></pre>
+    <p>Or run it directly to see what it exposes:</p>
+    <pre><code>freepost mcp serve ./my-collection</code></pre>
+    <table>
+      <thead><tr><th>Flag</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td><code>--env &lt;file&gt;</code></td><td>Environment JSON used when the AI runs a request.</td></tr>
+        <tr><td><code>--readonly</code></td><td>Refuse every tool that writes. The AI can read and run, never change.</td></tr>
+        <tr><td><code>--no-run</code></td><td>Refuse to execute requests. The AI can author files but makes no network calls.</td></tr>
+        <tr><td><code>--no-mcp-spawn</code></td><td>Refuse to run <code>.mcp</code> requests that spawn a stdio server.</td></tr>
+      </tbody>
+    </table>
+
+    <h2>The tools</h2>
+    <table>
+      <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td><code>get_format_spec</code></td><td>The request-file grammar and a starter to copy, per kind. The AI reads this before its first write.</td></tr>
+        <tr><td><code>list_collection</code></td><td>The request/folder/environment tree.</td></tr>
+        <tr><td><code>read_request</code></td><td>A request file's text, and whether it parses.</td></tr>
+        <tr><td><code>write_request</code></td><td>Create or update a request — including its <a href="./scripting.html"><code>pm.*</code> test script</a>. Parsed first; a bad file is rejected, not written.</td></tr>
+        <tr><td><code>move_path</code></td><td>Rename or move a request or folder.</td></tr>
+        <tr><td><code>delete_path</code></td><td>Delete a request or folder.</td></tr>
+        <tr><td><code>run_request</code></td><td>Execute a request for real and return the response plus its test results.</td></tr>
+        <tr><td><code>import_openapi</code></td><td>Generate one request per operation from an OpenAPI/Swagger spec.</td></tr>
+        <tr><td><code>read_environment</code> / <code>write_environment</code></td><td>List, read, and write non-secret <a href="./organizing.html">environments</a>.</td></tr>
+        <tr><td><code>describe_graphql_schema</code></td><td>Summarize a GraphQL schema — from a live endpoint, an SDL file, or pasted SDL.</td></tr>
+      </tbody>
+    </table>
+
+    <h2>How it writes a request</h2>
+    <p>
+      The AI sends the <strong>whole file text</strong>, exactly as you'd write it by hand — there's
+      no parallel JSON API that could drift from the format. Freepost parses it first: a file that
+      doesn't fit <a href="./creating-requests.html">the grammar</a> is rejected with the line
+      number and nothing is written, so the model can correct itself. A file that does fit is
+      re-serialized to canonical form before it lands, which means AI-written files are formatted
+      identically to app-written ones and <code>git diff</code> stays readable.
+    </p>
+
+    <h2>GraphQL</h2>
+    <p>
+      A GraphQL request is a <code>.curl</code> file with a <code>graphql:</code> frontmatter block
+      — there's no separate extension. The AI starts with <code>describe_graphql_schema</code>,
+      which returns the queries and mutations with their argument types (not the whole schema,
+      which would swamp its context), then writes one request per operation:
+    </p>
+    <pre><code>#!/usr/bin/env bash
+# ---
+# description: List users
+# graphql:
+#   query: |-
+#     query Users {
+#       users {
+#         id
+#         name
+#       }
+#     }
+#   variableDefs: []
+# scripts:
+#   test: |-
+#     pm.test("status is 200", () => pm.response.to.have.status(200));
+#     pm.test("no graphql errors", () => {
+#       pm.expect(pm.response.json().errors).to.equal(undefined);
+#     });
+# ---
+
+GQL_URL="${GQL_URL:-http://localhost:4000/graphql}"
+
+curl --request POST \
+  --url "${GQL_URL}" \
+  --header 'Content-Type: application/json' \
+  --data '{"query":"query Users {\n  users {\n    id\n    name\n  }\n}"}'</code></pre>
+    <p>
+      Note the second assertion: a GraphQL error still comes back as HTTP 200, so asserting on
+      status alone would pass a broken query. Subscriptions are long-lived and can't be run
+      one-shot — <code>run_request</code> says so rather than hanging.
+    </p>
+
+    <h2>What it can't do</h2>
+    <p>
+      An AI client is driven by a model that may be reading things you didn't write — a spec
+      someone sent you, a web page. "The AI asked" is not authorisation, so the boundaries are
+      enforced, not advisory:
+    </p>
+    <ul>
+      <li>
+        <strong>It never leaves the collection.</strong> Every path is collection-relative.
+        Traversal (<code>../</code>), absolute paths, <code>.git/</code>, and
+        <code>.freepost/</code> (your secrets, cached tokens, and request history) are refused.
+      </li>
+      <li>
+        <strong>It never reads your secrets.</strong> <code>*.local.env.json</code> — the
+        git-ignored file where secrets belong — is neither listed nor readable. A variable marked
+        <code>secret: true</code> never gets a literal default written to disk. The AI can
+        <em>use</em> a secret by running a request that resolves it; it can't <em>read</em> one.
+      </li>
+      <li>
+        <strong>It never silently spawns a program.</strong> A stdio <code>.mcp</code> request
+        names an executable. Over the app's HTTP server, the AI can only run servers
+        <a href="./mcp.html">you already approved by hand</a>. From the CLI, typing
+        <code>mcp serve</code> is the authorisation — the same doctrine as
+        <a href="./cli.html"><code>freepost run</code></a> — and <code>--no-mcp-spawn</code> opts out.
+      </li>
+      <li>
+        <strong>Responses are truncated.</strong> A large response body comes back clipped, so one
+        chatty endpoint can't blow out the model's context.
+      </li>
+    </ul>
+    <p>
+      One tradeoff to know about: the app's HTTP listener binds to <code>127.0.0.1</code> only, but
+      carries <strong>no auth token</strong>. While it's on, any program running as you on this
+      machine can reach it. That's the price of it being one menu click — which is also why it's
+      off by default. The CLI's stdio transport has no socket at all, so it doesn't have this
+      property.
+    </p>
+
+    <footer class="docs-footer">
+      Next: <a href="./scripting.html">Write pre-request &amp; test scripts →</a>
+    </footer>
+  </article>
+</div>
+
+</body>
+</html>

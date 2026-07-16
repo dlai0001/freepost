@@ -22,6 +22,12 @@ MCP testing — built for developers behind corporate firewalls.
   check` turns silent tool-signature drift into a failing build. And because a
   stdio server is a *program on your machine*, Freepost shows you the exact
   command and asks before it ever spawns one.
+- **Let an AI write your tests.** Freepost is *also* an MCP **server**: point
+  Claude Desktop (or any MCP client) at a collection and ask it to "write tests
+  for this OpenAPI spec" or "cover every query in this GraphQL schema". It
+  creates the request files, runs them, reads the assertion results, and
+  iterates — with your secrets never leaving your machine. Off by default; you
+  turn it on. See [Use Freepost from an AI app](#use-freepost-from-an-ai-app-mcp-server).
 - **Postman-compatible scripting.** Pre-request and test scripts with the `pm.*`
   API and Chai assertions.
 - **A browser-like cookie jar, per collection.** Set-Cookie capture and replay
@@ -91,6 +97,64 @@ collapsing them makes every assertion subtly wrong: a *protocol* error
 (transport/spawn failure — `502 PROTOCOL_ERROR`) is not the same as a tool that
 ran and reported failure (`isError: true` — `500 TOOL_ERROR`). Both are
 assertable.
+
+## Use Freepost from an AI app (MCP server)
+
+Everything above makes Freepost an MCP *client*. It is also an MCP **server**:
+your collection, exposed to Claude Desktop or any other MCP app, so you can say
+
+> *Create test cases for the endpoints in this OpenAPI spec, then run them.*
+
+and watch the request files appear in the app — written, executed, and fixed
+until the assertions pass. Because collections are just files, everything the AI
+does is a `git diff` you review like any other.
+
+**Two ways to connect.** Both expose the same tools.
+
+*From the CLI* — the AI app launches Freepost itself, no GUI needed. Add this to
+your Claude Desktop config:
+
+```json
+{
+  "mcpServers": {
+    "freepost": {
+      "command": "freepost",
+      "args": ["mcp", "serve", "/path/to/your/collection"]
+    }
+  }
+}
+```
+
+Flags: `--readonly` (never write), `--no-run` (never make a network call),
+`--no-mcp-spawn` (never spawn a stdio MCP subprocess), `--env <file>`.
+
+*From the app* — **Tools ▸ MCP Server** starts a listener on
+`http://127.0.0.1:7599/mcp` for the collection you have open; "Copy AI app
+config snippet" puts the config on your clipboard. It is **off by default and
+per-session**, deliberately: an always-on server means every AI conversation
+carries Freepost's tools whether you want them or not. Files the AI writes show
+up in the app immediately.
+
+**The tools.** `get_format_spec`, `list_collection`, `read_request`,
+`write_request`, `move_path`, `delete_path`, `run_request`, `import_openapi`,
+`read_environment`, `write_environment`, `describe_graphql_schema`.
+
+**What it can't do.**
+
+- **Never leaves the collection.** Every path is collection-relative; traversal,
+  absolute paths, `.git/` and `.freepost/` (secrets, tokens, request history)
+  are refused.
+- **Never reads your secrets.** `*.local.env.json` — the git-ignored file where
+  secrets belong — is neither listed nor readable, and a secret-marked variable
+  never gets a literal default written to disk. The AI can *use* a secret by
+  running a request; it can't *read* one.
+- **Never silently spawns a program.** A stdio `.mcp` request names an
+  executable. Over HTTP, the AI can only run servers you already approved by
+  hand; from the CLI, typing `mcp serve` is the authorisation and
+  `--no-mcp-spawn` opts out.
+- **The HTTP listener is loopback-only** (`127.0.0.1`) and carries no auth token
+   — while it's on, anything running as you on this machine can reach it. That's
+  the tradeoff for it being one menu click; leave it off when you're not using it.
 
 ## Try it without touching the internet
 

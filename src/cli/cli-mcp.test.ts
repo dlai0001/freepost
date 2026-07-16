@@ -164,6 +164,6 @@ describe('freepost mcp snapshot|check (F5 drift)', () => {
     const o = io(root)
     const code = await run(['mcp', 'bogus', root], o)
     expect(code).toBe(2)
-    expect(o.out()).toContain("'snapshot' or 'check'")
+    expect(o.out()).toContain("'snapshot', 'check' or 'serve'")
   })
 })

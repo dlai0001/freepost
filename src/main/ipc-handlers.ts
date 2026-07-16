@@ -79,6 +79,8 @@ import { executeRequest, jarFor, readEnvFile } from './execute'
 import { saveJar } from './cookie-store'
 import { getLastRoot, setLastRoot } from './settings'
 import { trackedSecrets } from './security'
+import { setCurrentRoot } from './current-root'
+import { STARTERS, stripSecretDefaults } from './starters'
 
 /** App-global runtime variable store (PLAN.md: the "session" tier). */
 const session = new Map<string, string>()
@@ -245,90 +247,6 @@ async function buildIndex(root: string): Promise<SearchEntry[]> {
   return entries
 }
 
-const STARTERS: Record<RequestKind, RequestFile> = {
-  curl: {
-    kind: 'curl',
-    frontmatter: { description: '' },
-    variables: [{ name: 'BASE_URL', defaultValue: 'https://api.example.com', required: false }],
-    http: {
-      method: 'GET',
-      url: '${BASE_URL}/',
-      headers: [{ name: 'Accept', value: 'application/json' }],
-      options: {}
-    },
-    comments: []
-  },
-  websocat: {
-    kind: 'websocat',
-    frontmatter: { messages: { ping: '{"op":"ping"}' } },
-    variables: [{ name: 'WS_URL', defaultValue: 'ws://localhost:8080', required: false }],
-    ws: { url: '${WS_URL}', headers: [] },
-    comments: []
-  },
-  grpc: {
-    kind: 'grpc',
-    frontmatter: { description: '' },
-    variables: [{ name: 'GRPC_TARGET', defaultValue: 'localhost:50051', required: false }],
-    grpc: {
-      target: '${GRPC_TARGET}',
-      fullMethod: 'package.Service/Method',
-      plaintext: true,
-      data: '{}',
-      metadata: [],
-      protoFiles: [],
-      importPaths: []
-    },
-    comments: []
-  },
-  mqtt: {
-    kind: 'mqtt',
-    frontmatter: { description: '' },
-    variables: [{ name: 'MQTT_HOST', defaultValue: 'localhost', required: false }],
-    mqtt: {
-      mode: 'publish',
-      host: '${MQTT_HOST}',
-      port: 1883,
-      topic: 'freepost/demo',
-      message: 'hello'
-    },
-    comments: []
-  },
-  mcp: {
-    kind: 'mcp',
-    frontmatter: { description: '' },
-    variables: [{ name: 'MCP_URL', defaultValue: 'http://localhost:3001/mcp', required: false }],
-    // The http transport is the safe default for a new file: it opens a socket
-    // the user chose, rather than naming a subprocess to spawn.
-    mcp: {
-      transport: 'http',
-      url: '${MCP_URL}',
-      args: [],
-      env: [],
-      headers: [],
-      method: 'tools/list',
-      toolArgs: [],
-      promptArgs: []
-    },
-    comments: []
-  }
-}
-
-/** PLAN.md: never persist a literal default for secret-marked variables. */
-function stripSecretDefaults(file: RequestFile): RequestFile {
-  const secrets = new Set(
-    Object.entries(file.frontmatter.variables ?? {})
-      .filter(([, meta]) => meta !== null && meta !== undefined && meta.secret === true)
-      .map(([name]) => name)
-  )
-  if (secrets.size === 0) return file
-  return {
-    ...file,
-    variables: file.variables.map((v) =>
-      secrets.has(v.name) ? { name: v.name, required: true } : v
-    )
-  }
-}
-
 export function registerIpcHandlers(): void {
   ipcMain.handle(IPC.collectionOpen, async () => {
     const res = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
@@ -336,12 +254,14 @@ export function registerIpcHandlers(): void {
     const root = res.filePaths[0]
     ensureFreepostDir(root)
     ensureWatcher(root)
+    setCurrentRoot(root)
     return root
   })
 
   ipcMain.handle(IPC.collectionScan, async (_e, root: string) => {
     ensureFreepostDir(root)
     ensureWatcher(root)
+    setCurrentRoot(root)
     // Every collection load funnels through here — remember it for next startup.
     void setLastRoot(root)
     return scanCollection(root)

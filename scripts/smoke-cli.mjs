@@ -14,6 +14,8 @@ import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, copyFileSync, writeFileSync, rmSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 const CLI = join(ROOT, 'out/cli/index.mjs')
@@ -105,6 +107,62 @@ function startServer(file, readyMarker) {
   })
 }
 
+/**
+ * Drive the built CLI's `mcp serve` as a real MCP client would: launch it as a
+ * subprocess, speak JSON-RPC over its stdio, and use the tools.
+ *
+ * This is the check that the MCP server survives bundling — and that nothing
+ * printed a stray byte to stdout, which is invisible in the source tests
+ * (they never touch a pipe) but corrupts the protocol for a real client.
+ */
+async function smokeMcpServe() {
+  const client = new Client({ name: 'smoke', version: '1.0.0' })
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [CLI, 'mcp', 'serve', DIR],
+    stderr: 'pipe'
+  })
+  await client.connect(transport)
+  try {
+    const { tools } = await client.listTools()
+    const names = tools.map((t) => t.name)
+    const required = ['list_collection', 'write_request', 'run_request', 'get_format_spec']
+    const missing = required.filter((r) => !names.includes(r))
+    if (missing.length > 0) throw new Error(`tools missing from the built CLI: ${missing.join(', ')}`)
+
+    const listed = await client.callTool({ name: 'list_collection', arguments: {} })
+    if (!listed.content[0].text.includes('Health.curl')) {
+      throw new Error('list_collection did not see the collection')
+    }
+
+    const read = await client.callTool({ name: 'read_request', arguments: { path: 'Health.curl' } })
+    if (!read.content[0].text.includes('parses OK')) {
+      throw new Error('read_request could not parse a file the CLI itself just ran')
+    }
+
+    // js-yaml + the format writer are the bundling-sensitive part of a write.
+    const written = await client.callTool({
+      name: 'write_request',
+      arguments: {
+        path: 'Smoke/Written by MCP.curl',
+        content:
+          '#!/usr/bin/env bash\n# ---\n# description: written over MCP\n# ---\n\n' +
+          "curl --request GET --url 'http://localhost:3010/health'\n"
+      }
+    })
+    if (written.isError) throw new Error(`write_request failed: ${written.content[0].text}`)
+
+    // The real payoff: the AI can run what it wrote and see the tests.
+    const ran = await client.callTool({ name: 'run_request', arguments: { path: 'Health.curl' } })
+    if (ran.isError || !ran.content[0].text.includes('✓ http ok')) {
+      throw new Error(`run_request did not report a passing test:\n${ran.content[0].text}`)
+    }
+    console.log(`[smoke] mcp serve: ${names.length} tools, list/read/write/run all OK`)
+  } finally {
+    await client.close()
+  }
+}
+
 const servers = []
 let failed = false
 
@@ -148,6 +206,10 @@ try {
   } else {
     console.log('\n[smoke] OK — the built CLI runs HTTP, gRPC and MQTT requests.')
   }
+
+  console.log('\n[smoke] driving the built CLI as an MCP server over stdio…')
+  await smokeMcpServe()
+  console.log('[smoke] OK — the built CLI serves MCP.')
 } catch (e) {
   failed = true
   console.error('[smoke] ERROR:', e.message)

@@ -16,9 +16,10 @@
  *   freepost mock <collection> [--port <n>]
  *     Serve the collection's saved response examples over HTTP until Ctrl-C.
  *
- *   freepost mcp <snapshot|check> <collection>
+ *   freepost mcp <snapshot|check|serve> <collection>
  *     snapshot: record each MCP server's schema surface next to its .mcp file.
  *     check:    diff live vs recorded; exit 1 on a BREAKING change (F5 drift).
+ *     serve:    expose the collection to an AI app over MCP (stdio).
  *
  * Exit code is 0 when everything passed, 1 when any request errored, any test
  * assertion failed, a workflow halted, or MCP schema drift is breaking.
@@ -33,6 +34,8 @@ import { executeRequest, readEnvFile } from '../main/execute'
 import { listFiles } from '../main/collection'
 import { buildRoutesForCollection } from '../main/mock'
 import { MockServer, McpSessionClient, mcpConnectArgs } from '../engine'
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
+import { createFreepostMcpServer } from '../main/mcp-server'
 import { resolveVariables, substitute } from '../core/vars'
 import {
   buildSnapshot,
@@ -71,9 +74,15 @@ interface MockOptions {
 
 interface McpOptions {
   command: 'mcp'
-  action: 'snapshot' | 'check'
+  action: 'snapshot' | 'check' | 'serve'
   collection: string
   env?: string
+  /** serve: refuse every mutating tool. */
+  readonly: boolean
+  /** serve: refuse run_request (no network calls on the AI's behalf). */
+  noRun: boolean
+  /** serve: refuse run_request on stdio .mcp files (no subprocess spawns). */
+  noMcpSpawn: boolean
 }
 
 type Options = RunOptions | MockOptions | McpOptions
@@ -83,7 +92,7 @@ const HELP = `freepost — offline API client, headless runner
 Usage:
   freepost run <collection> [options]
   freepost mock <collection> [--port <n>]
-  freepost mcp <snapshot|check> <collection> [--env <file>]
+  freepost mcp <snapshot|check|serve> <collection> [--env <file>]
 
 run options:
   --env <file>           environment JSON file
@@ -99,7 +108,13 @@ mock options:
 mcp options:
   snapshot               record each MCP server's schema next to its .mcp file
   check                  fail (exit 1) when a recorded schema drifts breakingly
+  serve                  expose the collection to an AI app over MCP (stdio)
   --env <file>           environment JSON file
+
+serve options:
+  --readonly             refuse every tool that writes to the collection
+  --no-run               refuse to execute requests (no network on the AI's behalf)
+  --no-mcp-spawn         refuse to run .mcp requests that spawn a stdio server
 
   -h, --help             show this help
 `
@@ -114,14 +129,33 @@ function parseArgs(argv: string[]): { options?: Options; error?: string; help?: 
 
   if (command === 'mcp') {
     const action = rest[0]
-    if (action !== 'snapshot' && action !== 'check') {
-      return { error: `freepost mcp needs an action: 'snapshot' or 'check'.` }
+    if (action !== 'snapshot' && action !== 'check' && action !== 'serve') {
+      return { error: `freepost mcp needs an action: 'snapshot', 'check' or 'serve'.` }
     }
-    const opts: McpOptions = { command: 'mcp', action, collection: '' }
+    const opts: McpOptions = {
+      command: 'mcp',
+      action,
+      collection: '',
+      readonly: false,
+      noRun: false,
+      noMcpSpawn: false
+    }
     for (let i = 1; i < rest.length; i++) {
       const a = rest[i]
       if (a === '--env') {
         opts.env = rest[++i]
+        continue
+      }
+      if (a === '--readonly') {
+        opts.readonly = true
+        continue
+      }
+      if (a === '--no-run') {
+        opts.noRun = true
+        continue
+      }
+      if (a === '--no-mcp-spawn') {
+        opts.noMcpSpawn = true
         continue
       }
       if (a.startsWith('-')) return { error: `Unknown option: ${a}` }
@@ -129,6 +163,9 @@ function parseArgs(argv: string[]): { options?: Options; error?: string; help?: 
       else return { error: `Unexpected argument: ${a}` }
     }
     if (opts.collection === '') return { error: 'Missing <collection> path.' }
+    if (action !== 'serve' && (opts.readonly || opts.noRun || opts.noMcpSpawn)) {
+      return { error: `--readonly/--no-run/--no-mcp-spawn only apply to 'freepost mcp serve'.` }
+    }
     return { options: opts }
   }
 
@@ -372,6 +409,60 @@ async function runMcpSchema(opts: McpOptions, root: string, io: CliIo): Promise<
 }
 
 /**
+ * `freepost mcp serve` — expose the collection to an AI app over stdio MCP.
+ *
+ * Runs until the client disconnects (Claude Desktop launches this as a
+ * subprocess and closes stdin on exit), or Ctrl-C.
+ *
+ * stdout belongs to the JSON-RPC transport here — a stray line of human output
+ * on it is a protocol violation that the client reports as a corrupt server, so
+ * everything we print goes to stderr. Callers pass an `io` whose `write` is
+ * already routed there.
+ *
+ * Invoking this command IS the authorisation to spawn the collection's stdio MCP
+ * servers, exactly as `freepost run` is; --no-mcp-spawn opts out.
+ */
+async function runMcpServe(opts: McpOptions, root: string, io: CliIo): Promise<number> {
+  const c = paint(io)
+  const envPath =
+    opts.env === undefined ? undefined : isAbsolute(opts.env) ? opts.env : resolve(io.cwd, opts.env)
+
+  const server = createFreepostMcpServer({
+    getRoot: () => root,
+    envPath,
+    readonly: opts.readonly,
+    allowRun: !opts.noRun,
+    allowMcpSpawn: () => !opts.noMcpSpawn,
+    session: new Map<string, string>()
+  })
+
+  const flags = [
+    opts.readonly ? 'read-only' : 'read/write',
+    opts.noRun ? 'no run' : 'run enabled',
+    opts.noMcpSpawn ? 'no mcp spawn' : 'mcp spawn allowed'
+  ]
+  io.write(c.green(`freepost MCP server on stdio`) + c.dim(` · ${root} · ${flags.join(' · ')}\n`))
+
+  const transport = new StdioServerTransport()
+  await server.connect(transport)
+
+  return await new Promise<number>((resolvePromise) => {
+    // Idempotent on purpose: server.close() closes the transport, which fires
+    // onclose — so without the guard, the client disconnecting sends this
+    // straight into recursion.
+    let stopping = false
+    const stop = (): void => {
+      if (stopping) return
+      stopping = true
+      void server.close().then(() => resolvePromise(0))
+    }
+    // Claude Desktop stops the server by closing the pipe, not by signalling.
+    transport.onclose = stop
+    if (io.onSigint !== undefined) io.onSigint(stop)
+  })
+}
+
+/**
  * Run the CLI. Returns a process exit code (0 = all passed). `io` is injectable
  * so tests can capture output and set the working directory.
  */
@@ -422,7 +513,9 @@ export async function run(argv: string[], io: CliIo): Promise<number> {
     return 2
   }
   if (opts.command === 'mock') return runMockServer(opts, root, io)
-  if (opts.command === 'mcp') return runMcpSchema(opts, root, io)
+  if (opts.command === 'mcp') {
+    return opts.action === 'serve' ? runMcpServe(opts, root, io) : runMcpSchema(opts, root, io)
+  }
   // From here `opts` is narrowed to RunOptions.
   const envPath = opts.env === undefined ? undefined : isAbsolute(opts.env) ? opts.env : resolve(io.cwd, opts.env)
   const session = new Map<string, string>()
@@ -554,10 +647,17 @@ function exitAfterFlush(code: number): void {
 // is `file:///C:/path/index.mjs` — the guard never matched, so the built CLI
 // silently did nothing and exited 0. `freepost run` was a no-op on Windows.
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  run(process.argv.slice(2), {
+  const argv = process.argv.slice(2)
+  // `mcp serve` hands stdout to the JSON-RPC transport, so every byte of human
+  // output has to go to stderr instead — one stray line on stdout and the client
+  // sees a corrupt server. This is the only place that knows about the real
+  // process streams, so it's the only place that can make that swap.
+  const isStdioServer = argv[0] === 'mcp' && argv[1] === 'serve'
+  const sink = isStdioServer ? process.stderr : process.stdout
+  run(argv, {
     cwd: process.cwd(),
-    write: (s) => process.stdout.write(s),
-    color: process.stdout.isTTY === true,
+    write: (s) => sink.write(s),
+    color: sink.isTTY === true,
     onSigint: (cb) => process.once('SIGINT', cb)
   })
     .then((code) => exitAfterFlush(code))

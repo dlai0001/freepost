@@ -28,6 +28,7 @@
     <a href="./installing.html">Installing</a>
     <a href="./creating-requests.html">Creating requests</a>
     <a href="./mcp.html">MCP servers</a>
+    <a href="./ai-apps.html">Use from an AI app</a>
     <a href="./importing.html">Importing</a>
     <a href="./organizing.html">Saving &amp; organizing</a>
     <a href="./workflows.html">Workflows</a>
@@ -97,6 +98,30 @@ node out/cli/index.mjs run ./my-collection</code></pre>
     </p>
     <pre><code>freepost mcp snapshot ./my-collection
 freepost mcp check ./my-collection --env ci.env.json</code></pre>
+
+    <h2><code>freepost mcp serve &lt;collection&gt;</code></h2>
+    <p>
+      Exposes the collection to an AI app over MCP on stdio, so Claude Desktop (or any MCP client)
+      can create requests, write <a href="./scripting.html">test scripts</a>, run them, and iterate.
+      This is the headless half of <a href="./ai-apps.html">Use Freepost from an AI app</a> — the
+      app has a menu toggle that does the same thing over local HTTP.
+    </p>
+    <pre><code>freepost mcp serve ./my-collection --env local.env.json</code></pre>
+    <table>
+      <thead><tr><th>Flag</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>--env &lt;file&gt;</code></td><td>Environment JSON used when the AI runs a request.</td></tr>
+        <tr><td><code>--readonly</code></td><td>Refuse every tool that writes to the collection.</td></tr>
+        <tr><td><code>--no-run</code></td><td>Refuse to execute requests — the AI authors files but makes no network calls.</td></tr>
+        <tr><td><code>--no-mcp-spawn</code></td><td>Refuse to run <code>.mcp</code> requests that spawn a stdio server.</td></tr>
+      </tbody>
+    </table>
+    <p>
+      Runs until the client disconnects or Ctrl-C. As with <code>freepost run</code>, invoking this
+      command <em>is</em> your authorisation to spawn the collection's stdio MCP servers;
+      <code>--no-mcp-spawn</code> opts out. Note that <strong>stdout carries the protocol</strong>,
+      so all of the CLI's own output goes to stderr here.
+    </p>
 
     <h2>In CI (GitHub Actions)</h2>
     <p>A typical job that fails the build when any request or assertion fails:</p>

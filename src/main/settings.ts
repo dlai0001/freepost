@@ -1,9 +1,10 @@
 /**
  * Persisted app settings (Electron userData/settings.json).
  *
- * Currently just remembers the last-opened collection so startup can reopen it
- * without the user re-picking the folder. Reads/writes are best-effort: a
- * missing or corrupt file is treated as empty settings, never a hard failure.
+ * Remembers the last-opened collection so startup can reopen it without the
+ * user re-picking the folder, plus a few knobs with no UI of their own. Reads
+ * and writes are best-effort: a missing or corrupt file is treated as empty
+ * settings, never a hard failure.
  */
 import { app } from 'electron'
 import { promises as fs } from 'fs'
@@ -13,6 +14,13 @@ import { dirname, join } from 'path'
 export interface AppSettings {
   /** Absolute path of the collection open when the app last loaded one. */
   lastRoot?: string
+  /**
+   * Port for the Tools ▸ MCP Server listener. No UI: the default is right
+   * unless something else already owns the port, and then the error says to
+   * change this. Deliberately NOT a "last enabled" flag — the server is
+   * per-session on purpose (see mcp-server/app-toggle.ts).
+   */
+  mcpServerPort?: number
 }
 
 /** Location of the settings file (Electron userData). */

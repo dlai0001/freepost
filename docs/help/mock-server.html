@@ -71,9 +71,39 @@
 
     <h2>Starting it</h2>
     <p>
-      In the app, click <strong>Mock Server</strong> in the top bar, then <strong>Start</strong>.
-      Freepost binds a local port (shown with a copy button) and streams a live request log. From a
-      terminal (great for CI or scripting):
+      In the app, click <strong>Mock Server</strong> in the top bar to open the panel, then
+      <strong>Start</strong>:
+    </p>
+
+    <figure>
+      <img src="./images/mock-server-start.png" alt="The Mock server panel before starting: a description of how it works, 'Not running', and a Start button in the top right.">
+      <figcaption>Not running yet — a saved example is required per route before there's
+        anything to serve.</figcaption>
+    </figure>
+
+    <p>
+      Freepost binds a local port and shows the base URL with a copy button:
+    </p>
+
+    <figure>
+      <img src="./images/mock-server-running.png" alt="The Mock server panel running, showing 'Listening at http://127.0.0.1:59554 · 2 route(s)' with a Copy button.">
+      <figcaption>Running — the banner shows the bound port and how many routes were built
+        from saved examples in the collection.</figcaption>
+    </figure>
+
+    <p>
+      Every request the mock handles streams into a live log below the banner — method, matched
+      status, path, and timestamp:
+    </p>
+
+    <figure>
+      <img src="./images/mock-server-log.png" alt="The Mock server live request log with three entries: GET /users/42 matched 200 OK, POST /users matched 201 Created, and GET /nope unmatched with a 404.">
+      <figcaption>The live log: two requests matched saved examples (200, 201), and an
+        unmatched path fell through to the mock's own 404.</figcaption>
+    </figure>
+
+    <p>
+      From a terminal (great for CI or scripting):
     </p>
     <pre><code>freepost mock ./my-collection --port 8080</code></pre>
     <p>

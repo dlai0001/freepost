@@ -6,7 +6,7 @@
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>Freepost — the offline API client that saves requests as curl</title>
-<meta name="description" content="An open-source Postman alternative for REST, GraphQL, WebSocket, gRPC, MQTT, and MCP. No account, no cloud, zero network calls. Your requests are pretty-printed curl files on disk — runnable, diffable, yours.">
+<meta name="description" content="An open-source Postman alternative for REST, GraphQL, WebSocket, gRPC, MQTT, and MCP. No account, no cloud, zero network calls. Your requests are pretty-printed curl files on disk — runnable, diffable, yours — and your favorite AI can write your API tests for you.">
 <style>
   :root {
     --bg: #0d1117;
@@ -69,7 +69,22 @@
   pre .c { color: var(--comment); }
   pre .s { color: var(--string); }
   pre .k { color: var(--keyword); }
+  pre .g { color: var(--accent); }
+  pre .m { color: var(--muted); }
   .format-note { text-align: center; color: var(--muted); margin-top: 16px; font-size: .95rem; }
+  .hero-new {
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-wrap: wrap; gap: 10px; margin: 28px auto 0; max-width: 100%;
+    color: var(--muted); font-size: .95rem; text-decoration: none;
+    border: 1px solid var(--border); border-radius: 999px; padding: 7px 16px 7px 8px;
+    transition: border-color .15s ease, color .15s ease;
+  }
+  .hero-new:hover { border-color: var(--accent); color: var(--text); }
+  .hero-new .tag {
+    background: var(--accent-dim); color: #fff; border-radius: 999px;
+    padding: 2px 10px; font-size: .72rem; font-weight: 700; letter-spacing: .04em;
+  }
+  .hero-new .arrow { color: var(--accent); }
   .promise {
     background: var(--panel); border: 1px solid var(--accent-dim); border-radius: 10px;
     padding: 28px; text-align: center; max-width: 720px; margin: 0 auto;
@@ -140,6 +155,11 @@
     <a class="btn btn-ghost" href="https://github.com/dlai0001/freepost">View on GitHub</a>
     <a class="btn btn-donate" href="https://github.com/sponsors/dlai0001"><span class="ico"><svg viewBox="0 0 512 512" aria-hidden="true"><path d="M47.6 300.4L228.3 469.1c7.5 7 17.4 10.9 27.7 10.9s20.2-3.9 27.7-10.9L464.4 300.4c30.4-28.3 47.6-68 47.6-109.5v-5.8c0-69.9-50.5-129.5-119.4-141C347 36.5 300.6 51.4 268 84L256 96 244 84c-32.6-32.6-79-47.5-124.6-39.9C50.5 55.6 0 115.2 0 185.1v5.8c0 41.5 17.2 81.2 47.6 109.5z"/></svg></span>Donate</a>
   </div>
+  <a class="hero-new" href="#ai">
+    <span class="tag">NEW</span>
+    Let your favorite AI write your API tests
+    <span class="arrow">&#8594;</span>
+  </a>
 </header>
 
 <div class="wrap">
@@ -278,6 +298,37 @@
       Every saved request is a valid shell script. <code>bash</code> runs it.
       <code>git diff</code> reviews it. Any tool that imports curl understands it.
     </p>
+  </div>
+</section>
+
+<section id="ai">
+  <div class="wrap">
+    <h2>…so let your favorite AI write them</h2>
+    <pre><code><span class="c"># Point Claude Desktop — or any MCP client — at a collection.</span>
+<span class="k">freepost</span> mcp serve ./acme-api        <span class="c"># or just: Tools &#9656; MCP Server</span>
+
+<span class="m">you</span>  <span class="g">&#9656;</span> <span class="s">"Write tests for the endpoints in swagger.json, then run them."</span>
+
+<span class="m">ai</span>   <span class="g">&#9656;</span> import_openapi   <span class="c">&#8594;</span> 12 requests created
+       write_request    <span class="c">&#8594;</span> users/Create user.curl <span class="c">+ 3 assertions</span>
+       run_request      <span class="c">&#8594;</span> 201 Created  <span class="g">&#10003; 3 passed</span>
+       write_request    <span class="c">&#8594;</span> users/Get user by id.curl <span class="c">+ 2 assertions</span>
+       run_request      <span class="c">&#8594;</span> 404 Not Found  <span class="s">&#10007; expected 200</span>
+       write_request    <span class="c">&#8594;</span> users/Get user by id.curl <span class="c">(fixed the path)</span>
+       run_request      <span class="c">&#8594;</span> 200 OK  <span class="g">&#10003; 2 passed</span></code></pre>
+    <p class="format-note">
+      Freepost is an MCP <em>server</em>, too. The AI creates the request files, runs them,
+      reads the assertion results, and fixes what fails — in the same files you edit by hand.
+      Hand it a Swagger spec or a GraphQL schema and go get a coffee.
+    </p>
+    <div class="promise" style="margin-top: 34px;">
+      <p><strong>And it still never phones home.</strong> Your AI app is your business —
+      Freepost just opens a door on <code>localhost</code>, and only when you flip the
+      toggle. The AI can <em>use</em> a secret to send a request, but it can't
+      <em>read</em> one: your <code>.local.env.json</code>, token cache, and cookie jar are
+      off-limits, and so is anything outside the collection. Everything it writes is a
+      <code>git diff</code> you review like any other pull request.</p>
+    </div>
   </div>
 </section>
 
@@ -491,6 +542,31 @@
         <div class="card-body">
           <h3><span class="ico"><svg viewBox="0 0 640 512" aria-hidden="true"><path d="M320 0c17.7 0 32 14.3 32 32l0 64 120 0c39.8 0 72 32.2 72 72l0 272c0 39.8-32.2 72-72 72l-304 0c-39.8 0-72-32.2-72-72l0-272c0-39.8 32.2-72 72-72l120 0 0-64c0-17.7 14.3-32 32-32zM208 384c-8.8 0-16 7.2-16 16s7.2 16 16 16l32 0c8.8 0 16-7.2 16-16s-7.2-16-16-16l-32 0zm96 0c-8.8 0-16 7.2-16 16s7.2 16 16 16l32 0c8.8 0 16-7.2 16-16s-7.2-16-16-16l-32 0zm96 0c-8.8 0-16 7.2-16 16s7.2 16 16 16l32 0c8.8 0 16-7.2 16-16s-7.2-16-16-16l-32 0zM264 256a40 40 0 1 0 -80 0 40 40 0 1 0 80 0zm152 40a40 40 0 1 0 0-80 40 40 0 1 0 0 80zM48 224l16 0 0 192-16 0c-26.5 0-48-21.5-48-48l0-96c0-26.5 21.5-48 48-48zm544 0c26.5 0 48 21.5 48 48l0 96c0 26.5-21.5 48-48 48l-16 0 0-192 16 0z"/></svg></span>MCP servers, testable</h3>
           <p>Call an MCP server's tools, resources, and prompts over stdio or Streamable HTTP from a <code>.mcp</code> file — a real MCP Inspector invocation. Then assert on the result with <code>pm.*</code> tests and run them in CI, which no other MCP client does. <code>freepost mcp check</code> turns silent tool-schema drift into a failing build, and a stdio server never spawns until you've seen the exact command and approved it.</p>
+        </div>
+      </div>
+      <div class="card">
+        <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A prompt asking an AI to write tests for swagger.json, three request files created in the collection, and two passing assertions, with a note that secrets stay unreadable.">
+          <rect width="400" height="200" fill="#0a0d12"/>
+          <rect x="24" y="18" width="352" height="32" rx="8" fill="#58a6ff" fill-opacity="0.10" stroke="#58a6ff" stroke-opacity="0.35"/>
+          <text x="37" y="38" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#e6edf3">&#8220;Write tests for the endpoints in <tspan font-family="ui-monospace, Menlo, monospace" fill="#a5d6ff">swagger.json</tspan>&#8221;</text>
+          <path d="M200 52 L200 68" stroke="#30363d" stroke-width="1.5"/>
+          <path d="M195 63 L200 69 L205 63" fill="none" stroke="#30363d" stroke-width="1.5"/>
+          <g font-family="ui-monospace, Menlo, monospace" font-size="11">
+            <text x="24" y="90"><tspan fill="#3fb950" font-weight="700">+</tspan><tspan fill="#e6edf3" dx="8">users/List users.curl</tspan></text>
+            <text x="24" y="110"><tspan fill="#3fb950" font-weight="700">+</tspan><tspan fill="#e6edf3" dx="8">users/Create user.curl</tspan></text>
+            <text x="24" y="130"><tspan fill="#3fb950" font-weight="700">+</tspan><tspan fill="#e6edf3" dx="8">users/Get user by id.curl</tspan></text>
+          </g>
+          <line x1="24" y1="142" x2="376" y2="142" stroke="#30363d"/>
+          <g font-family="ui-monospace, Menlo, monospace" font-size="11.5">
+            <text x="24" y="164"><tspan fill="#3fb950" font-weight="700">&#10003;</tspan><tspan fill="#e6edf3" dx="8">status is 201</tspan></text>
+            <text x="24" y="186"><tspan fill="#3fb950" font-weight="700">&#10003;</tspan><tspan fill="#e6edf3" dx="8">returns an id</tspan></text>
+          </g>
+          <rect x="222" y="152" width="154" height="21" rx="10.5" fill="#238636" fill-opacity="0.15" stroke="#3fb950" stroke-opacity="0.4"/>
+          <text x="299" y="166" font-family="-apple-system, Segoe UI, sans-serif" font-size="10.5" fill="#3fb950" text-anchor="middle">secrets stay unreadable</text>
+        </svg>
+        <div class="card-body">
+          <h3><span class="ico"><svg viewBox="0 0 512 512" aria-hidden="true"><path d="M234.7 42.7L197 56.8c-3 1.1-5 4-5 7.2s2 6.1 5 7.2l37.7 14.1L248.8 123c1.1 3 4 5 7.2 5s6.1-2 7.2-5l14.1-37.7L315 71.2c3-1.1 5-4 5-7.2s-2-6.1-5-7.2L277.3 42.7 263.2 5c-1.1-3-4-5-7.2-5s-6.1 2-7.2 5L234.7 42.7zM46.1 395.4c-18.7 18.7-18.7 49.1 0 67.9l34.6 34.6c18.7 18.7 49.1 18.7 67.9 0L529.9 116.5c18.7-18.7 18.7-49.1 0-67.9L495.3 14.1c-18.7-18.7-49.1-18.7-67.9 0L46.1 395.4zM484.6 82.6l-105 105-23.3-23.3 105-105 23.3 23.3zM7.5 117.2C3 118.9 0 123.2 0 128s3 9.1 7.5 10.8L64 160l21.2 56.5c1.7 4.5 6 7.5 10.8 7.5s9.1-3 10.8-7.5L128 160l56.5-21.2c4.5-1.7 7.5-6 7.5-10.8s-3-9.1-7.5-10.8L128 96 106.8 39.5C105.1 35 100.8 32 96 32s-9.1 3-10.8 7.5L64 96 7.5 117.2zm352 256c-4.5 1.7-7.5 6-7.5 10.8s3 9.1 7.5 10.8L416 416l21.2 56.5c1.7 4.5 6 7.5 10.8 7.5s9.1-3 10.8-7.5L480 416l56.5-21.2c4.5-1.7 7.5-6 7.5-10.8s-3-9.1-7.5-10.8L480 352l-21.2-56.5c-1.7-4.5-6-7.5-10.8-7.5s-9.1 3-10.8 7.5L416 352l-56.5 21.2z"/></svg></span>Your AI writes the tests</h3>
+          <p>Freepost is an MCP <em>server</em> too. Point Claude Desktop at a collection and ask for tests: it creates the request files, runs them, reads the assertions, and fixes what fails — then you review the diff. It can use a secret to send a request, but never read one. Off by default; one toggle, per session.</p>
         </div>
       </div>
       <div class="card">

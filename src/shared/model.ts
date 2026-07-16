@@ -597,6 +597,63 @@ export interface HistoryEntry {
   errored: boolean
 }
 
+/* ---------------------------- recorded traffic --------------------------- */
+
+/** Protocol of a proxied exchange, as classified by core/record/classify.ts. */
+export type RecordedProtocol = 'rest' | 'graphql' | 'grpc' | 'ws' | 'sse'
+
+/**
+ * A capped body preview. `bytes` is the true wire size; `text` holds at most
+ * 64 KiB of the (content-encoding-decoded) body, `truncated` says the rest was
+ * dropped. Binary bodies carry `base64` instead of `text`.
+ */
+export interface RecordedBody {
+  text: string
+  bytes: number
+  truncated: boolean
+  base64?: string
+}
+
+/**
+ * One request/response pair captured by the record proxy. Persisted to
+ * `.freepost/history/recorded.jsonl` — richer than the lean HistoryEntry
+ * because a recorded exchange is the source for "Save to collection".
+ */
+export interface RecordedExchange {
+  id: string
+  at: string
+  timeMs?: number
+  protocol: RecordedProtocol
+  method: string
+  /** The full target URL the request was forwarded to. */
+  url: string
+  /** Which proxy listener captured this: plain HTTP or the TLS one (Phase 2.5). */
+  via?: 'http' | 'https'
+  requestHeaders: Header[]
+  requestBody?: RecordedBody
+  status?: number
+  responseHeaders?: Header[]
+  responseBody?: RecordedBody
+  /** True for responses captured mid-stream (SSE) — the body preview is partial. */
+  stream?: boolean
+  errored: boolean
+  error?: string
+  graphql?: { operationName?: string; operationType?: string }
+  /** Phase 2: gRPC pass-through capture (message counts from the wire framing). */
+  grpc?: {
+    service: string
+    method: string
+    grpcStatus?: number
+    requestMessages: number
+    responseMessages: number
+  }
+  /** Phase 2: WebSocket session capture (one exchange per session, capped frames). */
+  ws?: {
+    closeCode?: number
+    frames: { dir: 'in' | 'out'; at: string; text: boolean; preview: string; truncated: boolean }[]
+  }
+}
+
 /* ---------------------------- saved examples ----------------------------- */
 
 /** A curated response example saved alongside a request (Name.examples.json). */

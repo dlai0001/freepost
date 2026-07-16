@@ -306,6 +306,21 @@ function withMissingDecls(file: RequestFile): RequestFile {
   return { ...file, variables: [...file.variables, ...missing] }
 }
 
+/**
+ * Filename-safe base name for a saved request file: trim, strip reserved
+ * characters, leading dots (a dot-leading name would write a hidden file) and
+ * trailing dots. Falls back to suggestName's default when nothing survives.
+ */
+export function safeRequestFileName(name: string): string {
+  const base = name
+    .trim()
+    .replace(/[<>:"/\\|?*]/g, '')
+    .replace(/^\.+/, '')
+    .replace(/\.+$/, '')
+    .trim()
+  return base === '' ? 'Imported request' : base
+}
+
 /** Suggest a filename-safe request name from the URL. */
 export function suggestName(file: RequestFile): string {
   const url = file.http?.url ?? file.ws?.url ?? ''

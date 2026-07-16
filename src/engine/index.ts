@@ -22,6 +22,8 @@ export type { GqlTransport, GqlSubscribeArgs, GqlSubscribeHandlers } from './gql
 export { shouldBypassProxy } from './proxy'
 export { MockServer } from './mock-server'
 export type { MockState, MockStartArgs, MockServerEvents } from './mock-server'
+export { RecordProxyServer, PROXY_BODY_CAP } from './record-proxy'
+export type { ProxyState, ProxyStartArgs, RecordProxyServerEvents } from './record-proxy'
 export { startMcpHttpServer } from './mcp-http'
 export type { McpHttpServerHandle, McpHttpStartArgs } from './mcp-http'
 export { sendGrpcUnary, GrpcStreamClient } from './grpc'

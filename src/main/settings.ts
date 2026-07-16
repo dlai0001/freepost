@@ -21,6 +21,21 @@ export interface AppSettings {
    * per-session on purpose (see mcp-server/app-toggle.ts).
    */
   mcpServerPort?: number
+  /**
+   * Tools ▸ Proxy Server (Record): last-used target and listener port,
+   * prefilled into the modal on next open. Like mcpServerPort these are
+   * deliberately NOT a "last enabled" flag — recording is per-session on
+   * purpose (see record-proxy.ts).
+   */
+  proxyTarget?: string
+  proxyPort?: number
+  /**
+   * The proxy's optional HTTPS listener (self-signed local CA): whether the
+   * modal's checkbox was last on, and its port. Same caveat as above — these
+   * prefill the modal, they never auto-start anything.
+   */
+  proxyHttpsEnabled?: boolean
+  proxyHttpsPort?: number
 }
 
 /** Location of the settings file (Electron userData). */

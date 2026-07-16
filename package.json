@@ -45,6 +45,7 @@
     "@grpc/grpc-js": "^1.14.4",
     "@grpc/proto-loader": "^0.7.15",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@peculiar/x509": "^2.0.0",
     "chai": "^6.2.2",
     "cm6-graphql": "^0.2.1",
     "graphql": "^16.14.2",
@@ -52,6 +53,7 @@
     "graphql-ws": "^6.0.8",
     "js-yaml": "^5.2.1",
     "mqtt": "^5.15.2",
+    "reflect-metadata": "^0.2.2",
     "ws": "^8.18.0",
     "zod": "^4.4.3"
   },

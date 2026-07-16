@@ -18,6 +18,7 @@ import ConfirmModal from './components/ConfirmModal'
 import ImportModal from './components/ImportModal'
 import HistoryPanel from './components/HistoryPanel'
 import MockServerModal from './components/MockServerModal'
+import ProxyServerModal from './components/ProxyServerModal'
 import EnvironmentManager from './components/EnvironmentManager'
 import CookieManager from './components/CookieManager'
 import MoveModal from './components/MoveModal'
@@ -27,6 +28,7 @@ type ModalSpec =
   | { kind: 'import' }
   | { kind: 'history' }
   | { kind: 'mock' }
+  | { kind: 'proxy' }
   | { kind: 'cookies' }
   | { kind: 'env-manager' }
   | { kind: 'new-item'; folder: string; itemKind: NewItemKind }
@@ -103,6 +105,14 @@ function Shell(): JSX.Element {
       const hasDirty = tabsRef.current.some((t) => t.dirty)
       if (hasDirty) setModal({ kind: 'quit' })
       else void fp().confirmAppClose()
+    })
+  }, [])
+
+  // Tools ▸ Proxy Server (Record) opens the proxy modal (needs a collection).
+  useEffect(() => {
+    return fp().onProxyOpenUi(() => {
+      if (rootRef.current !== null) setModal({ kind: 'proxy' })
+      else setNotice('Open a collection first — recorded traffic is stored in it.')
     })
   }, [])
 
@@ -391,6 +401,7 @@ function Shell(): JSX.Element {
         onImport={() => setModal({ kind: 'import' })}
         onHistory={() => setModal({ kind: 'history' })}
         onMock={() => setModal({ kind: 'mock' })}
+        onProxy={() => setModal({ kind: 'proxy' })}
         onCookies={() => setModal({ kind: 'cookies' })}
       />
       <div className="app-body">
@@ -521,6 +532,9 @@ function Shell(): JSX.Element {
       )}
       {modal?.kind === 'mock' && state.root !== null && (
         <MockServerModal root={state.root} onCancel={() => setModal(null)} />
+      )}
+      {modal?.kind === 'proxy' && state.root !== null && (
+        <ProxyServerModal root={state.root} onCancel={() => setModal(null)} />
       )}
       {modal?.kind === 'cookies' && state.root !== null && (
         <CookieManager root={state.root} onClose={() => setModal(null)} />

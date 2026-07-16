@@ -7,7 +7,8 @@
  * the macOS app menu; window management) are spelled out here rather than
  * inherited.
  */
-import { app, Menu, shell, type MenuItemConstructorOptions } from 'electron'
+import { app, BrowserWindow, Menu, shell, type MenuItemConstructorOptions } from 'electron'
+import { IPC } from '../shared/ipc'
 import {
   copyMcpConfigSnippet,
   isMcpServerRunning,
@@ -15,13 +16,26 @@ import {
   setMcpServerChangeListener,
   toggleAppMcpServer
 } from './mcp-server/app-toggle'
+import { isProxyRunning, proxyTarget, proxyUrl, setProxyChangeListener } from './record-proxy'
 
 const isMac = process.platform === 'darwin'
 const DOCS_URL = 'https://dlai0001.github.io/freepost/'
 
+/**
+ * The proxy checkbox opens the modal rather than toggling directly: starting
+ * needs a target URL, and stopping deserves a look at what was recorded. The
+ * menu redraw right after snaps the checkbox back to the real running state.
+ */
+function openProxyUi(): void {
+  const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+  win?.webContents.send(IPC.proxyOpenUi)
+  refreshApplicationMenu()
+}
+
 function toolsMenu(): MenuItemConstructorOptions {
   const running = isMcpServerRunning()
   const url = mcpServerUrl()
+  const proxyOn = isProxyRunning()
   return {
     label: 'Tools',
     submenu: [
@@ -42,6 +56,18 @@ function toolsMenu(): MenuItemConstructorOptions {
         label: 'Copy AI app config snippet',
         enabled: running,
         click: () => copyMcpConfigSnippet()
+      },
+      { type: 'separator' },
+      {
+        id: 'proxy-server-toggle',
+        label: 'Proxy Server (Record)',
+        type: 'checkbox',
+        checked: proxyOn,
+        click: () => openProxyUi()
+      },
+      {
+        label: proxyOn ? `Recording → ${proxyTarget()} on ${proxyUrl()}` : 'Not recording',
+        enabled: false
       },
       { type: 'separator' },
       {
@@ -134,8 +160,9 @@ export function refreshApplicationMenu(): void {
 }
 
 export function installApplicationMenu(): void {
-  // The toggle's label and status line are derived state — rebuild on change
+  // The toggles' labels and status lines are derived state — rebuild on change
   // rather than trying to mutate menu items in place.
   setMcpServerChangeListener(refreshApplicationMenu)
+  setProxyChangeListener(refreshApplicationMenu)
   refreshApplicationMenu()
 }

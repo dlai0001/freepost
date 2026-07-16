@@ -7,6 +7,7 @@ interface Props {
   onImport: () => void
   onHistory: () => void
   onMock: () => void
+  onProxy: () => void
   onCookies: () => void
 }
 
@@ -31,6 +32,9 @@ export default function TopBar(props: Props): JSX.Element {
       </button>
       <button className="btn" onClick={props.onMock} disabled={props.root === null}>
         Mock Server
+      </button>
+      <button className="btn" onClick={props.onProxy} disabled={props.root === null}>
+        Proxy
       </button>
       <button className="btn" onClick={props.onCookies} disabled={props.root === null}>
         <CookieIcon /> Cookies

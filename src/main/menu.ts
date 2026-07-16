@@ -46,7 +46,7 @@ function toolsMenu(): MenuItemConstructorOptions {
       { type: 'separator' },
       {
         label: 'About the MCP server…',
-        click: () => void shell.openExternal(`${DOCS_URL}#mcp-server`)
+        click: () => void shell.openExternal(`${DOCS_URL}help/ai-apps.html`)
       }
     ]
   }

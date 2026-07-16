@@ -69,8 +69,6 @@
   pre .c { color: var(--comment); }
   pre .s { color: var(--string); }
   pre .k { color: var(--keyword); }
-  pre .g { color: var(--accent); }
-  pre .m { color: var(--muted); }
   .format-note { text-align: center; color: var(--muted); margin-top: 16px; font-size: .95rem; }
   .hero-new {
     display: inline-flex; align-items: center; justify-content: center;
@@ -304,22 +302,77 @@
 <section id="ai">
   <div class="wrap">
     <h2>…so let your favorite AI write them</h2>
-    <pre><code><span class="c"># Point Claude Desktop — or any MCP client — at a collection.</span>
-<span class="k">freepost</span> mcp serve ./acme-api        <span class="c"># or just: Tools &#9656; MCP Server</span>
+    <figure class="app-shot">
+      <svg viewBox="0 0 1000 288" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="The Freepost app with the Tools menu open. 'MCP Server' is checked, and below it the menu shows 'Listening on http://127.0.0.1:7599/mcp' and 'Copy AI app config snippet'. In the sidebar behind, a new file 'Written by the AI.curl' has just appeared.">
+        <rect width="1000" height="288" fill="#0d1117"/>
 
-<span class="m">you</span>  <span class="g">&#9656;</span> <span class="s">"Write tests for the endpoints in swagger.json, then run them."</span>
+        <!-- menu bar -->
+        <rect width="1000" height="40" fill="#161b22"/>
+        <line x1="0" y1="40" x2="1000" y2="40" stroke="#30363d"/>
+        <text x="16" y="26" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#3fb950">$ freepost</text>
+        <g font-family="-apple-system, Segoe UI, sans-serif" font-size="13" fill="#e6edf3">
+          <text x="118" y="25">File</text>
+          <text x="163" y="25">Edit</text>
+          <text x="210" y="25">View</text>
+          <text x="316" y="25">Window</text>
+          <text x="384" y="25">Help</text>
+        </g>
+        <rect x="252" y="7" width="50" height="26" rx="5" fill="#58a6ff" fill-opacity="0.18"/>
+        <text x="261" y="25" font-family="-apple-system, Segoe UI, sans-serif" font-size="13" fill="#e6edf3">Tools</text>
 
-<span class="m">ai</span>   <span class="g">&#9656;</span> import_openapi   <span class="c">&#8594;</span> 12 requests created
-       write_request    <span class="c">&#8594;</span> users/Create user.curl <span class="c">+ 3 assertions</span>
-       run_request      <span class="c">&#8594;</span> 201 Created  <span class="g">&#10003; 3 passed</span>
-       write_request    <span class="c">&#8594;</span> users/Get user by id.curl <span class="c">+ 2 assertions</span>
-       run_request      <span class="c">&#8594;</span> 404 Not Found  <span class="s">&#10007; expected 200</span>
-       write_request    <span class="c">&#8594;</span> users/Get user by id.curl <span class="c">(fixed the path)</span>
-       run_request      <span class="c">&#8594;</span> 200 OK  <span class="g">&#10003; 2 passed</span></code></pre>
+        <!-- sidebar behind the menu -->
+        <rect x="0" y="40" width="240" height="248" fill="#161b22"/>
+        <line x1="240" y1="40" x2="240" y2="288" stroke="#30363d"/>
+        <text x="16" y="70" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" fill="#8b949e">acme-api</text>
+        <g font-family="-apple-system, Segoe UI, sans-serif" font-size="12.5" fill="#e6edf3">
+          <text x="16" y="98"><tspan fill="#8b949e">&#9662;</tspan><tspan dx="8" font-weight="600">users</tspan></text>
+          <text x="34" y="124">List users</text>
+          <text x="34" y="150">Create user</text>
+          <text x="34" y="176">Get user by id</text>
+        </g>
+        <!-- the file the AI just wrote, landing live via the watcher -->
+        <rect x="0" y="190" width="240" height="26" fill="#3fb950" fill-opacity="0.10"/>
+        <text x="16" y="208" font-family="-apple-system, Segoe UI, sans-serif" font-size="12.5">
+          <tspan fill="#3fb950" font-weight="700">+</tspan><tspan fill="#e6edf3" dx="8">Written by the AI</tspan>
+        </text>
+        <text x="16" y="236" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" fill="#8b949e">appears as the AI writes it</text>
+
+        <!-- Tools dropdown -->
+        <rect x="256" y="52" width="352" height="30" rx="9" fill="#000" fill-opacity="0.45"/>
+        <rect x="252" y="46" width="352" height="152" rx="9" fill="#1c2128" stroke="#30363d"/>
+        <rect x="258" y="54" width="340" height="28" rx="5" fill="#ffffff" fill-opacity="0.05"/>
+        <text x="268" y="73" font-family="-apple-system, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#3fb950">&#10003;</text>
+        <text x="290" y="73" font-family="-apple-system, Segoe UI, sans-serif" font-size="13" fill="#e6edf3">MCP Server</text>
+        <text x="290" y="100" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#6e7681">Listening on http://127.0.0.1:7599/mcp</text>
+        <text x="290" y="128" font-family="-apple-system, Segoe UI, sans-serif" font-size="13" fill="#e6edf3">Copy AI app config snippet</text>
+        <line x1="262" y1="148" x2="594" y2="148" stroke="#30363d"/>
+        <text x="290" y="176" font-family="-apple-system, Segoe UI, sans-serif" font-size="13" fill="#e6edf3">About the MCP server&#8230;</text>
+
+        <!-- what the AI is doing with it, to the right -->
+        <rect x="648" y="70" width="330" height="30" rx="8" fill="#58a6ff" fill-opacity="0.10" stroke="#58a6ff" stroke-opacity="0.35"/>
+        <text x="662" y="89" font-family="-apple-system, Segoe UI, sans-serif" font-size="11.5" fill="#e6edf3">&#8220;Write tests for <tspan font-family="ui-monospace, Menlo, monospace" fill="#a5d6ff">swagger.json</tspan>, then run them.&#8221;</text>
+        <g font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#8b949e">
+          <text x="648" y="126">write_request <tspan fill="#6e7681">&#8594;</tspan> <tspan fill="#e6edf3">Written by the AI.curl</tspan></text>
+          <text x="648" y="150">run_request   <tspan fill="#6e7681">&#8594;</tspan> <tspan fill="#e6edf3">200 OK</tspan></text>
+        </g>
+        <g font-family="ui-monospace, Menlo, monospace" font-size="11.5">
+          <text x="648" y="182"><tspan fill="#3fb950" font-weight="700">&#10003;</tspan><tspan fill="#e6edf3" dx="8">status is 200</tspan></text>
+          <text x="648" y="206"><tspan fill="#3fb950" font-weight="700">&#10003;</tspan><tspan fill="#e6edf3" dx="8">returns an id</tspan></text>
+        </g>
+        <line x1="648" y1="230" x2="978" y2="230" stroke="#30363d"/>
+        <text x="648" y="254" font-family="-apple-system, Segoe UI, sans-serif" font-size="11.5" fill="#8b949e">secrets stay unreadable &#183; nothing outside the collection</text>
+      </svg>
+    </figure>
+    <p class="shot-caption">
+      <strong>Tools &#9656; MCP Server.</strong> That's the setup — the menu hands you the URL to
+      paste into Claude Desktop, and files show up in your sidebar as the AI writes them.
+    </p>
     <p class="format-note">
       Freepost is an MCP <em>server</em>, too. The AI creates the request files, runs them,
       reads the assertion results, and fixes what fails — in the same files you edit by hand.
       Hand it a Swagger spec or a GraphQL schema and go get a coffee.
+      Prefer the terminal? <code>freepost mcp serve ./acme-api</code> does the same thing headlessly.
     </p>
     <div class="promise" style="margin-top: 34px;">
       <p><strong>And it still never phones home.</strong> Your AI app is your business —
@@ -332,11 +385,109 @@
   </div>
 </section>
 
+<section id="protocols">
+  <div class="wrap">
+    <h2>Six protocols, one client</h2>
+    <div class="grid">
+<div class="card">
+        <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A body-mode toggle set to GraphQL, a readable query for the viewer's id, name and email, with a schema-aware editor.">
+          <rect width="400" height="200" fill="#0a0d12"/>
+          <rect x="24" y="24" width="60" height="26" rx="6" fill="#0d1117" stroke="#30363d"/>
+          <text x="54" y="41" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#8b949e" text-anchor="middle">Raw</text>
+          <rect x="88" y="24" width="60" height="26" rx="6" fill="#0d1117" stroke="#30363d"/>
+          <text x="118" y="41" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#8b949e" text-anchor="middle">Form</text>
+          <rect x="152" y="24" width="80" height="26" rx="6" fill="#0d1117" stroke="#3fb950"/>
+          <text x="192" y="41" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#3fb950" text-anchor="middle">GraphQL</text>
+          <text x="376" y="41" text-anchor="end" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" fill="#8b949e">schema-aware &#9662;</text>
+          <g font-family="ui-monospace, Menlo, Consolas, monospace" font-size="12.5">
+            <text x="24" y="88" fill="#79c0ff">query<tspan fill="#e6edf3"> {</tspan></text>
+            <text x="24" y="108" fill="#e6edf3">  viewer {</text>
+            <text x="24" y="128" fill="#e6edf3">    <tspan fill="#39c5cf">id</tspan>   <tspan fill="#39c5cf">name</tspan>   <tspan fill="#39c5cf">email</tspan></text>
+            <text x="24" y="148" fill="#e6edf3">  }</text>
+            <text x="24" y="168" fill="#e6edf3">}</text>
+          </g>
+        </svg>
+        <div class="card-body">
+          <h3><span class="ico"><svg viewBox="0 0 512 512" aria-hidden="true"><path d="M352 256c0 22.2-1.2 43.6-3.3 64l-185.3 0c-2.2-20.4-3.3-41.8-3.3-64s1.2-43.6 3.3-64l185.3 0c2.2 20.4 3.3 41.8 3.3 64zm28.8-64l123.1 0c5.3 20.5 8.1 41.9 8.1 64s-2.8 43.5-8.1 64l-123.1 0c2.1-20.6 3.2-42 3.2-64s-1.1-43.4-3.2-64zm112.6-32l-116.7 0c-10-63.9-29.8-117.4-55.3-151.6c78.3 20.7 142 77.5 171.9 151.6zm-149.1 0l-176.6 0c6.1-36.4 15.5-68.6 27-94.7c10.5-23.6 22.2-40.7 33.5-51.5C239.4 3.2 248.7 0 256 0s16.6 3.2 27.8 13.8c11.3 10.8 23 27.9 33.5 51.5c11.6 26 20.9 58.2 27 94.7zm-209 0L18.6 160C48.6 85.9 112.2 29.1 190.6 8.4C165.1 42.6 145.3 96.1 135.3 160zM8.1 192l123.1 0c-2.1 20.6-3.2 42-3.2 64s1.1 43.4 3.2 64L8.1 320C2.8 299.5 0 278.1 0 256s2.8-43.5 8.1-64zM194.7 446.6c-11.6-26-20.9-58.2-27-94.6l176.6 0c-6.1 36.4-15.5 68.6-27 94.6c-10.5 23.6-22.2 40.7-33.5 51.5C272.6 508.8 263.3 512 256 512s-16.6-3.2-27.8-13.8c-11.3-10.8-23-27.9-33.5-51.5zM135.3 352c10 63.9 29.8 117.4 55.3 151.6C112.2 482.9 48.6 426.1 18.6 352l116.7 0zm358.1 0c-30 74.1-93.6 130.9-171.9 151.6c25.5-34.2 45.2-87.7 55.3-151.6l116.7 0z"/></svg></span>REST, GraphQL, WebSocket</h3>
+          <p>GraphQL queries stored readable, not JSON-escaped. WebSocket sessions saved as websocat commands with message presets.</p>
+        </div>
+      </div>
+<div class="card">
+        <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A gRPC call: a grpcurl-style command invokes a package.Service/Method and streams reply messages back.">
+          <rect width="400" height="200" fill="#0a0d12"/>
+          <g font-family="ui-monospace, Menlo, monospace" font-size="11.5">
+            <text x="24" y="40" fill="#8b949e">$ <tspan fill="#e6edf3">grpcurl -plaintext \</tspan></text>
+            <text x="44" y="60" fill="#a5d6ff">-d '{"name":"world"}' \</text>
+            <text x="44" y="80" fill="#e6edf3">localhost:50051 \</text>
+            <text x="44" y="100" fill="#39c5cf">helloworld.Greeter/SayHello</text>
+          </g>
+          <line x1="24" y1="118" x2="376" y2="118" stroke="#30363d"/>
+          <g font-family="ui-monospace, Menlo, monospace" font-size="11.5">
+            <text x="24" y="140" fill="#3fb950">&#8592; {"message":"Hello world"}</text>
+            <text x="24" y="162" fill="#8b949e">stream · #1 #2 #3 · <tspan fill="#3fb950">OK</tspan></text>
+          </g>
+          <rect x="300" y="128" width="76" height="20" rx="10" fill="#238636" stroke="#3fb950"/>
+          <text x="338" y="142" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">gRPC</text>
+        </svg>
+        <div class="card-body">
+          <h3><span class="ico"><svg viewBox="0 0 384 512" aria-hidden="true"><path d="M96 0C78.3 0 64 14.3 64 32l0 96 64 0 0-96c0-17.7-14.3-32-32-32zM288 0c-17.7 0-32 14.3-32 32l0 96 64 0 0-96c0-17.7-14.3-32-32-32zM32 160c-17.7 0-32 14.3-32 32s14.3 32 32 32l0 32c0 77.4 55 142 128 156.8l0 67.2c0 17.7 14.3 32 32 32s32-14.3 32-32l0-67.2C297 398 352 333.4 352 256l0-32c17.7 0 32-14.3 32-32s-14.3-32-32-32L32 160z"/></svg></span>gRPC, the curl way</h3>
+          <p>Call unary and server-streaming gRPC methods with a grpcurl-style <code>.grpc</code> file. Bring your <code>.proto</code> files, edit the request as JSON, and read the reply (or a live stream) — schema stays local, so it works fully offline.</p>
+        </div>
+      </div>
+<div class="card">
+        <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="An MQTT client: a publish to sensors/temp and a subscription to sensors/# receiving the retained message.">
+          <rect width="400" height="200" fill="#0a0d12"/>
+          <text x="24" y="40" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#8b949e">publish</text>
+          <rect x="24" y="48" width="160" height="26" rx="6" fill="#161b22" stroke="#30363d"/>
+          <text x="34" y="65" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#e6edf3">sensors/temp  {"c":21}</text>
+          <path d="M188 61 L300 61" stroke="#d29922" stroke-width="1.5"/>
+          <path d="M300 61 l-8 -4 v8 z" fill="#d29922"/>
+          <rect x="304" y="46" width="72" height="30" rx="6" fill="#0d1117" stroke="#30363d"/>
+          <text x="340" y="65" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" fill="#8b949e" text-anchor="middle">broker</text>
+          <text x="24" y="118" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#8b949e">subscribe <tspan fill="#39c5cf" font-family="ui-monospace, monospace">sensors/#</tspan></text>
+          <g font-family="ui-monospace, Menlo, monospace" font-size="11">
+            <text x="24" y="142" fill="#3fb950">&#8592; sensors/temp  {"c":21}</text>
+            <text x="24" y="162" fill="#3fb950">&#8592; sensors/hum   {"h":48}</text>
+          </g>
+          <path d="M330 76 C 330 110, 120 110, 60 128" stroke="#3fb950" stroke-width="1.2" fill="none" stroke-dasharray="3 3"/>
+        </svg>
+        <div class="card-body">
+          <h3><span class="ico"><svg viewBox="0 0 512 512" aria-hidden="true"><path d="M192 32c0-17.7 14.3-32 32-32C383.1 0 512 128.9 512 288c0 17.7-14.3 32-32 32s-32-14.3-32-32C448 164.3 347.7 64 224 64c-17.7 0-32-14.3-32-32zM60.6 220.6L164.7 324.7l28.4-28.4c-.7-2.6-1.1-5.4-1.1-8.3c0-17.7 14.3-32 32-32s32 14.3 32 32s-14.3 32-32 32c-2.9 0-5.6-.4-8.3-1.1l-28.4 28.4L291.4 451.4c14.5 14.5 11.8 38.8-7.3 46.3C260.5 506.9 234.9 512 208 512C93.1 512 0 418.9 0 304c0-26.9 5.1-52.5 14.4-76.1c7.5-19 31.8-21.8 46.3-7.3zM224 96c106 0 192 86 192 192c0 17.7-14.3 32-32 32s-32-14.3-32-32c0-70.7-57.3-128-128-128c-17.7 0-32-14.3-32-32s14.3-32 32-32z"/></svg></span>MQTT publish &amp; subscribe</h3>
+          <p>Talk to MQTT brokers with mosquitto-style <code>.mqtt</code> files. Publish a payload with QoS and retain, or subscribe to a topic (wildcards included) and watch messages stream in live. TLS, auth, and <code>${VAR}</code> all supported.</p>
+        </div>
+      </div>
+<div class="card">
+        <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="An MCP tool call: the get-sum tool invoked with a=20 and b=22, returning 42, with two passing test assertions.">
+          <rect width="400" height="200" fill="#0a0d12"/>
+          <g font-family="ui-monospace, Menlo, monospace" font-size="11.5">
+            <text x="24" y="36" fill="#8b949e">tools/call <tspan fill="#39c5cf">get-sum</tspan></text>
+            <text x="24" y="58" fill="#e6edf3">a=<tspan fill="#79c0ff">20</tspan>  b=<tspan fill="#79c0ff">22</tspan></text>
+            <text x="24" y="84" fill="#3fb950">&#8592; {"content":[{"text":<tspan fill="#a5d6ff">"42"</tspan>}]}</text>
+          </g>
+          <rect x="296" y="22" width="80" height="20" rx="10" fill="#238636" stroke="#3fb950"/>
+          <text x="336" y="36" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">MCP</text>
+          <line x1="24" y1="102" x2="376" y2="102" stroke="#30363d"/>
+          <g font-family="ui-monospace, Menlo, monospace" font-size="12.5">
+            <text x="24" y="126"><tspan fill="#3fb950" font-weight="700">&#10003;</tspan><tspan fill="#e6edf3" dx="8">sums 20 + 22</tspan></text>
+            <text x="24" y="150"><tspan fill="#3fb950" font-weight="700">&#10003;</tspan><tspan fill="#e6edf3" dx="8">is not a tool error</tspan></text>
+          </g>
+          <rect x="24" y="164" width="278" height="22" rx="11" fill="#58a6ff" fill-opacity="0.12" stroke="#58a6ff" stroke-opacity="0.35"/>
+          <text x="37" y="179" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#58a6ff">freepost mcp check &#183; fails CI on schema drift</text>
+        </svg>
+        <div class="card-body">
+          <h3><span class="ico"><svg viewBox="0 0 640 512" aria-hidden="true"><path d="M320 0c17.7 0 32 14.3 32 32l0 64 120 0c39.8 0 72 32.2 72 72l0 272c0 39.8-32.2 72-72 72l-304 0c-39.8 0-72-32.2-72-72l0-272c0-39.8 32.2-72 72-72l120 0 0-64c0-17.7 14.3-32 32-32zM208 384c-8.8 0-16 7.2-16 16s7.2 16 16 16l32 0c8.8 0 16-7.2 16-16s-7.2-16-16-16l-32 0zm96 0c-8.8 0-16 7.2-16 16s7.2 16 16 16l32 0c8.8 0 16-7.2 16-16s-7.2-16-16-16l-32 0zm96 0c-8.8 0-16 7.2-16 16s7.2 16 16 16l32 0c8.8 0 16-7.2 16-16s-7.2-16-16-16l-32 0zM264 256a40 40 0 1 0 -80 0 40 40 0 1 0 80 0zm152 40a40 40 0 1 0 0-80 40 40 0 1 0 0 80zM48 224l16 0 0 192-16 0c-26.5 0-48-21.5-48-48l0-96c0-26.5 21.5-48 48-48zm544 0c26.5 0 48 21.5 48 48l0 96c0 26.5-21.5 48-48 48l-16 0 0-192 16 0z"/></svg></span>MCP servers, testable</h3>
+          <p>Call an MCP server's tools, resources, and prompts over stdio or Streamable HTTP from a <code>.mcp</code> file — a real MCP Inspector invocation. Then assert on the result with <code>pm.*</code> tests and run them in CI, which no other MCP client does. <code>freepost mcp check</code> turns silent tool-schema drift into a failing build, and a stdio server never spawns until you've seen the exact command and approved it.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <section>
   <div class="wrap">
     <h2>Built for developers behind firewalls</h2>
     <div class="grid">
-      <div class="card">
+<div class="card">
         <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A globe with a red line through it and a checklist: no telemetry, no update pings, no account. Outbound connections: 0.">
           <rect width="400" height="200" fill="#0a0d12"/>
           <circle cx="92" cy="100" r="42" fill="none" stroke="#30363d" stroke-width="2"/>
@@ -357,7 +508,7 @@
           <p>No registration, no login, no sync, no telemetry, no update pings. The only module that can open a socket is the request engine — and CI enforces it.</p>
         </div>
       </div>
-      <div class="card">
+<div class="card">
         <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A file tree of a collection folder with get-user.sh, create-user.sh, and update-user.sh, tracked in git.">
           <rect width="400" height="200" fill="#0a0d12"/>
           <text x="24" y="40" font-family="ui-monospace, Menlo, monospace" font-size="12" fill="#8b949e">~/work/acme-api/</text>
@@ -375,7 +526,7 @@
           <p>Collections are folders you choose. Filenames are request names. Version them with git, review them in pull requests, carry them on a USB stick.</p>
         </div>
       </div>
-      <div class="card">
+<div class="card">
         <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A pm.test script asserting a 200 status, and two passing test results below.">
           <rect width="400" height="200" fill="#0a0d12"/>
           <g font-family="ui-monospace, Menlo, Consolas, monospace" font-size="12.5">
@@ -394,7 +545,7 @@
           <p>Pre-request and test scripts with the pm.* API and Chai assertions. Import your existing Postman collections and keep your tests.</p>
         </div>
       </div>
-      <div class="card">
+<div class="card">
         <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A spec URL fetch bar, and a checklist of endpoints — GET users and POST orders checked, DELETE order unchecked.">
           <rect width="400" height="200" fill="#0a0d12"/>
           <rect x="24" y="24" width="290" height="28" rx="6" fill="#0d1117" stroke="#30363d"/>
@@ -428,7 +579,7 @@
           <p>Point Freepost at any OpenAPI/Swagger spec URL, preview every endpoint, and pick exactly which ones to bring in. Each becomes a runnable curl file with sensible placeholder values already filled in.</p>
         </div>
       </div>
-      <div class="card">
+<div class="card">
         <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="An OAuth2 sign-in: the system browser opens to a provider, redirects to a local loopback, and a token lands in the session.">
           <rect width="400" height="200" fill="#0a0d12"/>
           <rect x="24" y="26" width="150" height="120" rx="8" fill="#0d1117" stroke="#30363d"/>
@@ -453,7 +604,7 @@
           <p>client_credentials, password, and the browser-based authorization_code flow — PKCE by default, the token cached under <code>.freepost/</code> and refreshed automatically. The sign-in opens your system browser and catches the redirect on a local loopback port.</p>
         </div>
       </div>
-      <div class="card">
+<div class="card">
         <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A mock server: an app calls a local port and gets back a saved 200 example; an unmatched path gets a 404.">
           <rect width="400" height="200" fill="#0a0d12"/>
           <rect x="24" y="40" width="96" height="120" rx="8" fill="#0d1117" stroke="#30363d"/>
@@ -477,74 +628,7 @@
           <p>Serve your saved response examples over a local HTTP port — no real backend needed. Mark an example active, or force one with a query param. Unmatched paths return 404 and never proxy out, so it stays fully offline. Runs from the app or <code>freepost mock</code> in CI.</p>
         </div>
       </div>
-      <div class="card">
-        <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A gRPC call: a grpcurl-style command invokes a package.Service/Method and streams reply messages back.">
-          <rect width="400" height="200" fill="#0a0d12"/>
-          <g font-family="ui-monospace, Menlo, monospace" font-size="11.5">
-            <text x="24" y="40" fill="#8b949e">$ <tspan fill="#e6edf3">grpcurl -plaintext \</tspan></text>
-            <text x="44" y="60" fill="#a5d6ff">-d '{"name":"world"}' \</text>
-            <text x="44" y="80" fill="#e6edf3">localhost:50051 \</text>
-            <text x="44" y="100" fill="#39c5cf">helloworld.Greeter/SayHello</text>
-          </g>
-          <line x1="24" y1="118" x2="376" y2="118" stroke="#30363d"/>
-          <g font-family="ui-monospace, Menlo, monospace" font-size="11.5">
-            <text x="24" y="140" fill="#3fb950">&#8592; {"message":"Hello world"}</text>
-            <text x="24" y="162" fill="#8b949e">stream · #1 #2 #3 · <tspan fill="#3fb950">OK</tspan></text>
-          </g>
-          <rect x="300" y="128" width="76" height="20" rx="10" fill="#238636" stroke="#3fb950"/>
-          <text x="338" y="142" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">gRPC</text>
-        </svg>
-        <div class="card-body">
-          <h3><span class="ico"><svg viewBox="0 0 384 512" aria-hidden="true"><path d="M96 0C78.3 0 64 14.3 64 32l0 96 64 0 0-96c0-17.7-14.3-32-32-32zM288 0c-17.7 0-32 14.3-32 32l0 96 64 0 0-96c0-17.7-14.3-32-32-32zM32 160c-17.7 0-32 14.3-32 32s14.3 32 32 32l0 32c0 77.4 55 142 128 156.8l0 67.2c0 17.7 14.3 32 32 32s32-14.3 32-32l0-67.2C297 398 352 333.4 352 256l0-32c17.7 0 32-14.3 32-32s-14.3-32-32-32L32 160z"/></svg></span>gRPC, the curl way</h3>
-          <p>Call unary and server-streaming gRPC methods with a grpcurl-style <code>.grpc</code> file. Bring your <code>.proto</code> files, edit the request as JSON, and read the reply (or a live stream) — schema stays local, so it works fully offline.</p>
-        </div>
-      </div>
-      <div class="card">
-        <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="An MQTT client: a publish to sensors/temp and a subscription to sensors/# receiving the retained message.">
-          <rect width="400" height="200" fill="#0a0d12"/>
-          <text x="24" y="40" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#8b949e">publish</text>
-          <rect x="24" y="48" width="160" height="26" rx="6" fill="#161b22" stroke="#30363d"/>
-          <text x="34" y="65" font-family="ui-monospace, Menlo, monospace" font-size="11" fill="#e6edf3">sensors/temp  {"c":21}</text>
-          <path d="M188 61 L300 61" stroke="#d29922" stroke-width="1.5"/>
-          <path d="M300 61 l-8 -4 v8 z" fill="#d29922"/>
-          <rect x="304" y="46" width="72" height="30" rx="6" fill="#0d1117" stroke="#30363d"/>
-          <text x="340" y="65" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" fill="#8b949e" text-anchor="middle">broker</text>
-          <text x="24" y="118" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#8b949e">subscribe <tspan fill="#39c5cf" font-family="ui-monospace, monospace">sensors/#</tspan></text>
-          <g font-family="ui-monospace, Menlo, monospace" font-size="11">
-            <text x="24" y="142" fill="#3fb950">&#8592; sensors/temp  {"c":21}</text>
-            <text x="24" y="162" fill="#3fb950">&#8592; sensors/hum   {"h":48}</text>
-          </g>
-          <path d="M330 76 C 330 110, 120 110, 60 128" stroke="#3fb950" stroke-width="1.2" fill="none" stroke-dasharray="3 3"/>
-        </svg>
-        <div class="card-body">
-          <h3><span class="ico"><svg viewBox="0 0 512 512" aria-hidden="true"><path d="M192 32c0-17.7 14.3-32 32-32C383.1 0 512 128.9 512 288c0 17.7-14.3 32-32 32s-32-14.3-32-32C448 164.3 347.7 64 224 64c-17.7 0-32-14.3-32-32zM60.6 220.6L164.7 324.7l28.4-28.4c-.7-2.6-1.1-5.4-1.1-8.3c0-17.7 14.3-32 32-32s32 14.3 32 32s-14.3 32-32 32c-2.9 0-5.6-.4-8.3-1.1l-28.4 28.4L291.4 451.4c14.5 14.5 11.8 38.8-7.3 46.3C260.5 506.9 234.9 512 208 512C93.1 512 0 418.9 0 304c0-26.9 5.1-52.5 14.4-76.1c7.5-19 31.8-21.8 46.3-7.3zM224 96c106 0 192 86 192 192c0 17.7-14.3 32-32 32s-32-14.3-32-32c0-70.7-57.3-128-128-128c-17.7 0-32-14.3-32-32s14.3-32 32-32z"/></svg></span>MQTT publish &amp; subscribe</h3>
-          <p>Talk to MQTT brokers with mosquitto-style <code>.mqtt</code> files. Publish a payload with QoS and retain, or subscribe to a topic (wildcards included) and watch messages stream in live. TLS, auth, and <code>${VAR}</code> all supported.</p>
-        </div>
-      </div>
-      <div class="card">
-        <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="An MCP tool call: the get-sum tool invoked with a=20 and b=22, returning 42, with two passing test assertions.">
-          <rect width="400" height="200" fill="#0a0d12"/>
-          <g font-family="ui-monospace, Menlo, monospace" font-size="11.5">
-            <text x="24" y="36" fill="#8b949e">tools/call <tspan fill="#39c5cf">get-sum</tspan></text>
-            <text x="24" y="58" fill="#e6edf3">a=<tspan fill="#79c0ff">20</tspan>  b=<tspan fill="#79c0ff">22</tspan></text>
-            <text x="24" y="84" fill="#3fb950">&#8592; {"content":[{"text":<tspan fill="#a5d6ff">"42"</tspan>}]}</text>
-          </g>
-          <rect x="296" y="22" width="80" height="20" rx="10" fill="#238636" stroke="#3fb950"/>
-          <text x="336" y="36" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" font-weight="700" fill="#fff" text-anchor="middle">MCP</text>
-          <line x1="24" y1="102" x2="376" y2="102" stroke="#30363d"/>
-          <g font-family="ui-monospace, Menlo, monospace" font-size="12.5">
-            <text x="24" y="126"><tspan fill="#3fb950" font-weight="700">&#10003;</tspan><tspan fill="#e6edf3" dx="8">sums 20 + 22</tspan></text>
-            <text x="24" y="150"><tspan fill="#3fb950" font-weight="700">&#10003;</tspan><tspan fill="#e6edf3" dx="8">is not a tool error</tspan></text>
-          </g>
-          <rect x="24" y="164" width="278" height="22" rx="11" fill="#58a6ff" fill-opacity="0.12" stroke="#58a6ff" stroke-opacity="0.35"/>
-          <text x="37" y="179" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#58a6ff">freepost mcp check &#183; fails CI on schema drift</text>
-        </svg>
-        <div class="card-body">
-          <h3><span class="ico"><svg viewBox="0 0 640 512" aria-hidden="true"><path d="M320 0c17.7 0 32 14.3 32 32l0 64 120 0c39.8 0 72 32.2 72 72l0 272c0 39.8-32.2 72-72 72l-304 0c-39.8 0-72-32.2-72-72l0-272c0-39.8 32.2-72 72-72l120 0 0-64c0-17.7 14.3-32 32-32zM208 384c-8.8 0-16 7.2-16 16s7.2 16 16 16l32 0c8.8 0 16-7.2 16-16s-7.2-16-16-16l-32 0zm96 0c-8.8 0-16 7.2-16 16s7.2 16 16 16l32 0c8.8 0 16-7.2 16-16s-7.2-16-16-16l-32 0zm96 0c-8.8 0-16 7.2-16 16s7.2 16 16 16l32 0c8.8 0 16-7.2 16-16s-7.2-16-16-16l-32 0zM264 256a40 40 0 1 0 -80 0 40 40 0 1 0 80 0zm152 40a40 40 0 1 0 0-80 40 40 0 1 0 0 80zM48 224l16 0 0 192-16 0c-26.5 0-48-21.5-48-48l0-96c0-26.5 21.5-48 48-48zm544 0c26.5 0 48 21.5 48 48l0 96c0 26.5-21.5 48-48 48l-16 0 0-192 16 0z"/></svg></span>MCP servers, testable</h3>
-          <p>Call an MCP server's tools, resources, and prompts over stdio or Streamable HTTP from a <code>.mcp</code> file — a real MCP Inspector invocation. Then assert on the result with <code>pm.*</code> tests and run them in CI, which no other MCP client does. <code>freepost mcp check</code> turns silent tool-schema drift into a failing build, and a stdio server never spawns until you've seen the exact command and approved it.</p>
-        </div>
-      </div>
-      <div class="card">
+<div class="card">
         <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A prompt asking an AI to write tests for swagger.json, three request files created in the collection, and two passing assertions, with a note that secrets stay unreadable.">
           <rect width="400" height="200" fill="#0a0d12"/>
           <rect x="24" y="18" width="352" height="32" rx="8" fill="#58a6ff" fill-opacity="0.10" stroke="#58a6ff" stroke-opacity="0.35"/>
@@ -569,7 +653,7 @@
           <p>Freepost is an MCP <em>server</em> too. Point Claude Desktop at a collection and ask for tests: it creates the request files, runs them, reads the assertions, and fixes what fails — then you review the diff. It can use a secret to send a request, but never read one. Off by default; one toggle, per session.</p>
         </div>
       </div>
-      <div class="card">
+<div class="card">
         <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A four-step workflow: login, create order, an expected-to-fail charge, and fetch receipt.">
           <rect width="400" height="200" fill="#0a0d12"/>
           <g font-family="-apple-system, Segoe UI, sans-serif" font-size="13.5">
@@ -586,7 +670,7 @@
           <p>Chain requests into ordered runs. Mark steps that are expected to fail. Capture a token in step one, use it in step three.</p>
         </div>
       </div>
-      <div class="card">
+<div class="card">
         <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A search box with the query 'smoke' and two matching requests tagged with users and smoke labels.">
           <rect width="400" height="200" fill="#0a0d12"/>
           <rect x="24" y="24" width="352" height="30" rx="6" fill="#0d1117" stroke="#30363d"/>
@@ -608,29 +692,6 @@
         <div class="card-body">
           <h3><span class="ico"><svg viewBox="0 0 512 512" aria-hidden="true"><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352a144 144 0 1 0 0-288 144 144 0 1 0 0 288z"/></svg></span>Search &amp; labels</h3>
           <p>Label requests in frontmatter and find anything instantly — by name, label, description, URL, or method.</p>
-        </div>
-      </div>
-      <div class="card">
-        <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A body-mode toggle set to GraphQL, a readable query for the viewer's id, name and email, with a schema-aware editor.">
-          <rect width="400" height="200" fill="#0a0d12"/>
-          <rect x="24" y="24" width="60" height="26" rx="6" fill="#0d1117" stroke="#30363d"/>
-          <text x="54" y="41" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#8b949e" text-anchor="middle">Raw</text>
-          <rect x="88" y="24" width="60" height="26" rx="6" fill="#0d1117" stroke="#30363d"/>
-          <text x="118" y="41" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#8b949e" text-anchor="middle">Form</text>
-          <rect x="152" y="24" width="80" height="26" rx="6" fill="#0d1117" stroke="#3fb950"/>
-          <text x="192" y="41" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#3fb950" text-anchor="middle">GraphQL</text>
-          <text x="376" y="41" text-anchor="end" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" fill="#8b949e">schema-aware &#9662;</text>
-          <g font-family="ui-monospace, Menlo, Consolas, monospace" font-size="12.5">
-            <text x="24" y="88" fill="#79c0ff">query<tspan fill="#e6edf3"> {</tspan></text>
-            <text x="24" y="108" fill="#e6edf3">  viewer {</text>
-            <text x="24" y="128" fill="#e6edf3">    <tspan fill="#39c5cf">id</tspan>   <tspan fill="#39c5cf">name</tspan>   <tspan fill="#39c5cf">email</tspan></text>
-            <text x="24" y="148" fill="#e6edf3">  }</text>
-            <text x="24" y="168" fill="#e6edf3">}</text>
-          </g>
-        </svg>
-        <div class="card-body">
-          <h3><span class="ico"><svg viewBox="0 0 512 512" aria-hidden="true"><path d="M352 256c0 22.2-1.2 43.6-3.3 64l-185.3 0c-2.2-20.4-3.3-41.8-3.3-64s1.2-43.6 3.3-64l185.3 0c2.2 20.4 3.3 41.8 3.3 64zm28.8-64l123.1 0c5.3 20.5 8.1 41.9 8.1 64s-2.8 43.5-8.1 64l-123.1 0c2.1-20.6 3.2-42 3.2-64s-1.1-43.4-3.2-64zm112.6-32l-116.7 0c-10-63.9-29.8-117.4-55.3-151.6c78.3 20.7 142 77.5 171.9 151.6zm-149.1 0l-176.6 0c6.1-36.4 15.5-68.6 27-94.7c10.5-23.6 22.2-40.7 33.5-51.5C239.4 3.2 248.7 0 256 0s16.6 3.2 27.8 13.8c11.3 10.8 23 27.9 33.5 51.5c11.6 26 20.9 58.2 27 94.7zm-209 0L18.6 160C48.6 85.9 112.2 29.1 190.6 8.4C165.1 42.6 145.3 96.1 135.3 160zM8.1 192l123.1 0c-2.1 20.6-3.2 42-3.2 64s1.1 43.4 3.2 64L8.1 320C2.8 299.5 0 278.1 0 256s2.8-43.5 8.1-64zM194.7 446.6c-11.6-26-20.9-58.2-27-94.6l176.6 0c-6.1 36.4-15.5 68.6-27 94.6c-10.5 23.6-22.2 40.7-33.5 51.5C272.6 508.8 263.3 512 256 512s-16.6-3.2-27.8-13.8c-11.3-10.8-23-27.9-33.5-51.5zM135.3 352c10 63.9 29.8 117.4 55.3 151.6C112.2 482.9 48.6 426.1 18.6 352l116.7 0zm358.1 0c-30 74.1-93.6 130.9-171.9 151.6c25.5-34.2 45.2-87.7 55.3-151.6l116.7 0z"/></svg></span>REST, GraphQL, WebSocket</h3>
-          <p>GraphQL queries stored readable, not JSON-escaped. WebSocket sessions saved as websocat commands with message presets.</p>
         </div>
       </div>
     </div>

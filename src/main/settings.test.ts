@@ -38,6 +38,19 @@ describe('settings read/write', () => {
     expect((await readSettings(file)).lastRoot).toBe('/second')
   })
 
+  it('round-trips the proxy target and port alongside other keys', async () => {
+    await writeSettings(file, { lastRoot: '/some/collection' })
+    await writeSettings(file, { proxyTarget: 'http://localhost:3000', proxyPort: 7699 })
+    await writeSettings(file, { proxyHttpsEnabled: true, proxyHttpsPort: 7700 })
+    expect(await readSettings(file)).toEqual({
+      lastRoot: '/some/collection',
+      proxyTarget: 'http://localhost:3000',
+      proxyPort: 7699,
+      proxyHttpsEnabled: true,
+      proxyHttpsPort: 7700
+    })
+  })
+
   it('creates the parent directory if missing', async () => {
     const nested = join(dir, 'a', 'b', 'settings.json')
     await writeSettings(nested, { lastRoot: '/x' })

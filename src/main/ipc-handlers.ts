@@ -3,6 +3,7 @@
  * sandbox, workflow, importers) and the engine to the renderer.
  */
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { spawn } from 'child_process'
 import { promises as fs } from 'fs'
 import { existsSync, watch, type FSWatcher } from 'fs'
 import { dirname, isAbsolute, join, relative, sep } from 'path'
@@ -19,6 +20,7 @@ import type {
   OAuth2Config,
   OpenApiOperationSummary,
   ParseCommandResult,
+  RecordedExchange,
   RequestFile,
   RequestKind,
   SearchEntry,
@@ -46,7 +48,8 @@ import {
   validateReferences
 } from '../core/workflow'
 import { importPostmanCollection, sanitizePathSegment } from '../core/importers/postman'
-import { importCommandText, parseCommandFlexible } from '../core/importers/command'
+import { importCommandText, parseCommandFlexible, safeRequestFileName } from '../core/importers/command'
+import { omittedBodyNote, recordedName, recordedToRequestFile } from '../core/record/to-request'
 import { dedupeRelPath, importOpenApi, listOpenApiOperations } from '../core/importers/openapi'
 import { CODEGEN_TARGETS, generateCode } from '../core/codegen'
 import { parseDataFile } from '../core/data'
@@ -71,6 +74,8 @@ import {
 } from '../engine'
 import { writeCachedToken } from './oauth-cache'
 import { buildRoutesForCollection } from './mock'
+import { appProxyStatus, proxyTlsDir, startAppProxy, stopAppProxy } from './record-proxy'
+import { ensureProxyCerts, regenerateProxyCa } from './proxy-certs'
 import { resolveConfigChain } from './config-resolve'
 import { resolveVariables, substitute, substituteModel } from '../core/vars'
 import { ensureFreepostDir, listFiles, scanCollection } from './collection'
@@ -1050,6 +1055,78 @@ export function registerIpcHandlers(): void {
     return { running: true, port: server.port }
   })
 
+  // ---- record proxy (one app-wide instance; lifecycle in record-proxy.ts) ----
+  ipcMain.handle(
+    IPC.proxyStart,
+    (_e, args: { target: string; port?: number; https?: boolean; httpsPort?: number }) =>
+      startAppProxy(args)
+  )
+  ipcMain.handle(IPC.proxyStop, () => stopAppProxy())
+  ipcMain.handle(IPC.proxyStatus, () => appProxyStatus())
+
+  // The proxy's local CA (proxy-certs.ts). Export copies ca.crt wherever the
+  // user picks; install only OPENS the OS import UI — a silent trust-store
+  // write is the one thing this feature must never do.
+  ipcMain.handle(IPC.proxyExportCa, async (): Promise<{ saved: boolean; path?: string }> => {
+    const { caPath } = await ensureProxyCerts(proxyTlsDir())
+    const res = await dialog.showSaveDialog({
+      title: 'Export CA certificate',
+      defaultPath: 'freepost-proxy-ca.crt',
+      filters: [{ name: 'Certificate', extensions: ['crt', 'pem', 'cer'] }]
+    })
+    if (res.canceled || res.filePath === undefined || res.filePath === '') return { saved: false }
+    await fs.copyFile(caPath, res.filePath)
+    return { saved: true, path: res.filePath }
+  })
+  ipcMain.handle(IPC.proxyInstallCa, async () => {
+    const { caPath } = await ensureProxyCerts(proxyTlsDir())
+    if (process.platform === 'darwin') {
+      // Opening a .crt hands it to Keychain Access, which asks the user.
+      await shell.openPath(caPath)
+    } else if (process.platform === 'win32') {
+      // The stock certificate-import wizard; the user clicks through it.
+      spawn('rundll32', ['cryptext.dll,CryptExtAddCER', caPath], { detached: true }).unref()
+    } else {
+      // No universal import UI on Linux — reveal the file instead.
+      shell.showItemInFolder(caPath)
+    }
+  })
+  ipcMain.handle(IPC.proxyRegenerateCa, async (): Promise<{ caPath: string }> => {
+    const { caPath } = await regenerateProxyCa(proxyTlsDir())
+    return { caPath }
+  })
+
+  // Recorded exchanges: read/clear mirror the history handlers, on the richer
+  // recorded.jsonl file the proxy appends to.
+  ipcMain.handle(IPC.recordedList, async (_e, root: string): Promise<RecordedExchange[]> => {
+    try {
+      const file = join(root, '.freepost', 'history', 'recorded.jsonl')
+      const text = await fs.readFile(file, 'utf8')
+      return text
+        .split('\n')
+        .filter((l) => l.trim() !== '')
+        .map((l) => JSON.parse(l) as RecordedExchange)
+        .reverse()
+    } catch {
+      return []
+    }
+  })
+  ipcMain.handle(IPC.recordedClear, async (_e, root: string) => {
+    try {
+      await fs.rm(join(root, '.freepost', 'history', 'recorded.jsonl'))
+    } catch {
+      /* nothing to clear */
+    }
+  })
+  ipcMain.handle(IPC.recordedSave, async (_e, args: { root: string; entry: RecordedExchange }) => {
+    const file = recordedToRequestFile(args.entry)
+    const ext = file.kind === 'grpc' ? '.grpc' : file.kind === 'websocat' ? '.ws' : '.curl'
+    const rel = await writeRequestDeduped(args.root, recordedName(args.entry, file), ext, file)
+    // A truncated/binary capture is saved without its body — tell the UI.
+    const note = omittedBodyNote(file)
+    return { written: [rel], ...(note !== null ? { note } : {}) }
+  })
+
   // ---- OAuth2 token acquisition ----
   ipcMain.handle(
     IPC.oauthAcquire,
@@ -1314,12 +1391,29 @@ async function importAsCommand(
   const result = importCommandText(text)
   if (!result.ok) throw new Error(result.error)
   const ext = result.kind === 'curl' ? '.curl' : '.ws'
-  const base = (name !== undefined && name.trim() !== '' ? name.trim() : result.suggestedName)
-    .replace(/[<>:"/\\|?*]/g, '')
-    .replace(/\.$/, '')
-  // Avoid clobbering an existing request: suffix -2, -3, ...
+  const rel = await writeRequestDeduped(
+    root,
+    name !== undefined && name.trim() !== '' ? name.trim() : result.suggestedName,
+    ext,
+    result.file
+  )
+  return { written: [rel] }
+}
+
+/**
+ * Write a request file at the collection root under a filename-safe name,
+ * suffixing -2, -3, ... to avoid clobbering an existing request. Shared by the
+ * command importer and the recorded-exchange save. Returns the relative path.
+ */
+async function writeRequestDeduped(
+  root: string,
+  name: string,
+  ext: string,
+  file: RequestFile
+): Promise<string> {
+  const base = safeRequestFileName(name)
   let rel = `${base}${ext}`
   for (let n = 2; existsSync(join(root, rel)); n++) rel = `${base}-${n}${ext}`
-  await fs.writeFile(join(root, rel), writeRequestFile(result.file))
-  return { written: [rel] }
+  await fs.writeFile(join(root, rel), writeRequestFile(file))
+  return rel
 }

@@ -16,6 +16,7 @@ import type {
   McpToolResponse,
   MockRequestLogEntry,
   OpenApiOperationSummary,
+  RecordedExchange,
   ParseCommandResult,
   ParseResult,
   RequestFile,
@@ -104,6 +105,18 @@ export const IPC = {
   mockStop: 'mock:stop', // ({ root }) => void
   mockStatus: 'mock:status', // ({ root }) => { running; port?; routes? }
   mockLog: 'mock:log', // main -> renderer event ({ root, entry: MockRequestLogEntry })
+
+  proxyStart: 'proxy:start', // ({ target, port?, https?, httpsPort? }) => { url; target; port; httpsUrl?; caPath? } (throws with a displayable message)
+  proxyStop: 'proxy:stop', // () => void
+  proxyStatus: 'proxy:status', // () => { running; url?; target; port; https; httpsPort; httpsUrl?; caPath? } (prefills fall back to settings)
+  proxyExportCa: 'proxy:export-ca', // () => { saved; path? } — save dialog, copies ca.crt (generates certs if absent)
+  proxyInstallCa: 'proxy:install-ca', // () => void — opens the OS certificate-import UI (NEVER silent install)
+  proxyRegenerateCa: 'proxy:regenerate-ca', // () => { caPath } — wipe + recreate the local CA (renderer confirms first)
+  proxyLog: 'proxy:log', // main -> renderer event ({ entry: RecordedExchange })
+  proxyOpenUi: 'proxy:open-ui', // main -> renderer event: menu asks the renderer to open the proxy modal
+  recordedList: 'recorded:list', // (root) => RecordedExchange[]
+  recordedClear: 'recorded:clear', // (root) => void
+  recordedSave: 'recorded:save', // ({ root, entry }) => { written: string[] } — recorded exchange -> .curl file
 
   oauthAcquire: 'oauth:acquire', // ({ root, path, envPath? }) => AcquiredToken (stores in session)
   oauthAuthorizeStart: 'oauth:authorize-start', // ({ root, path, envPath? }) => { id } — interactive authorization_code
@@ -276,6 +289,41 @@ export interface FreepostApi {
   stopMock(args: { root: string }): Promise<void>
   mockStatus(args: { root: string }): Promise<{ running: boolean; port?: number; routes?: number }>
   onMockLog(cb: (e: { root: string; entry: MockRequestLogEntry }) => void): () => void
+
+  /** Start the record proxy: forward the port to `target`, recording all traffic. */
+  startProxy(args: {
+    target: string
+    port?: number
+    https?: boolean
+    httpsPort?: number
+  }): Promise<{ url: string; target: string; port: number; httpsUrl?: string; caPath?: string }>
+  stopProxy(): Promise<void>
+  /** Current proxy state; when stopped, `target`/ports/`https` are the settings prefill. */
+  proxyStatus(): Promise<{
+    running: boolean
+    url?: string
+    target: string
+    port: number
+    https: boolean
+    httpsPort: number
+    httpsUrl?: string
+    caPath?: string
+  }>
+  /** Export the proxy CA certificate via a save dialog. */
+  exportProxyCa(): Promise<{ saved: boolean; path?: string }>
+  /** Open the OS certificate-import UI for the proxy CA (never installs silently). */
+  installProxyCa(): Promise<void>
+  /** Wipe and recreate the proxy CA (call only after the user confirmed). */
+  regenerateProxyCa(): Promise<{ caPath: string }>
+  /** One recorded exchange as it completes (the modal's live log). */
+  onProxyLog(cb: (e: { entry: RecordedExchange }) => void): () => void
+  /** Tools ▸ Proxy Server (Record) was clicked — open the proxy modal. */
+  onProxyOpenUi(cb: () => void): () => void
+  listRecorded(root: string): Promise<RecordedExchange[]>
+  clearRecorded(root: string): Promise<void>
+  /** Write a recorded exchange into the collection as a runnable .curl file. */
+  /** `note` is set when the capture's body could not be saved (truncated/binary). */
+  saveRecorded(args: { root: string; entry: RecordedExchange }): Promise<{ written: string[]; note?: string }>
 
   /** Acquire an OAuth2 token for the request and store it in the session. */
   acquireOAuthToken(args: { root: string; path: string; envPath?: string }): Promise<AcquiredToken>

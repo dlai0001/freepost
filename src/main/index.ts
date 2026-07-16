@@ -4,6 +4,7 @@ import { IPC } from '../shared/ipc'
 import { registerIpcHandlers } from './ipc-handlers'
 import { installApplicationMenu } from './menu'
 import { stopAppMcpServer } from './mcp-server/app-toggle'
+import { stopAppProxy } from './record-proxy'
 
 function createWindow(): void {
   // Once the renderer has dealt with unsaved changes it confirms; we then let
@@ -63,10 +64,12 @@ app.whenReady().then(() => {
   })
 })
 
-// Never leave the MCP listener behind: it is bound to the app's lifetime, and a
-// stray port that still answers after the window is gone would be a surprise.
+// Never leave the MCP or proxy listeners behind: they are bound to the app's
+// lifetime, and a stray port that still answers after the window is gone would
+// be a surprise.
 app.on('will-quit', () => {
   void stopAppMcpServer()
+  void stopAppProxy()
 })
 
 app.on('window-all-closed', () => {

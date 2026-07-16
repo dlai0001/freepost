@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { importCommandText, parseCommandFlexible } from './command'
+import { importCommandText, parseCommandFlexible, safeRequestFileName } from './command'
 import { parseRequestFile, writeRequestFile } from '../format'
 
 describe('importCommandText — curl', () => {
@@ -209,5 +209,25 @@ describe('parseCommandFlexible', () => {
     if (!r.ok) return
     expect(r.kind).toBe('websocat')
     expect(r.file.ws?.url).toBe('wss://example.com/socket')
+  })
+})
+
+describe('safeRequestFileName', () => {
+  it('trims surrounding whitespace', () => {
+    expect(safeRequestFileName('  foo  ')).toBe('foo')
+  })
+
+  it('falls back when sanitization leaves nothing', () => {
+    expect(safeRequestFileName('???')).toBe('Imported request')
+    expect(safeRequestFileName('   ')).toBe('Imported request')
+    expect(safeRequestFileName('...')).toBe('Imported request')
+  })
+
+  it('strips leading dots so the file is not hidden', () => {
+    expect(safeRequestFileName('.hidden')).toBe('hidden')
+  })
+
+  it('strips reserved filename characters', () => {
+    expect(safeRequestFileName('a/b:c?d')).toBe('abcd')
   })
 })

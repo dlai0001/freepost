@@ -89,6 +89,18 @@ const api = {
   mockStatus: (args: unknown) => ipcRenderer.invoke(IPC.mockStatus, args),
   onMockLog: (cb: (e: unknown) => void) => on(IPC.mockLog, cb as (...args: unknown[]) => void),
 
+  startProxy: (args: unknown) => ipcRenderer.invoke(IPC.proxyStart, args),
+  stopProxy: () => ipcRenderer.invoke(IPC.proxyStop),
+  proxyStatus: () => ipcRenderer.invoke(IPC.proxyStatus),
+  exportProxyCa: () => ipcRenderer.invoke(IPC.proxyExportCa),
+  installProxyCa: () => ipcRenderer.invoke(IPC.proxyInstallCa),
+  regenerateProxyCa: () => ipcRenderer.invoke(IPC.proxyRegenerateCa),
+  onProxyLog: (cb: (e: unknown) => void) => on(IPC.proxyLog, cb as (...args: unknown[]) => void),
+  onProxyOpenUi: (cb: () => void) => on(IPC.proxyOpenUi, cb as (...args: unknown[]) => void),
+  listRecorded: (root: string) => ipcRenderer.invoke(IPC.recordedList, root),
+  clearRecorded: (root: string) => ipcRenderer.invoke(IPC.recordedClear, root),
+  saveRecorded: (args: unknown) => ipcRenderer.invoke(IPC.recordedSave, args),
+
   acquireOAuthToken: (args: unknown) => ipcRenderer.invoke(IPC.oauthAcquire, args),
   authorizeOAuthStart: (args: unknown) => ipcRenderer.invoke(IPC.oauthAuthorizeStart, args),
   authorizeOAuthCancel: (id: string) => ipcRenderer.invoke(IPC.oauthAuthorizeCancel, id),

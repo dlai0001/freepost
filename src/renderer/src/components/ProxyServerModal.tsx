@@ -15,11 +15,13 @@ function protocolLabel(p: RecordedExchange['protocol']): string {
 
 /**
  * The log column: GraphQL shows the operation name, gRPC the service/method,
- * WebSocket the path plus frame count, everything else the path.
+ * MQTT the topics, WebSocket the path plus frame count, everything else the
+ * path. The identifying thing goes first — the URL is the same on every row.
  */
 function pathOrOpName(e: RecordedExchange): string {
   if (e.graphql?.operationName !== undefined) return e.graphql.operationName
   if (e.grpc !== undefined) return `${e.grpc.service}/${e.grpc.method}`
+  if (e.mqtt !== undefined) return mqttTopics(e.mqtt)
   let path: string
   try {
     path = new URL(e.url).pathname
@@ -31,6 +33,21 @@ function pathOrOpName(e: RecordedExchange): string {
     path += ` · ${n} frame${n === 1 ? '' : 's'}`
   }
   return path
+}
+
+/**
+ * An MQTT session's topics, which is what identifies it — the broker URL is on
+ * every row, and one connection publishes and subscribes to many topics.
+ */
+function mqttTopics(mqtt: NonNullable<RecordedExchange['mqtt']>): string {
+  const topics = [...new Set(mqtt.packets.map((p) => p.topic).filter((t) => t !== undefined))]
+  const label =
+    topics.length === 0
+      ? `${mqtt.packets.length} packet${mqtt.packets.length === 1 ? '' : 's'}`
+      : topics.length > 2
+        ? `${topics.slice(0, 2).join(', ')} +${topics.length - 2} more`
+        : topics.join(', ')
+  return mqtt.clientId !== undefined ? `${mqtt.clientId} · ${label}` : label
 }
 
 /** Per-stack examples for trusting the local CA (shown when HTTPS is on). */
@@ -64,9 +81,12 @@ const ProxyLogRow = memo(function ProxyLogRow(props: {
   onSave: (entry: RecordedExchange) => Promise<void>
 }): JSX.Element {
   const e = props.entry
-  const statusCls =
-    e.errored || e.status === undefined
-      ? 'status-err'
+  // MQTT has no HTTP status, so a missing one is only an error when the
+  // exchange says it errored — otherwise the row reads as a failure it wasn't.
+  const statusCls = e.errored
+    ? 'status-err'
+    : e.status === undefined
+      ? 'status-other'
       : e.status >= 200 && e.status < 300
         ? 'status-ok'
         : 'status-other'
@@ -75,7 +95,7 @@ const ProxyLogRow = memo(function ProxyLogRow(props: {
       <span className="badge badge-other">{protocolLabel(e.protocol)}</span>
       <span className={'badge badge-' + e.method.toLowerCase()}>{e.method}</span>
       <span className={'status-pill ' + statusCls}>
-        {e.status !== undefined ? e.status : 'ERR'}
+        {e.status !== undefined ? e.status : e.errored ? 'ERR' : '—'}
       </span>
       <span className="history-url mono">{pathOrOpName(e)}</span>
       {e.timeMs !== undefined && <span className="resp-meta">{e.timeMs} ms</span>}
@@ -100,6 +120,10 @@ export default function ProxyServerModal(props: Props): JSX.Element {
   const [https, setHttps] = useState(false)
   const [httpsPort, setHttpsPort] = useState('')
   const [httpsUrl, setHttpsUrl] = useState<string | null>(null)
+  const [mqtt, setMqtt] = useState(false)
+  const [mqttTarget, setMqttTarget] = useState('')
+  const [mqttPort, setMqttPort] = useState('')
+  const [mqttUrl, setMqttUrl] = useState<string | null>(null)
   const [caPath, setCaPath] = useState<string | null>(null)
   const [showSnippets, setShowSnippets] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -120,6 +144,10 @@ export default function ProxyServerModal(props: Props): JSX.Element {
         setHttpsPort(String(s.httpsPort))
         setHttpsUrl(s.httpsUrl ?? null)
         setCaPath(s.caPath ?? null)
+        setMqtt(s.mqtt)
+        setMqttTarget(s.mqttTarget)
+        setMqttPort(String(s.mqttPort))
+        setMqttUrl(s.mqttUrl ?? null)
         if (s.running) {
           // The proxy was already running when the modal opened: seed the log
           // with the recent tail of recorded.jsonl (most recent last), keeping
@@ -150,7 +178,10 @@ export default function ProxyServerModal(props: Props): JSX.Element {
         target: target.trim(),
         port: parsedPort,
         https,
-        httpsPort: parsedHttpsPort
+        httpsPort: parsedHttpsPort,
+        mqtt,
+        mqttTarget: mqttTarget.trim(),
+        mqttPort: mqttPort.trim() === '' ? undefined : Number(mqttPort)
       })
       setRunning(true)
       setUrl(res.url)
@@ -158,6 +189,8 @@ export default function ProxyServerModal(props: Props): JSX.Element {
       setHttpsUrl(res.httpsUrl ?? null)
       setCaPath(res.caPath ?? null)
       if (res.httpsUrl !== undefined) setHttpsPort(new URL(res.httpsUrl).port)
+      setMqttUrl(res.mqttUrl ?? null)
+      if (res.mqttUrl !== undefined) setMqttPort(new URL(res.mqttUrl).port)
     } catch (e) {
       setMessage(errMsg(e))
     } finally {
@@ -172,6 +205,7 @@ export default function ProxyServerModal(props: Props): JSX.Element {
       setRunning(false)
       setUrl(null)
       setHttpsUrl(null)
+      setMqttUrl(null)
     } catch (e) {
       setMessage(errMsg(e))
     } finally {
@@ -300,6 +334,56 @@ export default function ProxyServerModal(props: Props): JSX.Element {
           )}
         </div>
 
+        {/*
+          MQTT gets its own broker address as well as its own port: it isn't
+          HTTP, so the target above (an http(s) origin) is not a broker.
+        */}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+          <label
+            style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', height: 28 }}
+          >
+            <input
+              type="checkbox"
+              checked={mqtt}
+              disabled={running}
+              onChange={(e) => setMqtt(e.target.checked)}
+            />
+            Record MQTT
+          </label>
+          {mqtt && (
+            <>
+              <div style={{ flex: 1 }}>
+                <label className="modal-label">Broker (where MQTT is relayed)</label>
+                <input
+                  className="modal-input mono"
+                  style={{ width: '100%', boxSizing: 'border-box' }}
+                  placeholder="mqtt://127.0.0.1:1883"
+                  value={mqttTarget}
+                  disabled={running}
+                  onChange={(e) => setMqttTarget(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="modal-label">MQTT port</label>
+                <input
+                  className="modal-input mono"
+                  style={{ width: 80 }}
+                  value={mqttPort}
+                  disabled={running}
+                  onChange={(e) => setMqttPort(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+        </div>
+        {mqtt && !running && (
+          <div className="dim-note">
+            Point your MQTT client at the listener instead of the broker. Traffic is relayed to the
+            real broker, so QoS, retained messages and sessions behave exactly as they do without
+            the proxy. Cleartext only — mqtts:// brokers are not supported yet.
+          </div>
+        )}
+
         {running && url !== null ? (
           <div className="banner banner-ok">
             Recording → <span className="mono">{target}</span> on <span className="mono">{url}</span>{' '}
@@ -313,6 +397,18 @@ export default function ProxyServerModal(props: Props): JSX.Element {
                 <button
                   className="btn btn-small"
                   onClick={() => void navigator.clipboard?.writeText(httpsUrl)}
+                >
+                  Copy
+                </button>
+              </>
+            )}
+            {mqttUrl !== null && (
+              <>
+                {' · MQTT '}
+                <span className="mono">{mqttTarget}</span> on <span className="mono">{mqttUrl}</span>{' '}
+                <button
+                  className="btn btn-small"
+                  onClick={() => void navigator.clipboard?.writeText(mqttUrl)}
                 >
                   Copy
                 </button>

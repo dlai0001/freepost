@@ -1,9 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { request as httpsRequest } from 'node:https'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createServer as createNetServer } from 'node:net'
 import type { AddressInfo } from 'node:net'
+import Aedes from 'aedes'
+import mqtt from 'mqtt'
 import { run, type CliIo } from './index'
 
 let server: Server
@@ -109,6 +113,7 @@ describe('cli run', () => {
     expect(code).toBe(0)
     expect(o.out()).toContain('freepost run <collection>')
     expect(o.out()).toContain('freepost mock <collection>')
+    expect(o.out()).toContain('freepost proxy <collection> --target <url>')
   })
 
   it('errors on an unknown option', async () => {
@@ -181,6 +186,204 @@ describe('cli mock', () => {
     expect(code).toBe(2)
     expect(buf).toContain('No routes')
     rmSync(empty, { recursive: true, force: true })
+  })
+})
+
+describe('cli proxy', () => {
+  function waitFor(pred: () => boolean, ms = 5000): Promise<void> {
+    const start = Date.now()
+    return new Promise((resolve, reject) => {
+      const tick = (): void => {
+        if (pred()) resolve()
+        else if (Date.now() - start > ms) reject(new Error('timeout'))
+        else setTimeout(tick, 10)
+      }
+      tick()
+    })
+  }
+
+  /** Drive `freepost proxy` to a listening port, then hand back a stopper. */
+  async function startProxy(
+    dir: string,
+    args: string[]
+  ): Promise<{ port: number; out: () => string; stop: () => Promise<number> }> {
+    let buf = ''
+    let sigint: () => void = () => undefined
+    const done = run(['proxy', dir, ...args], {
+      cwd: dir,
+      color: false,
+      write: (s) => (buf += s),
+      onSigint: (cb) => {
+        sigint = cb
+      }
+    })
+    await waitFor(() => /listening on http:\/\/127\.0\.0\.1:(\d+)/.test(buf))
+    return {
+      port: Number(buf.match(/listening on http:\/\/127\.0\.0\.1:(\d+)/)![1]),
+      out: () => buf,
+      stop: () => {
+        sigint()
+        return done
+      }
+    }
+  }
+
+  it('forwards to the target and records the exchange into the collection', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'freepost-cli-proxy-'))
+    // Port 0: the suite must never fight the app's default 7699 for a port.
+    const proxy = await startProxy(dir, ['--target', `http://${base}`, '--port', '0'])
+
+    const res = await fetch(`http://127.0.0.1:${proxy.port}/ok`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true })
+
+    const file = join(dir, '.freepost', 'history', 'recorded.jsonl')
+    await waitFor(() => existsSync(file))
+    const lines = readFileSync(file, 'utf8').split('\n').filter(Boolean)
+    expect(lines).toHaveLength(1)
+    const entry = JSON.parse(lines[0]) as { url: string; status: number; protocol: string }
+    expect(entry.url).toBe(`http://${base}/ok`)
+    expect(entry.status).toBe(200)
+    expect(entry.protocol).toBe('rest')
+
+    // The live log names the exchange, like `freepost mock` does.
+    expect(proxy.out()).toContain(`✓ GET http://${base}/ok`)
+    expect(proxy.out()).toContain('→ rest 200')
+
+    expect(await proxy.stop()).toBe(0)
+    expect(proxy.out()).toContain('Recording proxy stopped')
+    // Stopping frees the port.
+    await expect(fetch(`http://127.0.0.1:${proxy.port}/ok`)).rejects.toThrow()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('errors out (exit 2) without a --target', async () => {
+    let buf = ''
+    const code = await run(['proxy', root], { cwd: root, color: false, write: (s) => (buf += s) })
+    expect(code).toBe(2)
+    expect(buf).toContain('Missing --target')
+  })
+
+  it('exits 2 on a target that is not an http(s) URL, rather than throwing', async () => {
+    let buf = ''
+    const code = await run(['proxy', root, '--target', 'ftp://nope', '--port', '0'], {
+      cwd: root,
+      color: false,
+      write: (s) => (buf += s)
+    })
+    expect(code).toBe(2)
+    expect(buf).toContain('http:// or https://')
+  })
+
+  it('rejects an out-of-range --port', async () => {
+    let buf = ''
+    const code = await run(['proxy', root, '--target', `http://${base}`, '--port', '99999'], {
+      cwd: root,
+      color: false,
+      write: (s) => (buf += s)
+    })
+    expect(code).toBe(2)
+    expect(buf).toContain('--port must be 0-65535')
+  })
+
+  it('serves TLS with a generated CA and prints the curl hint', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'freepost-cli-proxy-tls-'))
+    const proxy = await startProxy(dir, [
+      '--target',
+      `http://${base}`,
+      '--port',
+      '0',
+      '--https',
+      '--https-port',
+      '0'
+    ])
+    const httpsPort = Number(proxy.out().match(/https:\/\/127\.0\.0\.1:(\d+)/)![1])
+    const caPath = join(dir, '.freepost', 'tls', 'ca.crt')
+    expect(existsSync(caPath)).toBe(true)
+    expect(proxy.out()).toContain(`curl --cacert '${caPath}'`)
+
+    const ca = readFileSync(caPath, 'utf8')
+    const body = await new Promise<string>((resolve, reject) => {
+      const req = httpsRequest(`https://127.0.0.1:${httpsPort}/ok`, { ca }, (res) => {
+        let out = ''
+        res.on('data', (c) => (out += c))
+        res.on('end', () => resolve(out))
+      })
+      req.on('error', reject)
+      req.end()
+    })
+    expect(JSON.parse(body)).toEqual({ ok: true })
+
+    await proxy.stop()
+    rmSync(dir, { recursive: true, force: true })
+  }, 30000)
+
+  it('relays MQTT on its own port and records the session', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'freepost-cli-proxy-mqtt-'))
+    const aedes = new Aedes()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const brokerServer = createNetServer(aedes.handle as any)
+    await new Promise<void>((r) => brokerServer.listen(0, '127.0.0.1', r))
+    const brokerPort = (brokerServer.address() as AddressInfo).port
+
+    const proxy = await startProxy(dir, [
+      '--target',
+      `http://${base}`,
+      '--port',
+      '0',
+      '--mqtt-target',
+      `mqtt://127.0.0.1:${brokerPort}`,
+      '--mqtt-port',
+      '0'
+    ])
+    const mqttPort = Number(proxy.out().match(/MQTT relay listening on mqtt:\/\/127\.0\.0\.1:(\d+)/)![1])
+
+    const client = mqtt.connect(`mqtt://127.0.0.1:${mqttPort}`, {
+      reconnectPeriod: 0,
+      clientId: 'cli-client'
+    })
+    await new Promise<void>((resolve, reject) => {
+      client.on('error', reject)
+      client.on('connect', () => resolve())
+    })
+    await new Promise<void>((resolve, reject) => {
+      client.publish('freepost/cli', 'hi', { qos: 1 }, (e) => (e ? reject(e) : resolve()))
+    })
+    await new Promise<void>((resolve) => client.end(false, {}, () => resolve()))
+
+    // Both listeners log through the same reporter, into the same file.
+    await waitFor(() => proxy.out().includes('MQTT mqtt://127.0.0.1:'))
+    expect(proxy.out()).toContain('cli-client · freepost/cli')
+    expect(await proxy.stop()).toBe(0)
+
+    const recorded = readFileSync(join(dir, '.freepost', 'history', 'recorded.jsonl'), 'utf8')
+    expect(recorded).toContain('"protocol":"mqtt"')
+    expect(recorded).toContain('freepost/cli')
+
+    await new Promise<void>((r) => brokerServer.close(() => r()))
+    await new Promise<void>((r) => aedes.close(() => r()))
+    rmSync(dir, { recursive: true, force: true })
+  }, 30000)
+
+  it('rejects a bad --mqtt-port without starting anything', async () => {
+    let buf = ''
+    const code = await run(['proxy', root, '--target', `http://${base}`, '--mqtt-port', '99999'], {
+      cwd: root,
+      color: false,
+      write: (s) => (buf += s)
+    })
+    expect(code).toBe(2)
+    expect(buf).toContain('--mqtt-port must be 0-65535')
+  })
+
+  it('exits 2 on a TLS broker rather than relaying it cleartext', async () => {
+    let buf = ''
+    const code = await run(
+      ['proxy', root, '--target', `http://${base}`, '--port', '0', '--mqtt-target', 'mqtts://x:8883'],
+      { cwd: root, color: false, write: (s) => (buf += s) }
+    )
+    expect(code).toBe(2)
+    expect(buf).toContain('mqtts')
   })
 })
 

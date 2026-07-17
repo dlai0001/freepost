@@ -13,6 +13,7 @@ import type {
   CodegenTarget,
   CookieRecord,
   GqlIntrospectResult,
+  GrpcDecodedMessage,
   Header,
   HistoryEntry,
   HttpResponseModel,
@@ -49,7 +50,12 @@ import {
 } from '../core/workflow'
 import { importPostmanCollection, sanitizePathSegment } from '../core/importers/postman'
 import { importCommandText, parseCommandFlexible, safeRequestFileName } from '../core/importers/command'
-import { omittedBodyNote, recordedName, recordedToRequestFile } from '../core/record/to-request'
+import {
+  omittedNote,
+  recordedName,
+  recordedToRequestFile,
+  type RecordedGrpcSave
+} from '../core/record/to-request'
 import { dedupeRelPath, importOpenApi, listOpenApiOperations } from '../core/importers/openapi'
 import { CODEGEN_TARGETS, generateCode } from '../core/codegen'
 import { parseDataFile } from '../core/data'
@@ -60,6 +66,7 @@ import {
 } from '../core/graphql/introspection'
 import {
   acquireToken,
+  decodeGrpcMessages,
   GrpcStreamClient,
   McpSessionClient,
   mcpConnectArgs,
@@ -75,12 +82,13 @@ import {
 import { writeCachedToken } from './oauth-cache'
 import { buildRoutesForCollection } from './mock'
 import { appProxyStatus, proxyTlsDir, startAppProxy, stopAppProxy } from './record-proxy'
+import { recordedFilePath } from './recorded-store'
 import { ensureProxyCerts, regenerateProxyCa } from './proxy-certs'
 import { resolveConfigChain } from './config-resolve'
 import { resolveVariables, substitute, substituteModel } from '../core/vars'
 import { ensureFreepostDir, listFiles, scanCollection } from './collection'
 import { exampleFilePath, readExamples } from './examples'
-import { executeRequest, jarFor, readEnvFile } from './execute'
+import { executeRequest, jarFor, readEnvFile, resolveProtoPath } from './execute'
 import { saveJar } from './cookie-store'
 import { getLastRoot, setLastRoot } from './settings'
 import { trackedSecrets } from './security'
@@ -603,8 +611,7 @@ export function registerIpcHandlers(): void {
       const { values, unresolved } = resolveVariables(file.variables, Object.fromEntries(session), env)
       if (unresolved.length > 0) throw new Error(`Unresolved required variables: ${unresolved.join(', ')}`)
       const dir = dirname(abs)
-      const resolveProto = (p: string): string =>
-        isAbsolute(substitute(p, values)) ? substitute(p, values) : join(dir, substitute(p, values))
+      const resolveProto = (p: string): string => resolveProtoPath(dir, substitute(p, values))
 
       const id = `grpc${++grpcStreamCounter}`
       const client = new GrpcStreamClient()
@@ -1058,8 +1065,18 @@ export function registerIpcHandlers(): void {
   // ---- record proxy (one app-wide instance; lifecycle in record-proxy.ts) ----
   ipcMain.handle(
     IPC.proxyStart,
-    (_e, args: { target: string; port?: number; https?: boolean; httpsPort?: number }) =>
-      startAppProxy(args)
+    (
+      _e,
+      args: {
+        target: string
+        port?: number
+        https?: boolean
+        httpsPort?: number
+        mqtt?: boolean
+        mqttTarget?: string
+        mqttPort?: number
+      }
+    ) => startAppProxy(args)
   )
   ipcMain.handle(IPC.proxyStop, () => stopAppProxy())
   ipcMain.handle(IPC.proxyStatus, () => appProxyStatus())
@@ -1100,8 +1117,7 @@ export function registerIpcHandlers(): void {
   // recorded.jsonl file the proxy appends to.
   ipcMain.handle(IPC.recordedList, async (_e, root: string): Promise<RecordedExchange[]> => {
     try {
-      const file = join(root, '.freepost', 'history', 'recorded.jsonl')
-      const text = await fs.readFile(file, 'utf8')
+      const text = await fs.readFile(recordedFilePath(root), 'utf8')
       return text
         .split('\n')
         .filter((l) => l.trim() !== '')
@@ -1113,19 +1129,60 @@ export function registerIpcHandlers(): void {
   })
   ipcMain.handle(IPC.recordedClear, async (_e, root: string) => {
     try {
-      await fs.rm(join(root, '.freepost', 'history', 'recorded.jsonl'))
+      await fs.rm(recordedFilePath(root))
     } catch {
       /* nothing to clear */
     }
   })
-  ipcMain.handle(IPC.recordedSave, async (_e, args: { root: string; entry: RecordedExchange }) => {
-    const file = recordedToRequestFile(args.entry)
-    const ext = file.kind === 'grpc' ? '.grpc' : file.kind === 'websocat' ? '.ws' : '.curl'
-    const rel = await writeRequestDeduped(args.root, recordedName(args.entry, file), ext, file)
-    // A truncated/binary capture is saved without its body — tell the UI.
-    const note = omittedBodyNote(file)
-    return { written: [rel], ...(note !== null ? { note } : {}) }
-  })
+  ipcMain.handle(
+    IPC.recordedDecodeGrpc,
+    async (
+      _e,
+      args: { root?: string; entry: RecordedExchange; protoFiles: string[]; importPaths?: string[] }
+    ): Promise<GrpcDecodedMessage[]> => {
+      const g = args.entry.grpc
+      if (g === undefined) throw new Error('Not a gRPC exchange')
+      // Same resolution as every other gRPC path (grpcStreamStart below,
+      // execute.ts): a relative proto path is relative to the collection, and
+      // a saved .grpc holds exactly those. Without a root only absolute paths
+      // can be resolved — there is nothing to resolve them against.
+      const resolve = (p: string): string => (args.root !== undefined ? resolveProtoPath(args.root, p) : p)
+      return decodeGrpcMessages({
+        fullMethod: `${g.service}/${g.method}`,
+        protoFiles: args.protoFiles.map(resolve),
+        ...(args.importPaths !== undefined ? { importPaths: args.importPaths.map(resolve) } : {}),
+        messages: g.messages ?? []
+      })
+    }
+  )
+  ipcMain.handle(
+    IPC.recordedSave,
+    async (
+      _e,
+      args: { root: string; entry: RecordedExchange; grpc?: RecordedGrpcSave; mqttPacket?: number }
+    ) => {
+      // mqttPacket picks one packet out of an MQTT session — the one protocol
+      // whose exchange is a connection rather than a single request. The root
+      // is what lets a saved .grpc hold collection-relative proto paths.
+      const file = recordedToRequestFile(
+        args.entry,
+        args.grpc !== undefined ? { ...args.grpc, root: args.root } : undefined,
+        args.mqttPacket
+      )
+      const ext =
+        file.kind === 'grpc'
+          ? '.grpc'
+          : file.kind === 'websocat'
+            ? '.ws'
+            : file.kind === 'mqtt'
+              ? '.mqtt'
+              : '.curl'
+      const rel = await writeRequestDeduped(args.root, recordedName(args.entry, file), ext, file)
+      // A truncated/binary capture is saved without its body — tell the UI.
+      const note = omittedNote(file)
+      return { written: [rel], ...(note !== null ? { note } : {}) }
+    }
+  )
 
   // ---- OAuth2 token acquisition ----
   ipcMain.handle(

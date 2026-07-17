@@ -9,6 +9,7 @@ import type {
   CookieRecord,
   ExecutionReport,
   GqlIntrospectResult,
+  GrpcDecodedMessage,
   HistoryEntry,
   McpArg,
   McpDriftReport,
@@ -106,9 +107,9 @@ export const IPC = {
   mockStatus: 'mock:status', // ({ root }) => { running; port?; routes? }
   mockLog: 'mock:log', // main -> renderer event ({ root, entry: MockRequestLogEntry })
 
-  proxyStart: 'proxy:start', // ({ target, port?, https?, httpsPort? }) => { url; target; port; httpsUrl?; caPath? } (throws with a displayable message)
+  proxyStart: 'proxy:start', // ({ target, port?, https?, httpsPort?, mqtt?, mqttTarget?, mqttPort? }) => { url; target; port; httpsUrl?; caPath?; mqttUrl? } (throws with a displayable message)
   proxyStop: 'proxy:stop', // () => void
-  proxyStatus: 'proxy:status', // () => { running; url?; target; port; https; httpsPort; httpsUrl?; caPath? } (prefills fall back to settings)
+  proxyStatus: 'proxy:status', // () => { running; url?; target; port; https; httpsPort; httpsUrl?; caPath?; mqtt; mqttTarget; mqttPort; mqttUrl? } (prefills fall back to settings)
   proxyExportCa: 'proxy:export-ca', // () => { saved; path? } — save dialog, copies ca.crt (generates certs if absent)
   proxyInstallCa: 'proxy:install-ca', // () => void — opens the OS certificate-import UI (NEVER silent install)
   proxyRegenerateCa: 'proxy:regenerate-ca', // () => { caPath } — wipe + recreate the local CA (renderer confirms first)
@@ -116,7 +117,8 @@ export const IPC = {
   proxyOpenUi: 'proxy:open-ui', // main -> renderer event: menu asks the renderer to open the proxy modal
   recordedList: 'recorded:list', // (root) => RecordedExchange[]
   recordedClear: 'recorded:clear', // (root) => void
-  recordedSave: 'recorded:save', // ({ root, entry }) => { written: string[] } — recorded exchange -> .curl file
+  recordedSave: 'recorded:save', // ({ root, entry, grpc?, mqttPacket? }) => { written: string[] } — recorded exchange -> request file (mqttPacket picks one packet of an MQTT session)
+  recordedDecodeGrpc: 'recorded:decode-grpc', // ({ root?, entry, protoFiles, importPaths? }) => GrpcDecodedMessage[] (tier 2 — root resolves collection-relative proto paths)
 
   oauthAcquire: 'oauth:acquire', // ({ root, path, envPath? }) => AcquiredToken (stores in session)
   oauthAuthorizeStart: 'oauth:authorize-start', // ({ root, path, envPath? }) => { id } — interactive authorization_code
@@ -290,15 +292,29 @@ export interface FreepostApi {
   mockStatus(args: { root: string }): Promise<{ running: boolean; port?: number; routes?: number }>
   onMockLog(cb: (e: { root: string; entry: MockRequestLogEntry }) => void): () => void
 
-  /** Start the record proxy: forward the port to `target`, recording all traffic. */
+  /**
+   * Start the record proxy: forward the port to `target`, recording all
+   * traffic. `mqtt` adds a second, independent listener — a TCP relay to
+   * `mqttTarget` (a broker, which `target` is not) on its own port.
+   */
   startProxy(args: {
     target: string
     port?: number
     https?: boolean
     httpsPort?: number
-  }): Promise<{ url: string; target: string; port: number; httpsUrl?: string; caPath?: string }>
+    mqtt?: boolean
+    mqttTarget?: string
+    mqttPort?: number
+  }): Promise<{
+    url: string
+    target: string
+    port: number
+    httpsUrl?: string
+    caPath?: string
+    mqttUrl?: string
+  }>
   stopProxy(): Promise<void>
-  /** Current proxy state; when stopped, `target`/ports/`https` are the settings prefill. */
+  /** Current proxy state; when stopped, `target`/ports/`https`/`mqtt*` are the settings prefill. */
   proxyStatus(): Promise<{
     running: boolean
     url?: string
@@ -308,6 +324,10 @@ export interface FreepostApi {
     httpsPort: number
     httpsUrl?: string
     caPath?: string
+    mqtt: boolean
+    mqttTarget: string
+    mqttPort: number
+    mqttUrl?: string
   }>
   /** Export the proxy CA certificate via a save dialog. */
   exportProxyCa(): Promise<{ saved: boolean; path?: string }>
@@ -323,7 +343,28 @@ export interface FreepostApi {
   clearRecorded(root: string): Promise<void>
   /** Write a recorded exchange into the collection as a runnable .curl file. */
   /** `note` is set when the capture's body could not be saved (truncated/binary). */
-  saveRecorded(args: { root: string; entry: RecordedExchange }): Promise<{ written: string[]; note?: string }>
+  /** `grpc` carries the tier-2 decode (and the protos behind it) into a .grpc file. */
+  /** `mqttPacket` picks which packet of an MQTT session to save; it is a whole
+   *  connection, so unlike every other protocol there is no single request to
+   *  infer. Omitted, the first publish or subscribe wins. */
+  saveRecorded(args: {
+    root: string
+    entry: RecordedExchange
+    grpc?: { data?: string; protoFiles?: string[]; importPaths?: string[] }
+    mqttPacket?: number
+  }): Promise<{ written: string[]; note?: string }>
+  /**
+   * Decode a recorded gRPC exchange's captured messages against .proto files
+   * (tier 2 — named fields). Results align by index with `entry.grpc.messages`;
+   * rejects when the protos don't load or lack the method.
+   */
+  decodeRecordedGrpc(args: {
+    /** Resolves collection-relative proto paths; without it only absolute ones load. */
+    root?: string
+    entry: RecordedExchange
+    protoFiles: string[]
+    importPaths?: string[]
+  }): Promise<GrpcDecodedMessage[]>
 
   /** Acquire an OAuth2 token for the request and store it in the session. */
   acquireOAuthToken(args: { root: string; path: string; envPath?: string }): Promise<AcquiredToken>

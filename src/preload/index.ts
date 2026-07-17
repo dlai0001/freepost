@@ -100,6 +100,7 @@ const api = {
   listRecorded: (root: string) => ipcRenderer.invoke(IPC.recordedList, root),
   clearRecorded: (root: string) => ipcRenderer.invoke(IPC.recordedClear, root),
   saveRecorded: (args: unknown) => ipcRenderer.invoke(IPC.recordedSave, args),
+  decodeRecordedGrpc: (args: unknown) => ipcRenderer.invoke(IPC.recordedDecodeGrpc, args),
 
   acquireOAuthToken: (args: unknown) => ipcRenderer.invoke(IPC.oauthAcquire, args),
   authorizeOAuthStart: (args: unknown) => ipcRenderer.invoke(IPC.oauthAuthorizeStart, args),

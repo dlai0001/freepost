@@ -3,11 +3,13 @@
  * process. Part of src/engine — the only module allowed to open a socket.
  * Wraps @grpc/grpc-js + @grpc/proto-loader; schema comes from local .proto
  * files. Mirrors the shape of http.ts (one-shot sendGrpcUnary) and ws.ts
- * (connection-oriented GrpcStreamClient).
+ * (connection-oriented GrpcStreamClient). decodeGrpcMessages reuses the same
+ * schema loading to decode messages the record proxy captured off the wire —
+ * no socket involved, but the proto-loader plumbing lives here.
  */
 import * as grpc from '@grpc/grpc-js'
 import * as protoLoader from '@grpc/proto-loader'
-import type { Header } from '../shared/model'
+import type { GrpcDecodedMessage, Header, RecordedGrpcMessage } from '../shared/model'
 
 export interface GrpcCallArgs {
   target: string
@@ -42,7 +44,13 @@ interface ResolvedMethod {
   methodName: string
   responseStream: boolean
   requestStream: boolean
+  /** proto-loader's codecs for this method (used to decode captured wire bytes). */
+  requestDeserialize: (bytes: Buffer) => unknown
+  responseDeserialize: (bytes: Buffer) => unknown
 }
+
+/** What loadMethod needs — a decode has no target, credentials or data. */
+type LoadArgs = Pick<GrpcCallArgs, 'fullMethod' | 'protoFiles' | 'importPaths'>
 
 /** Split "pkg.Service/Method" or "pkg.Service.Method" into [service, method]. */
 function splitMethod(full: string): { service: string; method: string } {
@@ -63,7 +71,7 @@ function navigate(root: Record<string, unknown>, dotted: string): unknown {
   return cur
 }
 
-function loadMethod(args: GrpcCallArgs): ResolvedMethod {
+function loadMethod(args: LoadArgs): ResolvedMethod {
   if (args.protoFiles.length === 0) {
     throw new Error('gRPC needs at least one -proto file (reflection is not supported)')
   }
@@ -83,7 +91,16 @@ function loadMethod(args: GrpcCallArgs): ResolvedMethod {
     throw new Error(`service not found in proto(s): ${service}`)
   }
   // Method definitions are keyed by their original (or lower-cased) name.
-  const def = ServiceCtor.service as Record<string, { requestStream: boolean; responseStream: boolean; originalName?: string }>
+  const def = ServiceCtor.service as Record<
+    string,
+    {
+      requestStream: boolean
+      responseStream: boolean
+      originalName?: string
+      requestDeserialize: (b: Buffer) => unknown
+      responseDeserialize: (b: Buffer) => unknown
+    }
+  >
   const key =
     Object.keys(def).find((k) => k === method) ??
     Object.keys(def).find((k) => k.toLowerCase() === method.toLowerCase()) ??
@@ -96,8 +113,48 @@ function loadMethod(args: GrpcCallArgs): ResolvedMethod {
     ServiceCtor,
     methodName: callName,
     responseStream: md.responseStream,
-    requestStream: md.requestStream
+    requestStream: md.requestStream,
+    requestDeserialize: md.requestDeserialize,
+    responseDeserialize: md.responseDeserialize
   }
+}
+
+export interface GrpcDecodeArgs {
+  /** "pkg.Service/Method" — which message types the payloads belong to. */
+  fullMethod: string
+  protoFiles: string[]
+  importPaths?: string[]
+  /** Captured messages, as recorded by the proxy (base64 payloads). */
+  messages: RecordedGrpcMessage[]
+}
+
+/**
+ * Decode recorded gRPC message payloads to named-field JSON (tier 2) using the
+ * same proto-loader schema a real call would use. Throws only when the protos
+ * themselves don't load or don't contain the method — a per-message failure is
+ * reported in that message's `error` so one bad payload can't blank the view.
+ *
+ * A payload the proxy never fully retained is refused rather than decoded:
+ * protobuf has no framing of its own, so a truncated buffer deserializes to
+ * plausible nonsense instead of failing.
+ */
+export function decodeGrpcMessages(args: GrpcDecodeArgs): GrpcDecodedMessage[] {
+  const resolved = loadMethod(args)
+  return args.messages.map((m) => {
+    if (m.compressed === true) return { error: 'message is compressed (grpc-encoding) — not decoded' }
+    // The proxy always sets base64 ('' for an empty message). Recordings made
+    // before it did left it off in that one case, which `bytes: 0` identifies.
+    const base64 = m.base64 ?? (m.bytes === 0 ? '' : undefined)
+    if (m.truncated || base64 === undefined) {
+      return { error: `payload not fully captured (${m.bytes} bytes on the wire)` }
+    }
+    const deserialize = m.dir === 'send' ? resolved.requestDeserialize : resolved.responseDeserialize
+    try {
+      return { json: JSON.stringify(deserialize(Buffer.from(base64, 'base64')), null, 2) }
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : String(e) }
+    }
+  })
 }
 
 function makeCredentials(args: GrpcCallArgs): grpc.ChannelCredentials {

@@ -177,6 +177,7 @@ button { cursor: pointer; }
 .badge-delete { color: var(--danger); }
 .badge-head, .badge-options, .badge-other { color: var(--muted); }
 .badge-ws { color: var(--purple); }
+.badge-mqtt { color: var(--blue); }
 
 /* --------------------------------- search -------------------------------- */
 .search-status { color: var(--muted); padding: 14px; font-size: 13px; }

@@ -599,8 +599,13 @@ export interface HistoryEntry {
 
 /* ---------------------------- recorded traffic --------------------------- */
 
-/** Protocol of a proxied exchange, as classified by core/record/classify.ts. */
-export type RecordedProtocol = 'rest' | 'graphql' | 'grpc' | 'ws' | 'sse'
+/**
+ * Protocol of a proxied exchange, as classified by core/record/classify.ts —
+ * except 'mqtt', which never reaches the classifier: it arrives on its own
+ * listener (a TCP relay to a broker, see engine/mqtt-proxy.ts) rather than on
+ * the HTTP one, so the listener already knows what it is.
+ */
+export type RecordedProtocol = 'rest' | 'graphql' | 'grpc' | 'ws' | 'sse' | 'mqtt'
 
 /**
  * A capped body preview. `bytes` is the true wire size; `text` holds at most
@@ -612,6 +617,55 @@ export interface RecordedBody {
   bytes: number
   truncated: boolean
   base64?: string
+}
+
+/**
+ * One gRPC message lifted out of the 5-byte length-prefixed wire framing.
+ * `bytes` is the true payload size from the frame header, so it stays honest
+ * when the cap dropped the payload: `base64` absent means nothing was
+ * retained, and `truncated` means `base64` holds a prefix at best.
+ */
+export interface RecordedGrpcMessage {
+  /** Direction as seen from the client: 'send' = request, 'recv' = response. */
+  dir: 'send' | 'recv'
+  bytes: number
+  truncated: boolean
+  base64?: string
+  /** The frame's compressed flag — such a payload is not protobuf as captured. */
+  compressed?: boolean
+}
+
+/**
+ * One MQTT control packet seen by the relay's passive decoder. Only the fields
+ * worth a column are lifted out — the relay is transparent, so the broker, not
+ * this record, is the authority on what the packet meant.
+ *
+ * `preview` is the PUBLISH payload (capped, see the engine's MQTT_PREVIEW_CAP)
+ * or, for SUBSCRIBE/UNSUBSCRIBE, the full subscription list, which `topic`
+ * only names the first of. `base64` marks a preview that isn't printable text.
+ */
+export interface RecordedMqttPacket {
+  /** Direction as seen from the client: 'send' = to the broker, 'recv' = from it. */
+  dir: 'send' | 'recv'
+  at: string
+  /** The control packet type ('connect' | 'publish' | 'suback' | ...). */
+  type: string
+  topic?: string
+  qos?: number
+  retain?: boolean
+  dup?: boolean
+  messageId?: number
+  preview?: string
+  truncated?: boolean
+  base64?: boolean
+}
+
+/** One decoded gRPC message (tier 2), aligned by index with the captured list. */
+export interface GrpcDecodedMessage {
+  /** The message as JSON with real field names, when it decoded. */
+  json?: string
+  /** Why it didn't (not captured, truncated, compressed, or a decode failure). */
+  error?: string
 }
 
 /**
@@ -646,11 +700,36 @@ export interface RecordedExchange {
     grpcStatus?: number
     requestMessages: number
     responseMessages: number
+    /**
+     * Phase 3a: the message payloads themselves, request ones first. Capped
+     * (see the engine's GRPC_MESSAGE_CAP / PROXY_BODY_CAP), and absent
+     * entirely on exchanges recorded before Phase 3a — `requestMessages` /
+     * `responseMessages` remain the authority on how many there really were.
+     */
+    messages?: RecordedGrpcMessage[]
   }
   /** Phase 2: WebSocket session capture (one exchange per session, capped frames). */
   ws?: {
     closeCode?: number
     frames: { dir: 'in' | 'out'; at: string; text: boolean; preview: string; truncated: boolean }[]
+  }
+  /**
+   * Phase 3d: MQTT session capture — one exchange per client connection, like
+   * `ws`. `method` is 'MQTT', `url` is the broker (mqtt://host:port) and there
+   * is no `status`: MQTT has no HTTP status, and inventing one would be a lie.
+   * `clientId`/`protocolVersion` come from the client's CONNECT, so both are
+   * absent when the connection died before one arrived.
+   */
+  mqtt?: {
+    clientId?: string
+    protocolVersion?: number
+    packets: RecordedMqttPacket[]
+    /**
+     * Directions whose decoder hit a packet it couldn't parse and stopped. The
+     * bytes kept relaying, so the packet list is short of the session, not the
+     * session short of packets. Absent on recordings made before this existed.
+     */
+    decodeStopped?: ('send' | 'recv')[]
   }
 }
 

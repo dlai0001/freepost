@@ -276,5 +276,7 @@ npx @modelcontextprotocol/inspector \\
     } finally {
       await client.close()
     }
-  })
+    // Spawns a real MCP server subprocess, which outruns the 5s default when
+    // the whole suite competes for cores.
+  }, 30_000)
 })

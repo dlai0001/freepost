@@ -5,7 +5,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import * as grpc from '@grpc/grpc-js'
 import * as protoLoader from '@grpc/proto-loader'
 import { writeRequestFile } from '../core/format'
-import type { RequestFile } from '../shared/model'
+import type { RecordedExchange, RequestFile } from '../shared/model'
+import { recordedToRequestFile } from '../core/record/to-request'
 import { executeRequest } from './execute'
 
 const PROTO = `syntax = "proto3";
@@ -76,6 +77,33 @@ describe('executeRequest for .grpc', () => {
     expect(report.response?.statusText).toBe('OK')
     expect(JSON.parse(report.response!.bodyText)).toEqual({ message: 'Hello dave' })
     expect(report.testScript?.tests).toEqual([{ name: 'greets', passed: true }])
+  })
+
+  it('runs a .grpc saved from a recorded exchange, whose proto path the save made relative', async () => {
+    // The portability claim end to end: the file picker's ABSOLUTE proto path
+    // is what "Save to collection" is handed, and what lands in the file must
+    // be a collection-relative path that still resolves when run.
+    const entry: RecordedExchange = {
+      id: '1',
+      at: '2026-01-01T00:00:00Z',
+      protocol: 'grpc',
+      method: 'POST',
+      url: `http://${target}/helloworld.Greeter/SayHello`,
+      requestHeaders: [],
+      errored: false,
+      grpc: { service: 'helloworld.Greeter', method: 'SayHello', requestMessages: 1, responseMessages: 1 }
+    }
+    const file = recordedToRequestFile(entry, {
+      data: '{"name":"dave"}',
+      protoFiles: [join(root, 'helloworld.proto')],
+      root
+    })
+    expect(file.grpc?.protoFiles).toEqual(['helloworld.proto'])
+
+    writeGrpc('Recorded.grpc', file)
+    const report = await executeRequest({ root, path: 'Recorded.grpc', session: new Map() })
+    expect(report.errored).toBe(false)
+    expect(JSON.parse(report.response!.bodyText)).toEqual({ message: 'Hello dave' })
   })
 
   it('marks a non-OK gRPC status as errored', async () => {

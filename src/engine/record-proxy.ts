@@ -15,10 +15,19 @@
  * this because allowHTTP1 exists only on TLS servers (ALPN). grpc-js sends the
  * 24-byte preface immediately, so a 3-byte sniff is deterministic. That branch
  * dispatches to an internal http2.Server (h2c prior knowledge, i.e. gRPC —
- * tier-1 pass-through: forward + count wire frames, never decode protobuf);
+ * forward, then count and retain the wire-framed messages; decoding them is
+ * the viewer's job, not the proxy's);
  * WebSocket upgrades on the HTTP/1.1 branch are relayed with `ws` and captured
  * as one exchange per session. Phase 2.5 adds an optional TLS listener via
  * `start({ tls })`.
+ *
+ * The client's HTTP version is NOT the target's: HTTP semantics are
+ * version-independent, so every h2 client leg except gRPC is forwarded through
+ * the same HTTP/1.1 upstream forwarder (`forward`) as the h1 legs, downgrading
+ * like mitmproxy does. Only gRPC needs end-to-end h2 — grpc-status rides in
+ * trailers, which HTTP/1.1 can't carry through Node's client. Without the
+ * downgrade any h2-capable client (curl and browsers offer h2 in ALPN by
+ * default) breaks against an HTTP/1.1-only target, i.e. against most backends.
  */
 import { createServer as createHttpServer, request as httpRequest } from 'node:http'
 import type { ClientRequest, IncomingHttpHeaders, IncomingMessage, OutgoingHttpHeaders, ServerResponse } from 'node:http'
@@ -41,10 +50,11 @@ import type { AddressInfo, Server as NetServer, Socket } from 'node:net'
 import { createServer as createTlsServer } from 'node:tls'
 import type { Server as TlsServer, TLSSocket } from 'node:tls'
 import { duplexPair } from 'node:stream'
+import type { Readable, Writable } from 'node:stream'
 import { brotliDecompressSync, gunzipSync, inflateRawSync, inflateSync } from 'node:zlib'
 import { randomUUID } from 'node:crypto'
 import WebSocket, { WebSocketServer } from 'ws'
-import type { Header, RecordedBody, RecordedExchange } from '../shared/model'
+import type { Header, RecordedBody, RecordedExchange, RecordedGrpcMessage } from '../shared/model'
 import { classifyExchange, HOP_BY_HOP_HEADERS, isGrpcContentType } from '../core/record/classify'
 
 export type ProxyState = 'idle' | 'listening' | 'stopped'
@@ -84,23 +94,49 @@ export const WS_PREVIEW_CAP = 2 * 1024
 type WsFrame = NonNullable<RecordedExchange['ws']>['frames'][number]
 
 /**
- * Counts gRPC messages on a teed DATA direction by walking the 5-byte
- * length-prefixed message framing (1 compressed flag + 4-byte big-endian
- * length). Payload bytes are skipped, never decoded — tier-1 capture.
+ * Retained gRPC messages per direction, mirroring WS_FRAME_CAP: a long-lived
+ * stream must not grow recorded.jsonl without bound. Messages past the cap are
+ * still counted, just not kept.
  */
-class GrpcFrameCounter {
+export const GRPC_MESSAGE_CAP = 200
+
+/**
+ * How long the HTTP/2 support probe waits for the target's SETTINGS. A target
+ * that answers neither way is treated as unproven, not as HTTP/1.1-only.
+ */
+const H2_PROBE_TIMEOUT_MS = 2000
+
+/**
+ * Walks the 5-byte length-prefixed gRPC message framing (1 compressed flag +
+ * 4-byte big-endian length) on a teed DATA direction, counting every message
+ * and retaining the payloads for the decode view (tier 2/3).
+ *
+ * Retention is capped twice: at most GRPC_MESSAGE_CAP messages, and at most
+ * PROXY_BODY_CAP retained bytes across the direction (which also bounds any
+ * single message). `messages` counts regardless — the count is the wire truth
+ * and the decode view is best-effort on top of it.
+ */
+class GrpcFrameCapture {
   messages = 0
+  readonly captured: RecordedGrpcMessage[] = []
   private readonly header = Buffer.alloc(5)
   private headerFill = 0
   private payloadLeft = 0
+  private budget = PROXY_BODY_CAP
+  /** The message currently being filled, or null when it isn't being kept. */
+  private current: { entry: RecordedGrpcMessage; chunks: Buffer[] } | null = null
+
+  constructor(private readonly dir: RecordedGrpcMessage['dir']) {}
 
   push(chunk: Buffer): void {
     let off = 0
     while (off < chunk.length) {
       if (this.payloadLeft > 0) {
-        const skip = Math.min(this.payloadLeft, chunk.length - off)
-        this.payloadLeft -= skip
-        off += skip
+        const take = Math.min(this.payloadLeft, chunk.length - off)
+        this.retain(chunk.subarray(off, off + take))
+        this.payloadLeft -= take
+        off += take
+        if (this.payloadLeft === 0) this.finish()
         continue
       }
       const take = Math.min(5 - this.headerFill, chunk.length - off)
@@ -108,11 +144,48 @@ class GrpcFrameCounter {
       this.headerFill += take
       off += take
       if (this.headerFill === 5) {
-        this.messages++
-        this.payloadLeft = this.header.readUInt32BE(1)
         this.headerFill = 0
+        this.begin(this.header[0] === 1, this.header.readUInt32BE(1))
       }
     }
+  }
+
+  private begin(compressed: boolean, length: number): void {
+    this.messages++
+    this.payloadLeft = length
+    if (this.captured.length >= GRPC_MESSAGE_CAP) {
+      this.current = null
+      return
+    }
+    const entry: RecordedGrpcMessage = {
+      dir: this.dir,
+      bytes: length,
+      truncated: false,
+      ...(compressed ? { compressed: true } : {})
+    }
+    this.captured.push(entry)
+    this.current = { entry, chunks: [] }
+    if (length === 0) this.finish() // no payload chunks are coming
+  }
+
+  private retain(slice: Buffer): void {
+    if (this.current === null) return
+    const keep = Math.min(slice.length, this.budget)
+    if (keep > 0) {
+      this.current.chunks.push(Buffer.from(slice.subarray(0, keep)))
+      this.budget -= keep
+    }
+    if (keep < slice.length) this.current.entry.truncated = true
+  }
+
+  private finish(): void {
+    if (this.current === null) return
+    // Always set, '' included: a zero-length message is a real message (every
+    // no-arg RPC and google.protobuf.Empty look exactly like this on the wire).
+    // Leaving base64 off would make it indistinguishable from a payload the cap
+    // dropped, and consumers would report the capture as incomplete.
+    this.current.entry.base64 = Buffer.concat(this.current.chunks).toString('base64')
+    this.current = null
   }
 }
 
@@ -187,6 +260,26 @@ function toRecordedBody(tee: BodyTee, contentEncoding: string | undefined): Reco
 }
 
 /**
+ * Normalize a client-supplied request target to a path that can only ever
+ * address the configured target.
+ *
+ * The client's path is untrusted input and MUST NOT be run through URL
+ * resolution (`new URL(path, origin)`): to the WHATWG parser a leading `//` —
+ * or `/\`, which it treats identically — introduces an authority, so a client
+ * asking for `//evil.com/x` would resolve to a host the *client* named. The
+ * proxy would then dial that host, send it `Host: evil.com`, relay the answer
+ * back as the target's, and record the exchange under evil.com's URL. `//`
+ * alone doesn't even parse (ERR_INVALID_URL), which threw out of the emit.
+ *
+ * Collapsing the run to a single `/` keeps the request an origin-form path
+ * (RFC 9112 §3.2.1), which is all a client may legally send anyway.
+ */
+function safeClientPath(reqPath: string): string {
+  const path = reqPath.startsWith('/') ? reqPath : `/${reqPath}`
+  return path.replace(/^[/\\]+/, '/')
+}
+
+/**
  * Join the target's base path with an incoming request path. A target like
  * http://host/api means every forwarded path gets the /api prefix — on h1, h2
  * (where the joined value is what goes into :path) and WebSocket alike.
@@ -195,6 +288,76 @@ function joinTargetPath(target: URL, reqPath: string): string {
   const base = target.pathname.replace(/\/+$/, '')
   if (base === '') return reqPath
   return base + (reqPath.startsWith('/') ? reqPath : `/${reqPath}`)
+}
+
+/**
+ * The absolute URL one client leg is forwarded to (and recorded under). Built
+ * by literal append onto the target's origin — see safeClientPath for why the
+ * client's path is never resolved against it. `scheme` overrides the target's
+ * (ws:/wss: for an upgrade); the origin is always the configured target's.
+ */
+function forwardUrl(target: URL, reqPath: string, scheme?: string): URL {
+  const origin = scheme === undefined ? target.origin : `${scheme}//${target.host}`
+  return new URL(origin + joinTargetPath(target, safeClientPath(reqPath)))
+}
+
+/**
+ * The client leg of one exchange, normalized to HTTP/1.1 shape so that one
+ * upstream forwarder serves both listeners' h1 requests and downgraded h2
+ * streams. Pseudo-headers are already translated by the h2 adapter; hop-by-hop
+ * stripping and the host rewrite belong to the forwarder, not here.
+ */
+interface ClientLeg {
+  method: string
+  /** Request target as the client sent it, before the target base path join. */
+  path: string
+  /** Request headers with h2 pseudo-headers removed. */
+  headers: IncomingHttpHeaders
+  /** Request body source, piped to the upstream request. */
+  body: Readable
+  /** True once the head went out — an error can no longer become a 502. */
+  headSent: () => boolean
+  /** Send the response head. Hop-by-hop headers are stripped by the caller. */
+  head: (status: number, headers: OutgoingHttpHeaders) => void
+  /** Response body sink; piped into, so backpressure reaches the upstream. */
+  sink: Writable
+  destroy: () => void
+  /** Client hung up, or the response finished. */
+  onClose: (cb: () => void) => void
+}
+
+/**
+ * Adapt an HTTP/2 client stream to a ClientLeg so it can be forwarded over
+ * HTTP/1.1. :method/:path become the request line and :authority/:scheme are
+ * dropped — the forwarder rewrites Host to the target's anyway. The response
+ * head goes back the other way: hop-by-hop headers are stripped by the
+ * forwarder, which also covers everything HTTP/2 forbids (connection,
+ * transfer-encoding, keep-alive, upgrade).
+ */
+function toH2ClientLeg(stream: ServerHttp2Stream, headers: H2IncomingHeaders): ClientLeg {
+  const h1Headers: IncomingHttpHeaders = {}
+  for (const [name, value] of Object.entries(headers)) {
+    if (value === undefined || name.startsWith(':')) continue
+    h1Headers[name] = value
+  }
+  // Cleanup is the forwarder's 'close' handler; this only stops an unhandled
+  // 'error' from throwing (h1's IncomingMessage is covered by the http
+  // server's own clientError handling, an h2 stream has no such backstop).
+  stream.on('error', () => undefined)
+  return {
+    method: String(headers[':method'] ?? 'GET'),
+    path: String(headers[':path'] ?? '/'),
+    headers: h1Headers,
+    body: stream,
+    headSent: () => stream.headersSent,
+    head: (status, outHeaders) => {
+      if (stream.destroyed || stream.headersSent) return
+      stream.respond({ ...(outHeaders as H2OutgoingHeaders), ':status': status })
+    },
+    sink: stream,
+    destroy: () => stream.destroy(),
+    onClose: (cb) => stream.on('close', cb)
+  }
 }
 
 /** Node's header map -> Header[], expanding arrays (set-cookie) into rows. */
@@ -251,29 +414,55 @@ export class RecordProxyServer {
     }
   }
 
+  /** HTTP/1.1 client leg (both listeners) -> the shared upstream forwarder. */
   private handle(req: IncomingMessage, res: ServerResponse, via: ListenerScheme): void {
+    this.forward(
+      {
+        method: req.method ?? 'GET',
+        path: req.url ?? '/',
+        headers: req.headers,
+        body: req,
+        headSent: () => res.headersSent,
+        head: (status, headers) => res.writeHead(status, headers),
+        sink: res,
+        destroy: () => res.destroy(),
+        onClose: (cb) => res.on('close', cb)
+      },
+      via
+    )
+  }
+
+  /**
+   * Forward one client leg to the target over HTTP/1.1 and record it: raw
+   * pass-through pipe, bodies teed into capped previews. Shared by the h1
+   * listeners and by the downgraded (non-gRPC) h2 legs — the leg abstracts how
+   * the request is read and the response written, nothing else differs.
+   */
+  private forward(leg: ClientLeg, via: ListenerScheme): void {
     const target = this.target as URL
     const at = new Date().toISOString()
     const started = Date.now()
-    const targetUrl = new URL(joinTargetPath(target, req.url ?? '/'), target.origin)
-    const method = req.method ?? 'GET'
+    const targetUrl = forwardUrl(target, leg.path)
+    const method = leg.method
 
-    // Forwarded headers: strip hop-by-hop, rewrite host to the target's.
+    // Forwarded headers: strip hop-by-hop, rewrite host to the target's. This
+    // also drops what HTTP/1.1 must not receive from an h2 leg (`te: trailers`)
+    // and what h2 could never have sent anyway (connection, transfer-encoding).
     const fwdHeaders: OutgoingHttpHeaders = {}
-    for (const [name, value] of Object.entries(req.headers)) {
+    for (const [name, value] of Object.entries(leg.headers)) {
       if (value === undefined || HOP_BY_HOP_HEADERS.has(name)) continue
       fwdHeaders[name] = value
     }
     fwdHeaders['host'] = targetUrl.host
 
     const reqTee = new BodyTee()
-    req.on('data', (c: Buffer) => reqTee.push(c))
+    leg.body.on('data', (c: Buffer) => reqTee.push(c))
 
     const requestFn = targetUrl.protocol === 'https:' ? httpsRequest : httpRequest
     const upstream = requestFn(targetUrl, { method, headers: fwdHeaders })
     this.upstreams.add(upstream)
     upstream.on('close', () => this.upstreams.delete(upstream))
-    req.pipe(upstream)
+    leg.body.pipe(upstream)
 
     // One exchange per request, whichever terminal event fires first.
     let emitted = false
@@ -284,10 +473,10 @@ export class RecordProxyServer {
     ): void => {
       if (emitted) return
       emitted = true
-      const requestBody = toRecordedBody(reqTee, req.headers['content-encoding'])
+      const requestBody = toRecordedBody(reqTee, leg.headers['content-encoding'])
       const responseBody = up !== undefined && resTee !== undefined ? toRecordedBody(resTee, up.headers['content-encoding']) : undefined
       const cls = classifyExchange(
-        { contentType: req.headers['content-type'], bodyText: requestBody?.text },
+        { contentType: leg.headers['content-type'], bodyText: requestBody?.text },
         up !== undefined ? { contentType: up.headers['content-type'] } : undefined
       )
       this.emit('exchange', {
@@ -298,7 +487,7 @@ export class RecordProxyServer {
         method,
         url: targetUrl.toString(),
         via,
-        requestHeaders: toHeaderList(req.headers),
+        requestHeaders: toHeaderList(leg.headers),
         ...(requestBody !== undefined ? { requestBody } : {}),
         ...(up !== undefined ? { status: up.statusCode, responseHeaders: toHeaderList(up.headers) } : {}),
         ...(responseBody !== undefined ? { responseBody } : {}),
@@ -310,12 +499,11 @@ export class RecordProxyServer {
     }
 
     upstream.on('error', (e: Error) => {
-      if (!res.headersSent) {
-        res.statusCode = 502
-        res.setHeader('Content-Type', 'application/json')
-        res.end(JSON.stringify({ error: 'upstream request failed', detail: e.message }, null, 2))
+      if (!leg.headSent()) {
+        leg.head(502, { 'content-type': 'application/json' })
+        leg.sink.end(JSON.stringify({ error: 'upstream request failed', detail: e.message }, null, 2))
       } else {
-        res.destroy()
+        leg.destroy()
       }
       emitExchange(undefined, undefined, { errored: true, error: e.message })
     })
@@ -327,22 +515,25 @@ export class RecordProxyServer {
         if (value === undefined || HOP_BY_HOP_HEADERS.has(name)) continue
         outHeaders[name] = value
       }
-      res.writeHead(up.statusCode ?? 502, outHeaders)
-      const sse = (up.headers['content-type'] ?? '').startsWith('text/event-stream')
+      leg.head(up.statusCode ?? 502, outHeaders)
+      // Lowercased to match classifyExchange: media types are case-insensitive
+      // (RFC 9110 §8.3.1), and an exchange classified 'sse' here but not there
+      // would only ever be recorded once the client disconnects.
+      const sse = (up.headers['content-type'] ?? '').toLowerCase().startsWith('text/event-stream')
       up.on('data', (c: Buffer) => {
         resTee.push(c)
         // A long-lived stream may never end: record it once the preview cap is
         // hit rather than never, and keep piping bytes to the client.
         if (sse && resTee.truncated) emitExchange(up, resTee, { stream: true, errored: false })
       })
-      up.pipe(res)
+      up.pipe(leg.sink)
       up.on('end', () => {
         const errored = up.statusCode !== undefined && up.statusCode >= 400
         emitExchange(up, resTee, { errored })
       })
       up.on('error', () => emitExchange(up, resTee, { errored: true, error: 'upstream stream failed' }))
       // Client hung up mid-stream (typical for SSE): keep the partial capture.
-      res.on('close', () => {
+      leg.onClose(() => {
         upstream.destroy()
         emitExchange(up, resTee, { stream: true, errored: false })
       })
@@ -358,6 +549,12 @@ export class RecordProxyServer {
     if (cur !== undefined && !cur.closed && !cur.destroyed) return cur
     const target = this.target as URL
     const session = h2Connect(target.origin)
+    // SETTINGS from the peer proves h2 wherever it is observed: gRPC opens this
+    // session without probing, so latching the answer here is what keeps a
+    // later probe from having to ask a session that already answered.
+    session.once('remoteSettings', () => {
+      this.h2Support = true
+    })
     const forget = (): void => {
       if (this.h2Upstream === session) this.h2Upstream = undefined
     }
@@ -370,18 +567,120 @@ export class RecordProxyServer {
   }
 
   /**
-   * One h2c stream (gRPC, or any prior-knowledge HTTP/2 client). Forward to
-   * the upstream h2 session, pipe DATA both ways, and relay trailers — a
-   * gRPC response carries grpc-status/grpc-message in the trailers, so an
-   * HTTP/1.1-only proxy would silently break every call.
+   * The target's answer to "do you speak HTTP/2", once it is *known*. Undefined
+   * means unproven — never "no". A connect failure (target not up yet, DNS
+   * blip, restart) says nothing about the target's protocols, so caching it
+   * would silently downgrade a real h2 target for the rest of the run.
+   */
+  private h2Support?: boolean
+  /** The in-flight probe, deduplicating concurrent askers. Cleared on settle. */
+  private h2Probe?: Promise<boolean>
+
+  /**
+   * Whether the target speaks HTTP/2. Only the downgrade decision needs this —
+   * gRPC requires h2 unconditionally and fails loudly if the target can't do it.
+   */
+  private targetSpeaksH2(): Promise<boolean> {
+    if (this.h2Support !== undefined) return Promise.resolve(this.h2Support)
+    this.h2Probe ??= this.probeH2().finally(() => {
+      this.h2Probe = undefined
+    })
+    return this.h2Probe
+  }
+
+  /**
+   * Probe the target with a dedicated, short-lived session — never the shared
+   * upstream one, whose 'remoteSettings' is one-shot and may already have fired
+   * (gRPC opens it without probing), leaving a listener that never runs.
+   *
+   * Cleartext has no ALPN, so the only honest signal is the h2 handshake
+   * itself: a real h2 peer answers the connection preface with SETTINGS, an
+   * HTTP/1.1 server answers 400 and the session errors out. Only those two
+   * outcomes are definitive enough to cache: the session reaches 'connect' as
+   * soon as TCP is up, whatever it goes on to speak, so a *connected* session
+   * failing on h2 framing is a real "no" while everything else — refused,
+   * unreachable, timed out — stays unproven and is re-asked next time.
+   */
+  private probeH2(): Promise<boolean> {
+    const target = this.target as URL
+    return new Promise<boolean>((resolve) => {
+      let settled = false
+      let connected = false
+      let session: ClientHttp2Session | undefined
+      const finish = (answer: boolean, definitive: boolean): void => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        if (definitive) this.h2Support = answer
+        session?.destroy()
+        resolve(answer)
+      }
+      // Without this a blackholed target holds every non-gRPC h2 request for
+      // the OS connect timeout (~2 min); the h1 path fails fast instead.
+      const timer = setTimeout(() => finish(false, false), H2_PROBE_TIMEOUT_MS)
+      if (typeof timer.unref === 'function') timer.unref()
+      try {
+        session = h2Connect(target.origin)
+      } catch {
+        finish(false, false)
+        return
+      }
+      session.once('connect', () => {
+        connected = true
+      })
+      session.once('remoteSettings', () => finish(true, true))
+      // A connected peer that fails h2 framing is speaking something else;
+      // a reset or a bare close mid-conversation only means "ask again".
+      session.once('error', (e: NodeJS.ErrnoException) =>
+        finish(false, connected && e.code?.startsWith('ERR_HTTP2') === true)
+      )
+      session.once('close', () => finish(false, false))
+    })
+  }
+
+  /**
+   * One HTTP/2 stream from either listener (ALPN h2 on the TLS one, h2c prior
+   * knowledge on the cleartext one).
+   *
+   * Only gRPC is pinned to an h2 upstream: grpc-status arrives in trailers, so
+   * an HTTP/1.1 hop would silently break every call. Everything else — curl,
+   * browsers, any prior-knowledge h2 client — is downgraded to the shared
+   * HTTP/1.1 forwarder unless the target itself speaks h2, because HTTP
+   * semantics don't depend on the wire version and most targets are h1-only.
    */
   private handleH2Stream(stream: ServerHttp2Stream, headers: H2IncomingHeaders, via: ListenerScheme): void {
+    if (!isGrpcContentType(headers['content-type'] as string | undefined)) {
+      // Synchronously, before the probe's await: an h2 stream has no backstop
+      // for 'error' (see toH2ClientLeg), so a client RST_STREAM inside the
+      // probe window would otherwise throw out of the process.
+      stream.on('error', () => undefined)
+      // The probe is awaited before any listener is attached, so the client's
+      // DATA stays in the stream's buffer (h2 flow control bounds it) rather
+      // than being dropped.
+      void this.targetSpeaksH2().then((h2) => {
+        if (stream.destroyed) return
+        if (h2) this.forwardH2(stream, headers, via)
+        else this.forward(toH2ClientLeg(stream, headers), via)
+      })
+      return
+    }
+    this.forwardH2(stream, headers, via)
+  }
+
+  /**
+   * Forward an h2 stream to an h2 upstream, relaying trailers: the gRPC path
+   * (grpc-status/grpc-message live there), and any non-gRPC h2 client when the
+   * target speaks h2 too, which keeps the exchange end-to-end HTTP/2.
+   */
+  private forwardH2(stream: ServerHttp2Stream, headers: H2IncomingHeaders, via: ListenerScheme): void {
     const target = this.target as URL
     const at = new Date().toISOString()
     const started = Date.now()
     const path = String(headers[':path'] ?? '/')
     /** The forwarded :path — the target's base path prefix included. */
-    const fwdPath = joinTargetPath(target, path)
+    const fwdPath = joinTargetPath(target, safeClientPath(path))
+    /** Always the configured target's — never a host the client's path named. */
+    const targetUrl = forwardUrl(target, path)
     const method = String(headers[':method'] ?? 'POST')
     const isGrpc = isGrpcContentType(headers['content-type'] as string | undefined)
 
@@ -401,8 +700,8 @@ export class RecordProxyServer {
 
     const reqTee = new BodyTee()
     const resTee = new BodyTee()
-    const reqFrames = new GrpcFrameCounter()
-    const resFrames = new GrpcFrameCounter()
+    const reqFrames = new GrpcFrameCapture('send')
+    const resFrames = new GrpcFrameCapture('recv')
     let resHeaders: H2IncomingHeaders | undefined
     let trailers: H2IncomingHeaders | undefined
 
@@ -413,8 +712,9 @@ export class RecordProxyServer {
       const status = resHeaders?.[':status'] !== undefined ? Number(resHeaders[':status']) : undefined
       const grpcStatusRaw = trailers?.['grpc-status'] ?? resHeaders?.['grpc-status']
       const grpcStatus = grpcStatusRaw !== undefined ? Number(grpcStatusRaw) : undefined
-      // gRPC bodies are undecoded protobuf — record counts, not bytes. Other
-      // h2c traffic (plain JSON over prior-knowledge HTTP/2) records normally.
+      // gRPC bodies are framed protobuf, not a body preview — they are
+      // recorded per-message under `grpc` instead. Other h2c traffic (plain
+      // JSON over prior-knowledge HTTP/2) records normally.
       const requestBody = isGrpc ? undefined : toRecordedBody(reqTee, headers['content-encoding'] as string | undefined)
       const responseBody = isGrpc ? undefined : toRecordedBody(resTee, resHeaders?.['content-encoding'] as string | undefined)
       const cls = classifyExchange(
@@ -425,13 +725,14 @@ export class RecordProxyServer {
       const slash = path.lastIndexOf('/')
       const service = path.slice(1, Math.max(slash, 1))
       const grpcMethod = slash >= 0 ? path.slice(slash + 1) : path
+      const messages = [...reqFrames.captured, ...resFrames.captured]
       this.emit('exchange', {
         id: randomUUID(),
         at,
         timeMs: Date.now() - started,
         protocol: cls.protocol,
         method,
-        url: new URL(fwdPath, target.origin).toString(),
+        url: targetUrl.toString(),
         via,
         requestHeaders: toHeaderList(headers as IncomingHttpHeaders).filter((h) => !h.name.startsWith(':')),
         ...(requestBody !== undefined ? { requestBody } : {}),
@@ -449,7 +750,8 @@ export class RecordProxyServer {
                 method: grpcMethod,
                 ...(grpcStatus !== undefined ? { grpcStatus } : {}),
                 requestMessages: reqFrames.messages,
-                responseMessages: resFrames.messages
+                responseMessages: resFrames.messages,
+                ...(messages.length > 0 ? { messages } : {})
               }
             }
           : {})
@@ -548,7 +850,7 @@ export class RecordProxyServer {
     const at = new Date().toISOString()
     const started = Date.now()
     const wsScheme = target.protocol === 'https:' ? 'wss:' : 'ws:'
-    const targetUrl = new URL(joinTargetPath(target, req.url ?? '/'), `${wsScheme}//${target.host}`)
+    const targetUrl = forwardUrl(target, req.url ?? '/', wsScheme)
 
     // Forward auth/cookie/etc; drop hop-by-hop and sec-websocket-* (`ws`
     // performs its own handshake, including subprotocol negotiation below).
@@ -722,6 +1024,9 @@ export class RecordProxyServer {
       throw new Error('Target must be an http:// or https:// URL')
     }
     this.target = target
+    // A previous run's answer belongs to a previous target.
+    this.h2Support = undefined
+    this.h2Probe = undefined
     const host = args.host ?? '127.0.0.1'
 
     const httpServer = createHttpServer((req, res) => this.handle(req, res, 'http'))
@@ -855,6 +1160,8 @@ export class RecordProxyServer {
     this.wsTargets.clear()
     this.h2Upstream?.destroy()
     this.h2Upstream = undefined
+    this.h2Support = undefined
+    this.h2Probe = undefined
     await new Promise<void>((resolve) => {
       let pending = (outer !== undefined ? 1 : 0) + (tlsServer !== undefined ? 1 : 0)
       const finish = (): void => {

@@ -13,25 +13,28 @@
  * collection the traffic wasn't meant for.
  */
 import { app, BrowserWindow } from 'electron'
-import { appendFileSync, chmodSync, existsSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import { RecordProxyServer } from '../engine'
-import type { RecordedExchange } from '../shared/model'
+import { MqttRecordProxy, RecordProxyServer } from '../engine'
 import { IPC } from '../shared/ipc'
-import { ensureFreepostDir } from './collection'
 import { getCurrentRoot, onRootChange } from './current-root'
 import { ensureProxyCerts } from './proxy-certs'
+import {
+  appendRecorded,
+  DEFAULT_PROXY_HTTPS_PORT,
+  DEFAULT_PROXY_MQTT_PORT,
+  DEFAULT_PROXY_PORT
+} from './recorded-store'
 import { readSettings, settingsPath, writeSettings } from './settings'
 
-export const DEFAULT_PROXY_PORT = 7699
-export const DEFAULT_PROXY_HTTPS_PORT = 7700
+// The store and the defaults are shared with the `freepost proxy` CLI, which
+// must not import Electron — re-exported so this stays the module the app side
+// reads them from.
+export { DEFAULT_PROXY_HTTPS_PORT, DEFAULT_PROXY_MQTT_PORT, DEFAULT_PROXY_PORT }
 
 /** Where the proxy's local CA + leaf live (see proxy-certs.ts). */
 export function proxyTlsDir(): string {
   return join(app.getPath('userData'), 'tls')
 }
-
-const RECORDED_CAP = 500
 
 interface RunningState {
   server: RecordProxyServer
@@ -43,6 +46,11 @@ interface RunningState {
   httpsUrl?: string
   httpsPort?: number
   caPath?: string
+  /** Set only when the MQTT relay was enabled for this run (its own listener). */
+  mqttServer?: MqttRecordProxy
+  mqttTarget?: string
+  mqttUrl?: string
+  mqttPort?: number
 }
 
 let running: RunningState | null = null
@@ -78,9 +86,13 @@ export async function appProxyStatus(): Promise<{
   httpsPort: number
   httpsUrl?: string
   caPath?: string
+  mqtt: boolean
+  mqttTarget: string
+  mqttPort: number
+  mqttUrl?: string
 }> {
+  const settings = await readSettings(settingsPath())
   if (running !== null) {
-    const settings = await readSettings(settingsPath())
     return {
       running: true,
       url: running.url,
@@ -89,56 +101,22 @@ export async function appProxyStatus(): Promise<{
       https: running.httpsUrl !== undefined,
       httpsPort: running.httpsPort ?? settings.proxyHttpsPort ?? DEFAULT_PROXY_HTTPS_PORT,
       ...(running.httpsUrl !== undefined ? { httpsUrl: running.httpsUrl } : {}),
-      ...(running.caPath !== undefined ? { caPath: running.caPath } : {})
+      ...(running.caPath !== undefined ? { caPath: running.caPath } : {}),
+      mqtt: running.mqttUrl !== undefined,
+      mqttTarget: running.mqttTarget ?? settings.proxyMqttTarget ?? '',
+      mqttPort: running.mqttPort ?? settings.proxyMqttPort ?? DEFAULT_PROXY_MQTT_PORT,
+      ...(running.mqttUrl !== undefined ? { mqttUrl: running.mqttUrl } : {})
     }
   }
-  const { proxyTarget: savedTarget, proxyPort, proxyHttpsEnabled, proxyHttpsPort } =
-    await readSettings(settingsPath())
   return {
     running: false,
-    target: savedTarget ?? '',
-    port: proxyPort ?? DEFAULT_PROXY_PORT,
-    https: proxyHttpsEnabled ?? false,
-    httpsPort: proxyHttpsPort ?? DEFAULT_PROXY_HTTPS_PORT
-  }
-}
-
-/**
- * Line counts per recorded.jsonl path, so a busy proxy doesn't re-read the
- * whole file on every append. Initialized by counting once on the first
- * append; a stale count (e.g. after History ▸ Clear) only trims early, and
- * the trim resets it from what's really on disk.
- */
-const recordedCounts = new Map<string, number>()
-
-/**
- * Append one exchange to <root>/.freepost/history/recorded.jsonl (the shape of
- * appendHistory in execute.ts: append, chmod 600, cap). Exported for tests.
- */
-export function appendRecorded(root: string, entry: RecordedExchange): void {
-  try {
-    const dir = ensureFreepostDir(root)
-    const file = join(dir, 'history', 'recorded.jsonl')
-    let count =
-      recordedCounts.get(file) ??
-      (existsSync(file) ? readFileSync(file, 'utf8').split('\n').filter(Boolean).length : 0)
-    appendFileSync(file, JSON.stringify(entry) + '\n')
-    count++
-    // Recorded traffic carries full headers (incl. auth) — owner-only.
-    try {
-      chmodSync(file, 0o600)
-    } catch {
-      /* best-effort; no-op on Windows */
-    }
-    // Only read + trim once the counter says the cap is exceeded.
-    if (count > RECORDED_CAP * 2) {
-      const lines = readFileSync(file, 'utf8').split('\n').filter(Boolean).slice(-RECORDED_CAP)
-      writeFileSync(file, lines.join('\n') + '\n')
-      count = lines.length
-    }
-    recordedCounts.set(file, count)
-  } catch {
-    // Recording persistence is best-effort; never break the proxied request.
+    target: settings.proxyTarget ?? '',
+    port: settings.proxyPort ?? DEFAULT_PROXY_PORT,
+    https: settings.proxyHttpsEnabled ?? false,
+    httpsPort: settings.proxyHttpsPort ?? DEFAULT_PROXY_HTTPS_PORT,
+    mqtt: settings.proxyMqttEnabled ?? false,
+    mqttTarget: settings.proxyMqttTarget ?? '',
+    mqttPort: settings.proxyMqttPort ?? DEFAULT_PROXY_MQTT_PORT
   }
 }
 
@@ -152,14 +130,26 @@ export async function startAppProxy(args: {
   /** Also start the TLS listener (self-signed local CA; see proxy-certs.ts). */
   https?: boolean
   httpsPort?: number
-}): Promise<{ url: string; target: string; port: number; httpsUrl?: string; caPath?: string }> {
+  /** Also start the MQTT relay — its own listener, to its own broker target. */
+  mqtt?: boolean
+  mqttTarget?: string
+  mqttPort?: number
+}): Promise<{
+  url: string
+  target: string
+  port: number
+  httpsUrl?: string
+  caPath?: string
+  mqttUrl?: string
+}> {
   if (running !== null) {
     return {
       url: running.url,
       target: running.target,
       port: running.port,
       ...(running.httpsUrl !== undefined ? { httpsUrl: running.httpsUrl } : {}),
-      ...(running.caPath !== undefined ? { caPath: running.caPath } : {})
+      ...(running.caPath !== undefined ? { caPath: running.caPath } : {}),
+      ...(running.mqttUrl !== undefined ? { mqttUrl: running.mqttUrl } : {})
     }
   }
   const root = getCurrentRoot()
@@ -171,12 +161,20 @@ export async function startAppProxy(args: {
   const port = args.port ?? settings.proxyPort ?? DEFAULT_PROXY_PORT
   const https = args.https ?? false
   const httpsPort = args.httpsPort ?? settings.proxyHttpsPort ?? DEFAULT_PROXY_HTTPS_PORT
+  const mqtt = args.mqtt ?? false
+  const mqttTarget = args.mqttTarget ?? settings.proxyMqttTarget ?? ''
+  const mqttPort = args.mqttPort ?? settings.proxyMqttPort ?? DEFAULT_PROXY_MQTT_PORT
+  if (mqtt && mqttTarget.trim() === '') {
+    throw new Error('Enter the MQTT broker to relay to (e.g. mqtt://127.0.0.1:1883).')
+  }
 
-  const server = new RecordProxyServer()
-  server.on('exchange', (entry) => {
+  // Both listeners record into the same collection, through the same sink.
+  const record = (entry: Parameters<typeof appendRecorded>[1]): void => {
     appendRecorded(root, entry)
     broadcast(IPC.proxyLog, { entry })
-  })
+  }
+  const server = new RecordProxyServer()
+  server.on('exchange', record)
 
   // Certs are lazy: generated (or rotated) only when HTTPS is actually enabled.
   let tls: { key: string; cert: string; port: number } | undefined
@@ -190,6 +188,25 @@ export async function startAppProxy(args: {
   const { port: bound, tlsPort } = await server.start({ target: args.target, port, tls })
   const url = `http://127.0.0.1:${bound}`
   const httpsUrl = tlsPort !== undefined ? `https://127.0.0.1:${tlsPort}` : undefined
+
+  // The MQTT relay is a separate listener on a separate port to a separate
+  // target — started here so one toggle runs (and one stop stops) everything.
+  let mqttServer: MqttRecordProxy | undefined
+  let mqttBound: number | undefined
+  if (mqtt) {
+    mqttServer = new MqttRecordProxy()
+    mqttServer.on('exchange', record)
+    try {
+      ;({ port: mqttBound } = await mqttServer.start({ target: mqttTarget, port: mqttPort }))
+    } catch (e) {
+      // Keep the start atomic: a bad broker or a taken MQTT port must not
+      // leave the HTTP listener up and half-started.
+      await server.stop()
+      throw e
+    }
+  }
+  const mqttUrl = mqttBound !== undefined ? `mqtt://127.0.0.1:${mqttBound}` : undefined
+
   running = {
     server,
     root,
@@ -198,15 +215,21 @@ export async function startAppProxy(args: {
     port: bound,
     ...(httpsUrl !== undefined ? { httpsUrl } : {}),
     ...(tlsPort !== undefined ? { httpsPort: tlsPort } : {}),
-    ...(caPath !== undefined ? { caPath } : {})
+    ...(caPath !== undefined ? { caPath } : {}),
+    ...(mqttServer !== undefined ? { mqttServer, mqttTarget } : {}),
+    ...(mqttUrl !== undefined ? { mqttUrl } : {}),
+    ...(mqttBound !== undefined ? { mqttPort: mqttBound } : {})
   }
-  // Persist last-used target/ports/HTTPS toggle so the modal prefills next
-  // time — never a "running" flag (per-session, like the MCP server).
+  // Persist last-used targets/ports/toggles so the modal prefills next time —
+  // never a "running" flag (per-session, like the MCP server).
   await writeSettings(settingsPath(), {
     proxyTarget: args.target,
     proxyPort: bound,
     proxyHttpsEnabled: https,
-    ...(tlsPort !== undefined ? { proxyHttpsPort: tlsPort } : {})
+    ...(tlsPort !== undefined ? { proxyHttpsPort: tlsPort } : {}),
+    proxyMqttEnabled: mqtt,
+    ...(mqttTarget.trim() !== '' ? { proxyMqttTarget: mqttTarget } : {}),
+    ...(mqttBound !== undefined ? { proxyMqttPort: mqttBound } : {})
   }).catch(() => undefined)
   onChange()
   return {
@@ -214,15 +237,17 @@ export async function startAppProxy(args: {
     target: args.target,
     port: bound,
     ...(httpsUrl !== undefined ? { httpsUrl } : {}),
-    ...(caPath !== undefined ? { caPath } : {})
+    ...(caPath !== undefined ? { caPath } : {}),
+    ...(mqttUrl !== undefined ? { mqttUrl } : {})
   }
 }
 
 export async function stopAppProxy(): Promise<void> {
   if (running === null) return
-  const { server } = running
+  const { server, mqttServer } = running
   running = null
   await server.stop()
+  await mqttServer?.stop()
   onChange()
 }
 

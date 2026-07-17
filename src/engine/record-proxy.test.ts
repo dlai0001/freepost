@@ -1,9 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
-import { createServer, type Server } from 'node:http'
+import { createServer, request as httpRequest, type Server } from 'node:http'
 import { request as httpsRequest } from 'node:https'
-import { connect as h2Connect, createServer as createH2Server } from 'node:http2'
+import { connect as h2Connect, constants as h2Constants, createServer as createH2Server } from 'node:http2'
+import type {
+  ClientHttp2Session,
+  IncomingHttpHeaders as H2IncomingHeaders,
+  OutgoingHttpHeaders as H2OutgoingHeaders,
+  ServerHttp2Stream
+} from 'node:http2'
 import { connect as netConnect } from 'node:net'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -12,8 +18,16 @@ import { gzipSync } from 'node:zlib'
 import * as grpc from '@grpc/grpc-js'
 import * as protoLoader from '@grpc/proto-loader'
 import WebSocket, { WebSocketServer } from 'ws'
-import type { RecordedExchange } from '../shared/model'
-import { PROXY_BODY_CAP, RecordProxyServer, WS_FRAME_CAP, WS_PREVIEW_CAP } from './record-proxy'
+import type { RecordedExchange, RecordedGrpcMessage } from '../shared/model'
+import { decodeProtobuf, formatProtobuf } from '../core/record/protobuf'
+import { decodeGrpcMessages } from './grpc'
+import {
+  GRPC_MESSAGE_CAP,
+  PROXY_BODY_CAP,
+  RecordProxyServer,
+  WS_FRAME_CAP,
+  WS_PREVIEW_CAP
+} from './record-proxy'
 
 const servers: RecordProxyServer[] = []
 const targets: Server[] = []
@@ -351,6 +365,12 @@ async function startGrpcTarget(): Promise<string> {
   return `http://127.0.0.1:${port}`
 }
 
+/** A captured message's retained payload bytes (fails loudly if it has none). */
+function payload(m: RecordedGrpcMessage | undefined): Uint8Array {
+  if (m?.base64 === undefined) throw new Error('message payload was not captured')
+  return Buffer.from(m.base64, 'base64')
+}
+
 function greeterClient(proxyBase: string): any {
   const Greeter = loadGreeter()
   const client = new Greeter(`127.0.0.1:${new URL(proxyBase).port}`, grpc.credentials.createInsecure())
@@ -378,16 +398,34 @@ describe('RecordProxyServer gRPC (h2c sniff)', () => {
     expect(e.url).toBe(`${target}/helloworld.Greeter/SayHello`)
     expect(e.status).toBe(200)
     expect(e.errored).toBe(false)
-    expect(e.grpc).toEqual({
+    expect(e.grpc).toMatchObject({
       service: 'helloworld.Greeter',
       method: 'SayHello',
       grpcStatus: 0,
       requestMessages: 1,
       responseMessages: 1
     })
-    // Tier-1: undecoded protobuf bodies are not recorded.
+    // The framed messages are captured, not the raw h2 DATA as a body preview.
     expect(e.requestBody).toBeUndefined()
     expect(e.responseBody).toBeUndefined()
+    expect(e.grpc?.messages).toHaveLength(2)
+    expect(e.grpc?.messages?.map((m) => m.dir)).toEqual(['send', 'recv'])
+    expect(e.grpc?.messages?.every((m) => !m.truncated)).toBe(true)
+    // The captured bytes are the real wire payloads, both tiers over.
+    expect(decodeProtobuf(payload(e.grpc?.messages?.[0]))).toEqual({
+      fields: [{ field: 1, kind: 'string', text: 'Ada' }]
+    })
+    expect(decodeProtobuf(payload(e.grpc?.messages?.[1]))).toEqual({
+      fields: [{ field: 1, kind: 'string', text: 'Hello Ada' }]
+    })
+    expect(decodeGrpcMessages({
+      fullMethod: 'helloworld.Greeter/SayHello',
+      protoFiles: [GREETER_PROTO],
+      messages: e.grpc?.messages ?? []
+    })).toEqual([
+      { json: JSON.stringify({ name: 'Ada' }, null, 2) },
+      { json: JSON.stringify({ message: 'Hello Ada' }, null, 2) }
+    ])
   })
 
   it('forwards a server-streaming call and counts every response message', async () => {
@@ -411,6 +449,139 @@ describe('RecordProxyServer gRPC (h2c sniff)', () => {
       requestMessages: 1,
       responseMessages: 3
     })
+    // Every streamed message is captured separately, in order, request first.
+    const captured = exchanges[0].grpc?.messages ?? []
+    expect(captured.map((m) => m.dir)).toEqual(['send', 'recv', 'recv', 'recv'])
+    expect(captured.map((m) => formatProtobuf(decodeProtobuf(payload(m))))).toEqual([
+      '1: "Grace"',
+      '1: "Hello Grace #1"',
+      '1: "Hello Grace #2"',
+      '1: "Hello Grace #3"'
+    ])
+  })
+
+  it('decodes captured messages to named fields with the .proto attached (tier 2)', async () => {
+    const target = await startGrpcTarget()
+    const { base, exchanges } = await startProxy(target)
+    const client = greeterClient(base)
+
+    await new Promise<string[]>((resolve, reject) => {
+      const got: string[] = []
+      const call = client.SayHellos({ name: 'Ada' })
+      call.on('data', (m: { message: string }) => got.push(m.message))
+      call.on('end', () => resolve(got))
+      call.on('error', reject)
+    })
+    await vi.waitFor(() => expect(exchanges).toHaveLength(1))
+
+    const decoded = decodeGrpcMessages({
+      fullMethod: 'helloworld.Greeter/SayHellos',
+      protoFiles: [GREETER_PROTO],
+      messages: exchanges[0].grpc?.messages ?? []
+    })
+    // 'send' decodes as HelloRequest, 'recv' as HelloReply — the direction
+    // picks the message type, which is why it is recorded per message.
+    expect(decoded.map((d) => d.json !== undefined ? JSON.parse(d.json) : d.error)).toEqual([
+      { name: 'Ada' },
+      { message: 'Hello Ada #1' },
+      { message: 'Hello Ada #2' },
+      { message: 'Hello Ada #3' }
+    ])
+  })
+
+  it('refuses to decode a message whose payload the cap dropped', () => {
+    // A protobuf buffer has no framing of its own, so a truncated capture would
+    // deserialize to plausible nonsense — it must be reported, not decoded.
+    expect(
+      decodeGrpcMessages({
+        fullMethod: 'helloworld.Greeter/SayHello',
+        protoFiles: [GREETER_PROTO],
+        messages: [
+          { dir: 'send', bytes: 900_000, truncated: true, base64: 'CgNBZGE=' },
+          { dir: 'recv', bytes: 12, truncated: false, base64: 'CgNBZGE=', compressed: true }
+        ]
+      })
+    ).toEqual([
+      { error: 'payload not fully captured (900000 bytes on the wire)' },
+      { error: 'message is compressed (grpc-encoding) — not decoded' }
+    ])
+  })
+
+  it('throws when the attached protos do not describe the method', () => {
+    expect(() =>
+      decodeGrpcMessages({
+        fullMethod: 'helloworld.Greeter/Nope',
+        protoFiles: [GREETER_PROTO],
+        messages: []
+      })
+    ).toThrow(/method not found/)
+  })
+
+  it('caps retained messages per direction but keeps counting them', async () => {
+    const Greeter = loadGreeter()
+    const server = new grpc.Server()
+    server.addService(Greeter.service, {
+      SayHello: (_call: any, cb: any) => cb(null, { message: 'hi' }),
+      SayHellos: (call: any) => {
+        for (let i = 0; i < GRPC_MESSAGE_CAP + 5; i++) call.write({ message: `m${i}` })
+        call.end()
+      }
+    })
+    const port = await new Promise<number>((resolve, reject) =>
+      server.bindAsync('127.0.0.1:0', grpc.ServerCredentials.createInsecure(), (e, p) =>
+        e !== null ? reject(e) : resolve(p)
+      )
+    )
+    cleanups.push(() => server.forceShutdown())
+    const { base, exchanges } = await startProxy(`http://127.0.0.1:${port}`)
+    const client = greeterClient(base)
+
+    await new Promise<void>((resolve, reject) => {
+      const call = client.SayHellos({ name: 'x' })
+      call.on('data', () => undefined)
+      call.on('end', () => resolve())
+      call.on('error', reject)
+    })
+
+    await vi.waitFor(() => expect(exchanges).toHaveLength(1))
+    expect(exchanges[0].grpc?.responseMessages).toBe(GRPC_MESSAGE_CAP + 5)
+    // 1 request message + the response direction's own cap.
+    expect(exchanges[0].grpc?.messages).toHaveLength(GRPC_MESSAGE_CAP + 1)
+  })
+
+  it('caps retained gRPC bytes per direction and flags the truncated message', async () => {
+    const Greeter = loadGreeter()
+    const server = new grpc.Server()
+    const huge = 'y'.repeat(PROXY_BODY_CAP + 1000)
+    server.addService(Greeter.service, {
+      SayHello: (_call: any, cb: any) => cb(null, { message: huge }),
+      SayHellos: (call: any) => call.end()
+    })
+    const port = await new Promise<number>((resolve, reject) =>
+      server.bindAsync('127.0.0.1:0', grpc.ServerCredentials.createInsecure(), (e, p) =>
+        e !== null ? reject(e) : resolve(p)
+      )
+    )
+    cleanups.push(() => server.forceShutdown())
+    const { base, exchanges } = await startProxy(`http://127.0.0.1:${port}`)
+    const client = greeterClient(base)
+
+    await new Promise<void>((resolve, reject) =>
+      client.SayHello({ name: 'Ada' }, (e: Error | null) => (e !== null ? reject(e) : resolve()))
+    )
+    await vi.waitFor(() => expect(exchanges).toHaveLength(1))
+
+    const recv = exchanges[0].grpc?.messages?.find((m) => m.dir === 'recv')
+    expect(recv?.truncated).toBe(true)
+    // `bytes` stays the true wire size even though only the cap was retained.
+    expect(recv?.bytes).toBeGreaterThan(PROXY_BODY_CAP)
+    expect(payload(recv).length).toBe(PROXY_BODY_CAP)
+    // The request direction has its own budget and is untouched by the flood.
+    const sent = exchanges[0].grpc?.messages?.find((m) => m.dir === 'send')
+    expect(sent?.truncated).toBe(false)
+    expect(decodeProtobuf(payload(sent))).toEqual({
+      fields: [{ field: 1, kind: 'string', text: 'Ada' }]
+    })
   })
 
   it('relays a non-OK grpc-status through the trailers and marks the exchange errored', async () => {
@@ -431,7 +602,53 @@ describe('RecordProxyServer gRPC (h2c sniff)', () => {
     expect(exchanges[0].grpc?.grpcStatus).toBe(grpc.status.INVALID_ARGUMENT)
   })
 
+  it('downgrades non-gRPC h2c to HTTP/1.1 for an h1-only target', async () => {
+    // The target speaks HTTP/1.1 only (i.e. almost every dev backend), while
+    // the client uses prior-knowledge h2. HTTP semantics don't depend on the
+    // wire version, so the proxy must downgrade instead of failing the call.
+    const target = await startTarget((req, res) => {
+      let body = ''
+      req.on('data', (c) => (body += c))
+      req.on('end', () => {
+        res.writeHead(201, { 'content-type': 'application/json', 'x-fixture': 'yes' })
+        res.end(JSON.stringify({ path: req.url, method: req.method, version: req.httpVersion, got: body }))
+      })
+    })
+    const { base, exchanges } = await startProxy(target)
+
+    const session = h2Connect(base)
+    cleanups.push(() => session.destroy())
+    const { status, headers, body } = await new Promise<{
+      status: number
+      headers: import('node:http2').IncomingHttpHeaders
+      body: string
+    }>((resolve, reject) => {
+      const req = session.request({ ':method': 'POST', ':path': '/things', 'content-type': 'application/json' })
+      req.end('{"a":1}')
+      let buf = ''
+      let head: import('node:http2').IncomingHttpHeaders = {}
+      req.on('response', (h) => (head = h))
+      req.on('data', (c) => (buf += c))
+      req.on('end', () => resolve({ status: Number(head[':status']), headers: head, body: buf }))
+      req.on('error', reject)
+    })
+    expect(status).toBe(201)
+    expect(headers['x-fixture']).toBe('yes')
+    expect(JSON.parse(body)).toEqual({ path: '/things', method: 'POST', version: '1.1', got: '{"a":1}' })
+
+    await vi.waitFor(() => expect(exchanges).toHaveLength(1))
+    const e = exchanges[0]
+    expect(e.protocol).toBe('rest')
+    expect(e.via).toBe('http')
+    expect(e.grpc).toBeUndefined()
+    expect(e.status).toBe(201)
+    expect(e.requestBody?.text).toBe('{"a":1}')
+    expect(e.responseBody?.text).toContain('"got":"{\\"a\\":1}"')
+  })
+
   it('forwards non-gRPC h2c (prior-knowledge HTTP/2) traffic and classifies it normally', async () => {
+    // Mirror of the downgrade test above: this target does speak h2, so the
+    // hop stays end-to-end HTTP/2 rather than being downgraded.
     const h2Target = createH2Server()
     h2Target.on('stream', (stream: import('node:http2').ServerHttp2Stream, headers: import('node:http2').IncomingHttpHeaders) => {
       let body = ''
@@ -809,6 +1026,62 @@ describe('RecordProxyServer TLS listener', () => {
     expect(e.ws?.frames.map((f) => f.preview)).toEqual(['hello-tls', 'hello-tls'])
   })
 
+  it('serves an ALPN-negotiated h2 client over TLS against an h1-only target', async () => {
+    // The reported bug: `curl --cacert <ca> https://127.0.0.1:PORT/...` offers
+    // h2 in ALPN by default, so the proxy took its h2 branch and forwarded h2
+    // upstream — which an h1-only target answers with a protocol error. Only
+    // gRPC needs an end-to-end h2 hop; plain requests must be downgraded.
+    // node:http2's connect() offers ALPN h2 exactly like curl does (node:https,
+    // which the other TLS tests use, only ever offers http/1.1).
+    const target = await startTarget((req, res) => {
+      let body = ''
+      req.on('data', (c) => (body += c))
+      req.on('end', () => {
+        res.writeHead(200, { 'content-type': 'application/json', 'x-fixture': 'yes' })
+        res.end(JSON.stringify({ path: req.url, method: req.method, version: req.httpVersion, got: body }))
+      })
+    })
+    const { tlsBase, ca, exchanges } = await startProxyTls(target)
+
+    const session = h2Connect(tlsBase, { ca })
+    cleanups.push(() => session.destroy())
+    expect(await new Promise((r) => session.once('connect', () => r(session.alpnProtocol)))).toBe('h2')
+
+    const { status, headers, body } = await new Promise<{
+      status: number
+      headers: import('node:http2').IncomingHttpHeaders
+      body: string
+    }>((resolve, reject) => {
+      const req = session.request({ ':method': 'POST', ':path': '/api?limit=2', 'content-type': 'application/json' })
+      req.end('{"name":"Ada"}')
+      let buf = ''
+      let head: import('node:http2').IncomingHttpHeaders = {}
+      req.on('response', (h) => (head = h))
+      req.on('data', (c) => (buf += c))
+      req.on('end', () => resolve({ status: Number(head[':status']), headers: head, body: buf }))
+      req.on('error', reject)
+    })
+    expect(status).toBe(200)
+    expect(headers['x-fixture']).toBe('yes')
+    // The target saw a real HTTP/1.1 request, not "Protocol error".
+    expect(JSON.parse(body)).toEqual({
+      path: '/api?limit=2',
+      method: 'POST',
+      version: '1.1',
+      got: '{"name":"Ada"}'
+    })
+
+    await vi.waitFor(() => expect(exchanges).toHaveLength(1))
+    const e = exchanges[0]
+    expect(e.protocol).toBe('rest')
+    expect(e.via).toBe('https')
+    expect(e.errored).toBe(false)
+    expect(e.url).toBe(`${target}/api?limit=2`)
+    expect(e.status).toBe(200)
+    expect(e.requestBody?.text).toBe('{"name":"Ada"}')
+    expect(e.grpc).toBeUndefined()
+  })
+
   it('serves gRPC over TLS (credentials.createSsl) against a cleartext target', async () => {
     const target = await startGrpcTarget()
     const { tlsPort, ca, exchanges } = await startProxyTls(target)
@@ -881,5 +1154,294 @@ describe('RecordProxyServer TLS listener', () => {
     expect(proxy.tlsPort).toBeUndefined()
     await expect(fetch(`http://127.0.0.1:${port}/x`)).rejects.toThrow()
     await expect(httpsGet(`https://127.0.0.1:${tlsPort}/x`, certs.caPem)).rejects.toThrow()
+  })
+})
+
+/* ------------------------ HTTP/2 target test helpers ---------------------- */
+
+/** In-test h2c target; `paths` records the :path of every stream it served. */
+async function startH2Target(
+  handler?: (stream: ServerHttp2Stream, headers: H2IncomingHeaders) => void,
+  port = 0
+): Promise<{ origin: string; paths: string[] }> {
+  const paths: string[] = []
+  const server = createH2Server()
+  server.on('stream', (stream: ServerHttp2Stream, headers: H2IncomingHeaders) => {
+    paths.push(String(headers[':path'] ?? ''))
+    if (handler !== undefined) {
+      handler(stream, headers)
+      return
+    }
+    stream.respond({ ':status': 200, 'content-type': 'text/plain' })
+    stream.end('h2-ok')
+  })
+  await new Promise<void>((r) => server.listen(port, '127.0.0.1', r))
+  cleanups.push(() => new Promise<void>((r) => server.close(() => r())))
+  return { origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, paths }
+}
+
+/** One request/response on an existing h2 session. */
+function h2Req(
+  session: ClientHttp2Session,
+  headers: H2OutgoingHeaders,
+  body?: string
+): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const req = session.request(headers)
+    let head: H2IncomingHeaders = {}
+    let buf = ''
+    req.on('response', (h) => (head = h))
+    req.on('data', (c) => (buf += c))
+    req.on('end', () => resolve({ status: Number(head[':status'] ?? 0), body: buf }))
+    req.on('error', reject)
+    req.end(body)
+  })
+}
+
+/* ----------------- forward-target integrity (client paths) ---------------- */
+
+/** HTTP/1.1 with a literal request target — fetch() normalizes some of these. */
+function h1Raw(port: number, path: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest({ host: '127.0.0.1', port, path, method: 'GET' }, (res) => {
+      res.resume()
+      res.on('end', () => resolve(res.statusCode ?? 0))
+    })
+    req.on('error', reject)
+    req.end()
+  })
+}
+
+describe('RecordProxyServer forward-target integrity', () => {
+  // A client path is untrusted input. `new URL(path, target.origin)` resolves
+  // "//host/x" (and "/\host/x") as protocol-relative, i.e. against a host the
+  // *client* named — the proxy would then request, and record, that host.
+
+  it('never forwards an h1 request off the configured target', async () => {
+    const seen: string[] = []
+    const target = await startTarget((req, res) => {
+      seen.push(req.url ?? '')
+      res.end('target')
+    })
+    const elsewhere: string[] = []
+    const evil = await startTarget((req, res) => {
+      elsewhere.push(req.url ?? '')
+      res.end('evil')
+    })
+    const evilAuthority = new URL(evil).host
+    const { base, exchanges } = await startProxy(target)
+    const port = Number(new URL(base).port)
+
+    for (const path of [`//${evilAuthority}/x`, `/\\${evilAuthority}/x`, '//', '/normal']) {
+      expect(await h1Raw(port, path)).toBe(200)
+    }
+
+    expect(elsewhere).toEqual([])
+    expect(seen).toEqual([`/${evilAuthority}/x`, `/${evilAuthority}/x`, '/', '/normal'])
+    await vi.waitFor(() => expect(exchanges).toHaveLength(4))
+    for (const e of exchanges) expect(new URL(e.url).origin).toBe(target)
+  })
+
+  it('never forwards an h2 request off the configured target', async () => {
+    const { origin: target, paths } = await startH2Target()
+    const { origin: evil, paths: evilPaths } = await startH2Target()
+    const evilAuthority = new URL(evil).host
+    const { base, exchanges } = await startProxy(target)
+    const session = h2Connect(base)
+    cleanups.push(() => session.destroy())
+
+    for (const path of [`//${evilAuthority}/x`, '//', '/normal']) {
+      expect((await h2Req(session, { ':method': 'GET', ':path': path })).body).toBe('h2-ok')
+    }
+
+    expect(evilPaths).toEqual([])
+    expect(paths).toEqual([`/${evilAuthority}/x`, '/', '/normal'])
+    await vi.waitFor(() => expect(exchanges).toHaveLength(3))
+    for (const e of exchanges) expect(new URL(e.url).origin).toBe(target)
+  })
+
+  it('never dials a WebSocket target the client named', async () => {
+    const { url: target } = await startWsTarget()
+    const { url: evil, received: evilFrames } = await startWsTarget()
+    const evilAuthority = new URL(evil).host
+    const { base, exchanges } = await startProxy(target)
+
+    const ws = new WebSocket(`ws://127.0.0.1:${new URL(base).port}//${evilAuthority}/x`)
+    await once(ws, 'open')
+    ws.send('ping')
+    const [echo] = await once<[Buffer]>(ws, 'message')
+    expect(echo.toString()).toBe('ping') // the configured target echoed, not `evil`
+    ws.close()
+    await once(ws, 'close')
+
+    expect(evilFrames).toEqual([])
+    await vi.waitFor(() => expect(exchanges).toHaveLength(1))
+    expect(new URL(exchanges[0].url).origin).toBe(target.replace('http:', 'ws:'))
+  })
+})
+
+/* --------------------------- HTTP/2 target probe -------------------------- */
+
+describe('RecordProxyServer h2 probe', () => {
+  it('serves plain h2 after a gRPC call has already opened the shared session', async () => {
+    // The gRPC branch connects the upstream session without probing. A probe
+    // that waits for that session's (already fired) 'remoteSettings' never
+    // settles, and every later non-gRPC h2 request hangs behind it.
+    const { origin: target } = await startH2Target((stream) => {
+      stream.respond({ ':status': 200 })
+      stream.end('h2-ok')
+    })
+    const { base } = await startProxy(target)
+    const session = h2Connect(base)
+    cleanups.push(() => session.destroy())
+
+    await h2Req(session, { ':method': 'POST', ':path': '/pkg.S/M', 'content-type': 'application/grpc' })
+    expect((await h2Req(session, { ':method': 'GET', ':path': '/plain' })).body).toBe('h2-ok')
+  })
+
+  it('does not cache a connect failure as an h1-only target', async () => {
+    // A target that isn't up yet (or is restarting) says nothing about h2.
+    const spare = createH2Server()
+    await new Promise<void>((r) => spare.listen(0, '127.0.0.1', r))
+    const port = (spare.address() as AddressInfo).port
+    await new Promise<void>((r) => spare.close(() => r()))
+
+    const { base } = await startProxy(`http://127.0.0.1:${port}`)
+    const session = h2Connect(base)
+    cleanups.push(() => session.destroy())
+    expect((await h2Req(session, { ':method': 'GET', ':path': '/x' })).status).toBe(502)
+
+    await startH2Target(undefined, port)
+    // The target speaks h2 only, so a downgraded HTTP/1.1 hop cannot answer.
+    expect((await h2Req(session, { ':method': 'GET', ':path': '/x' })).body).toBe('h2-ok')
+  })
+
+  it('re-probes after a restart against a different target', async () => {
+    const h1Target = await startTarget((_req, res) => res.end('h1-ok'))
+    const proxy = track(new RecordProxyServer())
+    const first = await proxy.start({ target: h1Target })
+    const s1 = h2Connect(`http://127.0.0.1:${first.port}`)
+    cleanups.push(() => s1.destroy())
+    expect((await h2Req(s1, { ':method': 'GET', ':path': '/x' })).body).toBe('h1-ok')
+    s1.destroy()
+    await proxy.stop()
+
+    const { origin: h2Target } = await startH2Target()
+    const second = await proxy.start({ target: h2Target })
+    const s2 = h2Connect(`http://127.0.0.1:${second.port}`)
+    cleanups.push(() => s2.destroy())
+    expect((await h2Req(s2, { ':method': 'GET', ':path': '/x' })).body).toBe('h2-ok')
+  })
+
+  it('survives a client reset while the probe is still outstanding', async () => {
+    // 192.0.2.0/24 (TEST-NET-1) blackholes the connect, so the probe is still
+    // pending when the client resets: the stream needs its 'error' handler
+    // before the first await, not after it.
+    const uncaught: Error[] = []
+    const onUncaught = (e: Error): void => void uncaught.push(e)
+    process.on('uncaughtException', onUncaught)
+    cleanups.push(() => void process.off('uncaughtException', onUncaught))
+
+    const { base } = await startProxy('http://192.0.2.1:81')
+    const session = h2Connect(base)
+    cleanups.push(() => session.destroy())
+    const req = session.request({ ':method': 'GET', ':path': '/x' })
+    req.on('error', () => undefined)
+    req.end()
+    await new Promise((r) => setTimeout(r, 50))
+    req.close(h2Constants.NGHTTP2_INTERNAL_ERROR)
+    await new Promise((r) => setTimeout(r, 150))
+
+    expect(uncaught).toEqual([])
+  })
+})
+
+/* ------------------------ empty gRPC message capture ---------------------- */
+
+describe('RecordProxyServer gRPC empty messages', () => {
+  it('records an empty message as captured, not as dropped', async () => {
+    // A message with only default fields serializes to zero bytes (this is what
+    // google.protobuf.Empty and every no-arg RPC looks like on the wire).
+    const Greeter = loadGreeter()
+    const server = new grpc.Server()
+    server.addService(Greeter.service, {
+      SayHello: (_call: any, cb: any) => cb(null, {}),
+      SayHellos: (call: any) => call.end()
+    })
+    const port = await new Promise<number>((resolve, reject) =>
+      server.bindAsync('127.0.0.1:0', grpc.ServerCredentials.createInsecure(), (e, p) =>
+        e !== null ? reject(e) : resolve(p)
+      )
+    )
+    cleanups.push(() => server.forceShutdown())
+    const { base, exchanges } = await startProxy(`http://127.0.0.1:${port}`)
+    const client = greeterClient(base)
+
+    await new Promise<void>((resolve, reject) =>
+      client.SayHello({}, (e: Error | null) => (e !== null ? reject(e) : resolve()))
+    )
+    await vi.waitFor(() => expect(exchanges).toHaveLength(1))
+
+    const messages = exchanges[0].grpc?.messages ?? []
+    expect(messages).toHaveLength(2)
+    // A zero-length payload IS the payload: `bytes: 0` must not read the same
+    // as "the cap dropped this one".
+    expect(messages.map((m) => ({ dir: m.dir, bytes: m.bytes, truncated: m.truncated, base64: m.base64 }))).toEqual([
+      { dir: 'send', bytes: 0, truncated: false, base64: '' },
+      { dir: 'recv', bytes: 0, truncated: false, base64: '' }
+    ])
+    expect(
+      decodeGrpcMessages({ fullMethod: 'helloworld.Greeter/SayHello', protoFiles: [GREETER_PROTO], messages })
+    ).toEqual([
+      { json: JSON.stringify({ name: '' }, null, 2) },
+      { json: JSON.stringify({ message: '' }, null, 2) }
+    ])
+  })
+
+  it('decodes an empty payload recorded before base64 was always set', () => {
+    // Backward compatibility: old recorded.jsonl lines left base64 off entirely
+    // when the message was empty. `bytes` is the wire truth either way.
+    expect(
+      decodeGrpcMessages({
+        fullMethod: 'helloworld.Greeter/SayHello',
+        protoFiles: [GREETER_PROTO],
+        messages: [{ dir: 'send', bytes: 0, truncated: false }]
+      })
+    ).toEqual([{ json: JSON.stringify({ name: '' }, null, 2) }])
+  })
+})
+
+/* ---------------------------- SSE cap-hit emit ---------------------------- */
+
+describe('RecordProxyServer SSE mid-stream recording', () => {
+  it('records a still-open SSE stream at the cap, matching classify on case', async () => {
+    // Media types are case-insensitive (RFC 9110 §8.3.1) and classifyExchange
+    // lowercases before matching, so the cap-hit emit must too — otherwise the
+    // exchange is classified 'sse' but never written until the client leaves.
+    let end: () => void = () => {}
+    const target = await startTarget((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/Event-Stream' })
+      const chunk = `data: ${'x'.repeat(1000)}\n\n`
+      for (let i = 0; i < PROXY_BODY_CAP / 1000 + 8; i++) res.write(chunk)
+      end = () => res.end()
+    })
+    const { base, exchanges } = await startProxy(target)
+
+    const res = await fetch(`${base}/events`)
+    const reader = res.body!.getReader()
+    const pump = (async () => {
+      for (;;) {
+        const { done } = await reader.read()
+        if (done) break
+      }
+    })()
+
+    // Emitted from the cap hit while the upstream is still open — not from the
+    // 'end' below, which would arrive without `stream`.
+    await vi.waitFor(() => expect(exchanges).toHaveLength(1))
+    expect(exchanges[0].protocol).toBe('sse')
+    expect(exchanges[0].stream).toBe(true)
+    end()
+    await pump
   })
 })

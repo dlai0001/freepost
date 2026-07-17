@@ -51,6 +51,31 @@ describe('settings read/write', () => {
     })
   })
 
+  it('round-trips the MQTT relay prefill (its own target, not proxyTarget)', async () => {
+    await writeSettings(file, { proxyTarget: 'http://localhost:3000', proxyPort: 7699 })
+    await writeSettings(file, {
+      proxyMqttEnabled: true,
+      proxyMqttTarget: 'mqtt://127.0.0.1:1883',
+      proxyMqttPort: 7883
+    })
+    expect(await readSettings(file)).toEqual({
+      proxyTarget: 'http://localhost:3000',
+      proxyPort: 7699,
+      proxyMqttEnabled: true,
+      proxyMqttTarget: 'mqtt://127.0.0.1:1883',
+      proxyMqttPort: 7883
+    })
+  })
+
+  it('remembers the MQTT relay being turned back off, keeping its prefill', async () => {
+    await writeSettings(file, { proxyMqttEnabled: true, proxyMqttTarget: 'mqtt://b:1883' })
+    await writeSettings(file, { proxyMqttEnabled: false })
+    expect(await readSettings(file)).toEqual({
+      proxyMqttEnabled: false,
+      proxyMqttTarget: 'mqtt://b:1883'
+    })
+  })
+
   it('creates the parent directory if missing', async () => {
     const nested = join(dir, 'a', 'b', 'settings.json')
     await writeSettings(nested, { lastRoot: '/x' })

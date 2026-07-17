@@ -380,8 +380,12 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
   return report
 }
 
-/** Resolve a proto path: absolute untouched, else relative to the request dir. */
-function resolveProtoPath(requestDir: string, p: string): string {
+/**
+ * Resolve a proto path: absolute untouched, else relative to the request dir.
+ * The one rule for every gRPC path in the app (see ipc-handlers.ts) — a .grpc
+ * file's protos are named relative to it, so it stays portable across clones.
+ */
+export function resolveProtoPath(requestDir: string, p: string): string {
   return isAbsolute(p) ? p : join(requestDir, p)
 }
 

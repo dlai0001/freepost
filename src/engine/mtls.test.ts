@@ -59,7 +59,10 @@ beforeAll(() => {
   } catch {
     hasOpenssl = false
   }
-})
+  // Four openssl keygen subprocesses. The 10s default is enough alone but not
+  // when the whole suite runs in parallel, which made this hook the file's
+  // flakiest line.
+}, 60_000)
 
 afterAll(() => {
   if (dir) rmSync(dir, { recursive: true, force: true })

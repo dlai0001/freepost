@@ -11,9 +11,11 @@
  * Run: npm run build:cli && npm run smoke:cli
  */
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, copyFileSync, writeFileSync, rmSync } from 'node:fs'
+import { request as httpsRequest } from 'node:https'
+import { existsSync, mkdirSync, copyFileSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import mqtt from 'mqtt'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 
@@ -163,6 +165,129 @@ async function smokeMcpServe() {
   }
 }
 
+/**
+ * Drive the built CLI's `proxy` against the HTTP fixture: forward a request
+ * through it and read back what it recorded.
+ *
+ * Bundling-sensitive on three counts. The cert path pulls in @peculiar/x509 +
+ * reflect-metadata, whose decorator metadata is exactly the kind of thing that
+ * survives `vite build` and then dies at runtime; the store writes
+ * recorded.jsonl, which must work without Electron ever being resolved; and the
+ * MQTT relay pulls in mqtt-packet, which — like mqtt.js above — ships a browser
+ * build that stubs `net`, the exact slip that once broke `.mqtt` in the bundle.
+ */
+async function smokeProxy() {
+  const dir = join(ROOT, '.tmp-smoke-proxy')
+  rmSync(dir, { recursive: true, force: true })
+  mkdirSync(dir, { recursive: true })
+  const child = spawn(process.execPath, [
+    CLI,
+    'proxy',
+    dir,
+    '--target',
+    'http://localhost:3010',
+    // Ports 0: never fight the app's defaults (7699/7700) on a dev machine.
+    '--port',
+    '0',
+    '--https',
+    '--https-port',
+    '0',
+    // Relays to the MQTT broker fixture already running for the run step.
+    '--mqtt-target',
+    'mqtt://localhost:1883',
+    '--mqtt-port',
+    '0'
+  ])
+  try {
+    let out = ''
+    const ready = new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`proxy did not listen within 20s:\n${out}`)), 20_000)
+      child.stdout.on('data', (b) => {
+        out += b.toString()
+        const http = out.match(/listening on http:\/\/127\.0\.0\.1:(\d+)/)
+        const https = out.match(/https:\/\/127\.0\.0\.1:(\d+)/)
+        const mq = out.match(/MQTT relay listening on mqtt:\/\/127\.0\.0\.1:(\d+)/)
+        if (http && https && mq) {
+          clearTimeout(timer)
+          resolve({ port: Number(http[1]), httpsPort: Number(https[1]), mqttPort: Number(mq[1]) })
+        }
+      })
+      child.stderr.on('data', (b) => process.stderr.write(`[proxy] ${b}`))
+    })
+    const { port, httpsPort, mqttPort } = await ready
+
+    const res = await fetch(`http://127.0.0.1:${port}/health`)
+    const body = await res.json()
+    if (body.ok !== true) throw new Error(`proxy did not forward to the fixture: ${JSON.stringify(body)}`)
+
+    // The TLS leg, with the CA the CLI just generated. Node's https client
+    // offers only http/1.1 in ALPN, which is the listener's REST path; the h2
+    // path is gRPC's and is covered by the engine suite.
+    const caPath = join(dir, '.freepost', 'tls', 'ca.crt')
+    if (!existsSync(caPath)) throw new Error('--https did not generate a CA — suspect @peculiar/x509 bundling')
+    const tlsBody = await new Promise((resolve, reject) => {
+      const req = httpsRequest(
+        `https://127.0.0.1:${httpsPort}/health`,
+        { ca: readFileSync(caPath, 'utf8') },
+        (r) => {
+          let buf = ''
+          r.on('data', (c) => (buf += c))
+          r.on('end', () => resolve(buf))
+        }
+      )
+      req.on('error', reject)
+      req.end()
+    })
+    if (JSON.parse(tlsBody).ok !== true) throw new Error(`TLS listener did not forward: ${tlsBody}`)
+
+    // The MQTT leg: a real client through the relay to the broker fixture. The
+    // publish is acked at QoS 1 by the BROKER, so this only passes if the relay
+    // really relayed rather than swallowing the bytes.
+    const client = mqtt.connect(`mqtt://127.0.0.1:${mqttPort}`, {
+      reconnectPeriod: 0,
+      clientId: 'smoke-client'
+    })
+    await new Promise((resolve, reject) => {
+      client.on('error', reject)
+      client.on('connect', resolve)
+    })
+    await new Promise((resolve, reject) => {
+      client.publish('freepost/smoke', 'relayed', { qos: 1 }, (e) => (e ? reject(e) : resolve()))
+    })
+    await new Promise((resolve) => client.end(false, {}, resolve))
+
+    // The payoff: every leg landed in the collection's recorded.jsonl.
+    const file = join(dir, '.freepost', 'history', 'recorded.jsonl')
+    for (let i = 0; !existsSync(file) && i < 100; i++) await new Promise((r) => setTimeout(r, 50))
+    let entries = []
+    for (let i = 0; i < 100; i++) {
+      entries = readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l))
+      if (entries.some((e) => e.protocol === 'mqtt')) break
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    const vias = entries.filter((e) => e.status === 200 && !e.errored)
+    if (!vias.some((e) => e.via === 'http') || !vias.some((e) => e.via === 'https')) {
+      throw new Error(`recorded.jsonl is missing an http and/or https exchange:\n${JSON.stringify(entries)}`)
+    }
+    const session = entries.find((e) => e.protocol === 'mqtt')
+    if (session === undefined) {
+      throw new Error(`recorded.jsonl is missing the MQTT session:\n${JSON.stringify(entries)}`)
+    }
+    // Decoding is what mqtt-packet is bundled for: an empty packet list would
+    // mean the relay worked and the parser silently didn't survive bundling.
+    const published = session.mqtt.packets.find((p) => p.topic === 'freepost/smoke')
+    if (session.mqtt.clientId !== 'smoke-client' || published?.preview !== 'relayed') {
+      throw new Error(`the MQTT session recorded no decoded packets:\n${JSON.stringify(session)}`)
+    }
+    console.log(
+      `[smoke] proxy: forwarded + recorded ${entries.length} exchange(s) over http, https and mqtt`
+    )
+  } finally {
+    child.kill('SIGTERM')
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
 const servers = []
 let failed = false
 
@@ -210,6 +335,10 @@ try {
   console.log('\n[smoke] driving the built CLI as an MCP server over stdio…')
   await smokeMcpServe()
   console.log('[smoke] OK — the built CLI serves MCP.')
+
+  console.log('\n[smoke] recording through the built CLI proxy…')
+  await smokeProxy()
+  console.log('[smoke] OK — the built CLI proxies and records.')
 } catch (e) {
   failed = true
   console.error('[smoke] ERROR:', e.message)

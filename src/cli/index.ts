@@ -16,6 +16,11 @@
  *   freepost mock <collection> [--port <n>]
  *     Serve the collection's saved response examples over HTTP until Ctrl-C.
  *
+ *   freepost proxy <collection> --target <url> [--port <n>] [--https]
+ *     Record traffic forwarded to <url> into the collection until Ctrl-C.
+ *     --mqtt-target <url> adds an MQTT relay on its own port (brokers aren't
+ *     HTTP, so the MQTT listener needs its own target as well as its own port).
+ *
  *   freepost mcp <snapshot|check|serve> <collection>
  *     snapshot: record each MCP server's schema surface next to its .mcp file.
  *     check:    diff live vs recorded; exit 1 on a BREAKING change (F5 drift).
@@ -25,15 +30,29 @@
  * assertion failed, a workflow halted, or MCP schema drift is breaking.
  */
 import { existsSync, readFileSync, writeFileSync } from 'fs'
-import { isAbsolute, resolve } from 'path'
+import { isAbsolute, join, resolve } from 'path'
 import { pathToFileURL } from 'url'
-import type { ExecutionReport, RequestFile, TestResult, WorkflowStepResult } from '../shared/model'
+import type {
+  ExecutionReport,
+  RecordedExchange,
+  RequestFile,
+  TestResult,
+  WorkflowStepResult
+} from '../shared/model'
 import { parseRequestFile, requestKindForPath } from '../core/format'
 import { parseWorkflow, runWorkflow, validateReferences } from '../core/workflow'
 import { executeRequest, readEnvFile } from '../main/execute'
-import { listFiles } from '../main/collection'
+import { ensureFreepostDir, listFiles } from '../main/collection'
 import { buildRoutesForCollection } from '../main/mock'
-import { MockServer, McpSessionClient, mcpConnectArgs } from '../engine'
+import { ensureProxyCerts } from '../main/proxy-certs'
+import {
+  appendRecorded,
+  DEFAULT_PROXY_HTTPS_PORT,
+  DEFAULT_PROXY_MQTT_PORT,
+  DEFAULT_PROXY_PORT,
+  recordedFilePath
+} from '../main/recorded-store'
+import { MockServer, McpSessionClient, mcpConnectArgs, MqttRecordProxy, RecordProxyServer } from '../engine'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { createFreepostMcpServer } from '../main/mcp-server'
 import { resolveVariables, substitute } from '../core/vars'
@@ -72,6 +91,19 @@ interface MockOptions {
   port: number
 }
 
+interface ProxyOptions {
+  command: 'proxy'
+  collection: string
+  target: string
+  port: number
+  /** Also start the TLS listener (self-signed local CA; see proxy-certs.ts). */
+  https: boolean
+  httpsPort: number
+  /** Broker to relay MQTT to; empty = no MQTT listener. */
+  mqttTarget: string
+  mqttPort: number
+}
+
 interface McpOptions {
   command: 'mcp'
   action: 'snapshot' | 'check' | 'serve'
@@ -85,13 +117,14 @@ interface McpOptions {
   noMcpSpawn: boolean
 }
 
-type Options = RunOptions | MockOptions | McpOptions
+type Options = RunOptions | MockOptions | ProxyOptions | McpOptions
 
 const HELP = `freepost — offline API client, headless runner
 
 Usage:
   freepost run <collection> [options]
   freepost mock <collection> [--port <n>]
+  freepost proxy <collection> --target <url> [--port <n>] [--https]
   freepost mcp <snapshot|check|serve> <collection> [--env <file>]
 
 run options:
@@ -104,6 +137,14 @@ run options:
 
 mock options:
   --port <n>             port to listen on (default: an ephemeral port)
+
+proxy options:
+  --target <url>         server to forward to (required; http:// or https://)
+  --port <n>             port to listen on (default: ${DEFAULT_PROXY_PORT})
+  --https                also listen with TLS, using a local self-signed CA
+  --https-port <n>       TLS port (default: ${DEFAULT_PROXY_HTTPS_PORT})
+  --mqtt-target <url>    also relay MQTT to this broker (mqtt://host[:port])
+  --mqtt-port <n>        MQTT listen port (default: ${DEFAULT_PROXY_MQTT_PORT})
 
 mcp options:
   snapshot               record each MCP server's schema next to its .mcp file
@@ -122,7 +163,7 @@ serve options:
 function parseArgs(argv: string[]): { options?: Options; error?: string; help?: boolean } {
   if (argv.length === 0 || argv.includes('-h') || argv.includes('--help')) return { help: true }
   const command = argv[0]
-  if (command !== 'run' && command !== 'mock' && command !== 'mcp') {
+  if (command !== 'run' && command !== 'mock' && command !== 'proxy' && command !== 'mcp') {
     return { error: `Unknown command: ${command}. Try 'freepost run <collection>' or 'freepost mock <collection>'.` }
   }
   const rest = argv.slice(1)
@@ -188,6 +229,46 @@ function parseArgs(argv: string[]): { options?: Options; error?: string; help?: 
       }
     }
     if (opts.collection === '') return { error: 'Missing <collection> path.' }
+    return { options: opts }
+  }
+
+  if (command === 'proxy') {
+    const opts: ProxyOptions = {
+      command: 'proxy',
+      collection: '',
+      target: '',
+      port: DEFAULT_PROXY_PORT,
+      https: false,
+      httpsPort: DEFAULT_PROXY_HTTPS_PORT,
+      mqttTarget: '',
+      mqttPort: DEFAULT_PROXY_MQTT_PORT
+    }
+    for (let i = 0; i < rest.length; i++) {
+      const a = rest[i]
+      const next = (): string | undefined => rest[++i]
+      if (a === '--target') {
+        opts.target = next() ?? ''
+      } else if (a === '--mqtt-target') {
+        opts.mqttTarget = next() ?? ''
+      } else if (a === '--port' || a === '--https-port' || a === '--mqtt-port') {
+        const v = next()
+        const n = v !== undefined ? Number(v) : NaN
+        if (!Number.isInteger(n) || n < 0 || n > 65535) return { error: `${a} must be 0-65535` }
+        if (a === '--port') opts.port = n
+        else if (a === '--https-port') opts.httpsPort = n
+        else opts.mqttPort = n
+      } else if (a === '--https') {
+        opts.https = true
+      } else if (a.startsWith('-')) {
+        return { error: `Unknown option: ${a}` }
+      } else if (opts.collection === '') {
+        opts.collection = a
+      } else {
+        return { error: `Unexpected argument: ${a}` }
+      }
+    }
+    if (opts.collection === '') return { error: 'Missing <collection> path.' }
+    if (opts.target === '') return { error: 'Missing --target <url> — the server to forward to.' }
     return { options: opts }
   }
 
@@ -496,6 +577,124 @@ async function runMockServer(opts: MockOptions, root: string, io: CliIo): Promis
   })
 }
 
+/**
+ * The topics an MQTT session touched — the label that identifies it, the way
+ * operationName does for GraphQL. An MQTT exchange is a whole connection, so
+ * its packets' topics say more than the broker URL every row already carries.
+ */
+function mqttSummary(entry: RecordedExchange): string | undefined {
+  if (entry.mqtt === undefined) return undefined
+  const topics = [...new Set(entry.mqtt.packets.map((p) => p.topic).filter((t) => t !== undefined))]
+  const label = topics.length > 3 ? `${topics.slice(0, 3).join(', ')}, +${topics.length - 3} more` : topics.join(', ')
+  const id = entry.mqtt.clientId
+  return [id, label, `${entry.mqtt.packets.length} packets`].filter((s) => s !== undefined && s !== '').join(' · ')
+}
+
+/**
+ * `freepost proxy`: the CLI half of Tools ▸ Proxy Server (Record). Same engine
+ * listener and same recorded.jsonl store as the app, so traffic recorded here
+ * shows up in the collection's History ▸ Recorded tab.
+ *
+ * Unlike the app there is no "current collection" to bind to — the positional
+ * argument IS the binding, so the auto-stop-on-root-change rule has nothing to
+ * guard against. Nothing is persisted to settings either: the app remembers a
+ * prefill for its modal, whereas a CLI invocation states its target every time.
+ */
+async function runProxyServer(opts: ProxyOptions, root: string, io: CliIo): Promise<number> {
+  const c = paint(io)
+  const server = new RecordProxyServer()
+  const onExchange = (entry: RecordedExchange): void => {
+    appendRecorded(root, entry)
+    const mark = entry.errored ? c.red('✗') : c.green('✓')
+    // Label the exchange by what it actually was: the GraphQL operation, the
+    // gRPC method, the MQTT topics, or the status — `POST /graphql → 200` on
+    // every row tells the user nothing.
+    const what =
+      entry.graphql?.operationName ??
+      (entry.grpc !== undefined ? `${entry.grpc.service}/${entry.grpc.method}` : undefined) ??
+      mqttSummary(entry)
+    const outcome = entry.errored ? (entry.error ?? 'error') : String(entry.status ?? '')
+    const meta = [
+      entry.protocol,
+      what,
+      outcome,
+      entry.timeMs !== undefined ? `${Math.round(entry.timeMs)}ms` : undefined
+    ].filter((s) => s !== undefined && s !== '')
+    io.write(`${mark} ${entry.method} ${entry.url} ${c.dim(`→ ${meta.join(' ')}`)}\n`)
+  }
+  server.on('exchange', onExchange)
+  // A listener-level error (a socket fault after start) must not take the
+  // process down — report it and keep recording.
+  server.on('error', (e) => io.write(c.red(`proxy error: ${e.message}\n`)))
+
+  // Certs are lazy: generated (or rotated) only when --https is passed. They
+  // live in the collection's git-ignored .freepost/ rather than the app's
+  // userData, so a CLI run has no Electron-shaped dependency on a path only
+  // the desktop app knows.
+  let tls: { key: string; cert: string; port: number } | undefined
+  let caPath: string | undefined
+  if (opts.https) {
+    const certs = await ensureProxyCerts(join(ensureFreepostDir(root), 'tls'))
+    tls = { key: certs.keyPem, cert: certs.certPem, port: opts.httpsPort }
+    caPath = certs.caPath
+  }
+
+  let bound: number
+  let tlsPort: number | undefined
+  try {
+    ;({ port: bound, tlsPort } = await server.start({ target: opts.target, port: opts.port, tls }))
+  } catch (e) {
+    // A bad target or a taken port is the user's mistake, not a crash.
+    io.write(c.red(`${e instanceof Error ? e.message : String(e)}\n`))
+    return 2
+  }
+
+  // --mqtt-target opts into a second, independent listener: a TCP relay to a
+  // broker. It is its own flag rather than riding on --target because a broker
+  // address is not an http(s) origin — one target could never mean both.
+  let mqttServer: MqttRecordProxy | undefined
+  let mqttBound: number | undefined
+  if (opts.mqttTarget !== '') {
+    mqttServer = new MqttRecordProxy()
+    mqttServer.on('exchange', onExchange)
+    mqttServer.on('error', (e) => io.write(c.red(`mqtt proxy error: ${e.message}\n`)))
+    try {
+      ;({ port: mqttBound } = await mqttServer.start({ target: opts.mqttTarget, port: opts.mqttPort }))
+    } catch (e) {
+      // Same rule as the HTTP listener — and don't leave that one running.
+      await server.stop()
+      io.write(c.red(`${e instanceof Error ? e.message : String(e)}\n`))
+      return 2
+    }
+  }
+
+  io.write(
+    c.green(`Recording proxy listening on http://127.0.0.1:${bound}`) +
+      c.dim(` → ${opts.target} · Ctrl-C to stop\n`)
+  )
+  if (tlsPort !== undefined) {
+    io.write(c.green(`TLS listener on https://127.0.0.1:${tlsPort}`) + c.dim(` · CA: ${caPath}\n`))
+    io.write(c.dim(`  curl --cacert '${caPath}' https://127.0.0.1:${tlsPort}/…\n`))
+  }
+  if (mqttBound !== undefined) {
+    io.write(
+      c.green(`MQTT relay listening on mqtt://127.0.0.1:${mqttBound}`) +
+        c.dim(` → ${opts.mqttTarget}\n`)
+    )
+  }
+  io.write(c.dim(`Recording to ${recordedFilePath(root)}\n`))
+
+  return await new Promise<number>((resolvePromise) => {
+    const stop = (): void => {
+      void Promise.all([server.stop(), mqttServer?.stop()]).then(() => {
+        io.write(c.dim('\nRecording proxy stopped.\n'))
+        resolvePromise(0)
+      })
+    }
+    if (io.onSigint !== undefined) io.onSigint(stop)
+  })
+}
+
 export async function run(argv: string[], io: CliIo): Promise<number> {
   const parsed = parseArgs(argv)
   if (parsed.help === true) {
@@ -513,6 +712,7 @@ export async function run(argv: string[], io: CliIo): Promise<number> {
     return 2
   }
   if (opts.command === 'mock') return runMockServer(opts, root, io)
+  if (opts.command === 'proxy') return runProxyServer(opts, root, io)
   if (opts.command === 'mcp') {
     return opts.action === 'serve' ? runMcpServe(opts, root, io) : runMcpSchema(opts, root, io)
   }

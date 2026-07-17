@@ -22,12 +22,20 @@ export type { GqlTransport, GqlSubscribeArgs, GqlSubscribeHandlers } from './gql
 export { shouldBypassProxy } from './proxy'
 export { MockServer } from './mock-server'
 export type { MockState, MockStartArgs, MockServerEvents } from './mock-server'
-export { RecordProxyServer, PROXY_BODY_CAP } from './record-proxy'
+export { RecordProxyServer, PROXY_BODY_CAP, GRPC_MESSAGE_CAP } from './record-proxy'
 export type { ProxyState, ProxyStartArgs, RecordProxyServerEvents } from './record-proxy'
+export { MqttRecordProxy, MQTT_PACKET_CAP, MQTT_PREVIEW_CAP } from './mqtt-proxy'
+export type { MqttProxyState, MqttProxyStartArgs, MqttRecordProxyEvents } from './mqtt-proxy'
 export { startMcpHttpServer } from './mcp-http'
 export type { McpHttpServerHandle, McpHttpStartArgs } from './mcp-http'
-export { sendGrpcUnary, GrpcStreamClient } from './grpc'
-export type { GrpcCallArgs, GrpcResponse, GrpcStreamState, GrpcStreamEvents } from './grpc'
+export { sendGrpcUnary, GrpcStreamClient, decodeGrpcMessages } from './grpc'
+export type {
+  GrpcCallArgs,
+  GrpcDecodeArgs,
+  GrpcResponse,
+  GrpcStreamState,
+  GrpcStreamEvents
+} from './grpc'
 export { publishMqtt, MqttSubscribeClient, mqttConnectArgs } from './mqtt'
 export type {
   MqttPublishArgs,

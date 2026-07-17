@@ -36,6 +36,15 @@ export interface AppSettings {
    */
   proxyHttpsEnabled?: boolean
   proxyHttpsPort?: number
+  /**
+   * The proxy's optional MQTT listener (a TCP relay to a broker). It needs its
+   * own target as well as its own port: MQTT is not HTTP, so `proxyTarget` —
+   * an http(s) origin — is not a broker address. Same caveat again: prefills
+   * only, never an auto-start.
+   */
+  proxyMqttEnabled?: boolean
+  proxyMqttTarget?: string
+  proxyMqttPort?: number
 }
 
 /** Location of the settings file (Electron userData). */

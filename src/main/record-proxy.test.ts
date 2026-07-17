@@ -10,13 +10,16 @@
  * userData path for settings.json, the window list proxyLog broadcasts to).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer, type Server } from 'node:http'
+import { createServer as createNetServer, type Server as NetServer } from 'node:net'
 import { request as httpsRequest } from 'node:https'
 import type { AddressInfo } from 'node:net'
+import Aedes from 'aedes'
+import mqtt from 'mqtt'
 import type { RecordedExchange } from '../shared/model'
 
 /** Where the mocked Electron keeps userData (settings.json). */
@@ -33,9 +36,9 @@ vi.mock('electron', () => ({
 }))
 
 const {
-  appendRecorded,
   appProxyStatus,
   DEFAULT_PROXY_HTTPS_PORT,
+  DEFAULT_PROXY_MQTT_PORT,
   DEFAULT_PROXY_PORT,
   isProxyRunning,
   proxyTarget,
@@ -52,20 +55,6 @@ let targetUrl: string
 
 function recordedFile(r: string): string {
   return join(r, '.freepost', 'history', 'recorded.jsonl')
-}
-
-function entry(over: Partial<RecordedExchange> = {}): RecordedExchange {
-  return {
-    id: 'e1',
-    at: '2026-01-01T00:00:00Z',
-    protocol: 'rest',
-    method: 'GET',
-    url: 'http://t/x',
-    requestHeaders: [],
-    status: 200,
-    errored: false,
-    ...over
-  }
 }
 
 beforeEach(async () => {
@@ -123,14 +112,33 @@ describe('the proxy lifecycle', () => {
 
     await stopAppProxy()
     const status = await appProxyStatus()
-    expect(status).toEqual({ running: false, target: targetUrl, port, https: false, httpsPort: 7700 })
+    expect(status).toEqual({
+      running: false,
+      target: targetUrl,
+      port,
+      https: false,
+      httpsPort: 7700,
+      mqtt: false,
+      mqttTarget: '',
+      mqttPort: 7883
+    })
   })
 
-  it('defaults the ports to 7699/7700 when nothing is saved', async () => {
+  it('defaults the ports to 7699/7700/7883 when nothing is saved', async () => {
     expect(DEFAULT_PROXY_PORT).toBe(7699)
     expect(DEFAULT_PROXY_HTTPS_PORT).toBe(7700)
+    expect(DEFAULT_PROXY_MQTT_PORT).toBe(7883)
     const status = await appProxyStatus()
-    expect(status).toEqual({ running: false, target: '', port: 7699, https: false, httpsPort: 7700 })
+    expect(status).toEqual({
+      running: false,
+      target: '',
+      port: 7699,
+      https: false,
+      httpsPort: 7700,
+      mqtt: false,
+      mqttTarget: '',
+      mqttPort: 7883
+    })
   })
 
   it('starts the HTTPS listener on demand and round-trips its settings', async () => {
@@ -222,41 +230,128 @@ describe('the proxy lifecycle', () => {
   })
 })
 
-describe('appendRecorded', () => {
-  it('appends jsonl lines owner-only (chmod 600)', () => {
-    appendRecorded(root, entry({ id: 'a' }))
-    appendRecorded(root, entry({ id: 'b' }))
-    const file = recordedFile(root)
-    const lines = readFileSync(file, 'utf8').split('\n').filter(Boolean)
-    expect(lines.map((l) => (JSON.parse(l) as RecordedExchange).id)).toEqual(['a', 'b'])
-    if (process.platform !== 'win32') {
-      expect(statSync(file).mode & 0o777).toBe(0o600)
-    }
+/**
+ * The MQTT relay is a second listener with its own target and port, started
+ * and stopped by the same toggle. It records into the same recorded.jsonl —
+ * that shared sink is the only thing the two listeners have in common.
+ */
+describe('the MQTT relay half of the lifecycle', () => {
+  let broker: Aedes
+  let brokerServer: NetServer
+  let brokerUrl: string
+
+  beforeEach(async () => {
+    broker = new Aedes()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    brokerServer = createNetServer(broker.handle as any)
+    await new Promise<void>((r) => brokerServer.listen(0, '127.0.0.1', r))
+    brokerUrl = `mqtt://127.0.0.1:${(brokerServer.address() as AddressInfo).port}`
   })
 
-  // 1001 appends — the in-memory line counter keeps this append-only until
-  // the cap trips, but keep a generous timeout for a loaded suite.
-  it('caps the file at 500 entries', { timeout: 30000 }, () => {
-    for (let i = 0; i < 1001; i++) appendRecorded(root, entry({ id: `e${i}` }))
+  afterEach(async () => {
+    await new Promise<void>((r) => brokerServer.close(() => r()))
+    await new Promise<void>((r) => broker.close(() => r()))
+  })
+
+  it('relays MQTT on its own port and records the session', async () => {
+    const started = await startAppProxy({
+      target: targetUrl,
+      port: 0,
+      mqtt: true,
+      mqttTarget: brokerUrl,
+      mqttPort: 0
+    })
+    expect(started.mqttUrl).toMatch(/^mqtt:\/\/127\.0\.0\.1:\d+$/)
+
+    const client = mqtt.connect(started.mqttUrl as string, { reconnectPeriod: 0, clientId: 'lifecycle' })
+    await new Promise<void>((resolve, reject) => {
+      client.on('error', reject)
+      client.on('connect', () => resolve())
+    })
+    await new Promise<void>((resolve, reject) => {
+      client.publish('freepost/main', 'hi', { qos: 1 }, (e) => (e ? reject(e) : resolve()))
+    })
+    await new Promise<void>((resolve) => client.end(false, {}, () => resolve()))
+
+    await vi.waitFor(() => expect(existsSync(recordedFile(root))).toBe(true))
     const lines = readFileSync(recordedFile(root), 'utf8').split('\n').filter(Boolean)
-    expect(lines.length).toBeLessThanOrEqual(1000)
-    expect(lines.length).toBeGreaterThanOrEqual(500)
-    // The newest entry always survives the trim.
-    expect(lines[lines.length - 1]).toContain('"e1000"')
+    const recorded = JSON.parse(lines[0]) as RecordedExchange
+    expect(recorded.protocol).toBe('mqtt')
+    expect(recorded.method).toBe('MQTT')
+    expect(recorded.url).toBe(brokerUrl)
+    expect(recorded.mqtt?.clientId).toBe('lifecycle')
+    expect(recorded.mqtt?.packets.some((p) => p.topic === 'freepost/main')).toBe(true)
+    // The live modal gets MQTT exchanges through the same proxy:log channel.
+    expect(sentToWindows.some((m) => m.channel === 'proxy:log')).toBe(true)
   })
 
-  it('initializes its line counter from a pre-existing file (still trims at the cap)', () => {
-    // 1000 lines written behind appendRecorded's back — the first append must
-    // count them (not restart at 0) so the very next append trims.
-    const file = recordedFile(root)
-    mkdirSync(join(root, '.freepost', 'history'), { recursive: true })
-    writeFileSync(
-      file,
-      Array.from({ length: 1000 }, (_, i) => JSON.stringify(entry({ id: `pre${i}` }))).join('\n') + '\n'
+  it('reports the MQTT listener in the status, and prefills it next time', async () => {
+    const started = await startAppProxy({
+      target: targetUrl,
+      port: 0,
+      mqtt: true,
+      mqttTarget: brokerUrl,
+      mqttPort: 0
+    })
+    const mqttPort = Number(new URL(started.mqttUrl as string).port)
+    expect(await appProxyStatus()).toMatchObject({
+      running: true,
+      mqtt: true,
+      mqttTarget: brokerUrl,
+      mqttPort,
+      mqttUrl: started.mqttUrl
+    })
+
+    await stopAppProxy()
+    const settings = await readSettings(join(userData, 'settings.json'))
+    expect(settings.proxyMqttEnabled).toBe(true)
+    expect(settings.proxyMqttTarget).toBe(brokerUrl)
+    expect(await appProxyStatus()).toMatchObject({
+      running: false,
+      mqtt: true,
+      mqttTarget: brokerUrl,
+      mqttPort
+    })
+  })
+
+  it('leaves the MQTT port closed when the relay is off', async () => {
+    const started = await startAppProxy({ target: targetUrl, port: 0 })
+    expect(started.mqttUrl).toBeUndefined()
+    expect(await appProxyStatus()).toMatchObject({ running: true, mqtt: false })
+  })
+
+  it('frees the MQTT port on stop', async () => {
+    const started = await startAppProxy({
+      target: targetUrl,
+      port: 0,
+      mqtt: true,
+      mqttTarget: brokerUrl,
+      mqttPort: 0
+    })
+    const mqttPort = Number(new URL(started.mqttUrl as string).port)
+    await stopAppProxy()
+    const client = mqtt.connect(`mqtt://127.0.0.1:${mqttPort}`, { reconnectPeriod: 0 })
+    await new Promise<void>((resolve, reject) => {
+      client.on('error', () => resolve())
+      client.on('connect', () => reject(new Error('the MQTT listener is still up')))
+    })
+    client.end(true)
+  })
+
+  it('refuses to start the relay with no broker rather than half-starting', async () => {
+    await expect(startAppProxy({ target: targetUrl, port: 0, mqtt: true, mqttTarget: '' })).rejects.toThrow(
+      /broker/
     )
-    appendRecorded(root, entry({ id: 'fresh' }))
-    const lines = readFileSync(file, 'utf8').split('\n').filter(Boolean)
-    expect(lines.length).toBe(500)
-    expect(lines[lines.length - 1]).toContain('"fresh"')
+    expect(isProxyRunning()).toBe(false)
+  })
+
+  it('keeps the start atomic when the broker address is bad', async () => {
+    // The HTTP listener starts first; a bad broker must take it down with it,
+    // or the user gets a "running" proxy that isn't what they asked for.
+    await expect(
+      startAppProxy({ target: targetUrl, port: 0, mqtt: true, mqttTarget: 'mqtts://127.0.0.1:8883' })
+    ).rejects.toThrow(/mqtts/)
+    expect(isProxyRunning()).toBe(false)
+    expect(proxyUrl()).toBeNull()
   })
 })

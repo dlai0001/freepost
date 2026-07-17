@@ -35,6 +35,7 @@
     <a href="./authentication.html">Authentication</a>
     <a href="./cookies.html">Cookies</a>
     <a href="./mock-server.html">Mock server</a>
+    <a href="./proxy.html">Proxy &amp; record</a>
     <a class="active" href="./cli.html">Command line</a>
     <a href="./scripting.html">Scripting (pm.*)</a>
   </nav>
@@ -85,6 +86,35 @@ node out/cli/index.mjs run ./my-collection</code></pre>
       up fake dependencies in local dev or integration jobs.
     </p>
     <pre><code>freepost mock ./my-collection --port 8080</code></pre>
+
+    <h2><code>freepost proxy &lt;collection&gt; --target &lt;url&gt;</code></h2>
+    <p>
+      Starts the <a href="./proxy.html">record proxy</a>: point your app at
+      <code>http://127.0.0.1:7699</code> instead of the real server and every request is forwarded
+      to <code>--target</code> and recorded, until Ctrl-C. Same engine and same store as the app's
+      Proxy panel, so what you record here shows up in that collection's History ▸ Recorded tab,
+      ready to save as request files.
+    </p>
+    <pre><code>freepost proxy ./my-collection --target http://localhost:3010
+freepost proxy ./my-collection --target https://api.internal --https</code></pre>
+    <table>
+      <thead><tr><th>Flag</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>--target &lt;url&gt;</code></td><td>Server to forward to. Required; <code>http://</code> or <code>https://</code>.</td></tr>
+        <tr><td><code>--port &lt;n&gt;</code></td><td>Port to listen on (default <code>7699</code>). Bound to 127.0.0.1.</td></tr>
+        <tr><td><code>--https</code></td><td>Also listen with TLS, using a local self-signed CA generated under the collection's <code>.freepost/tls</code>.</td></tr>
+        <tr><td><code>--https-port &lt;n&gt;</code></td><td>TLS port (default <code>7700</code>).</td></tr>
+        <tr><td><code>--mqtt-target &lt;url&gt;</code></td><td>Also relay MQTT to this broker (<code>mqtt://host[:port]</code>) — a broker isn't an HTTP origin, so it needs its own target.</td></tr>
+        <tr><td><code>--mqtt-port &lt;n&gt;</code></td><td>MQTT listen port (default <code>7883</code>).</td></tr>
+      </tbody>
+    </table>
+    <p>
+      With <code>--https</code> the CA path is printed on startup along with a
+      <code>curl --cacert</code> line for it; nothing is installed into any trust store. A bad
+      target or a port already in use exits <code>2</code> rather than crashing. Recorded
+      exchanges carry headers verbatim, credentials included — see
+      <a href="./proxy.html">Proxy &amp; record</a> before committing anything you saved.
+    </p>
 
     <h2><code>freepost mcp &lt;snapshot|check&gt; &lt;collection&gt;</code></h2>
     <p>

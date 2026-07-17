@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/png" href="../favicon.png">
+<link rel="apple-touch-icon" href="../apple-touch-icon.png">
+<title>Proxy &amp; record — Freepost Help</title>
+<meta name="description" content="Record real traffic by pointing your app at a local reverse proxy: REST, GraphQL, gRPC, WebSocket, SSE and MQTT captured, decoded, and saved into your collection as request files.">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="topbar-logo" href="../index.html">$ freepost</a>
+    <span class="topbar-crumb">Help / Proxy &amp; record</span>
+    <div class="topbar-spacer"></div>
+    <a class="topbar-link" href="../index.html">Website</a>
+    <a class="topbar-link" href="https://github.com/dlai0001/freepost">GitHub</a>
+  </div>
+</header>
+
+<div class="docs-shell">
+  <nav class="docs-nav">
+    <div class="docs-nav-title">Guides</div>
+    <a href="./index.html">Overview</a>
+    <a href="./installing.html">Installing</a>
+    <a href="./creating-requests.html">Creating requests</a>
+    <a href="./mcp.html">MCP servers</a>
+    <a href="./ai-apps.html">Use from an AI app</a>
+    <a href="./importing.html">Importing</a>
+    <a href="./organizing.html">Saving &amp; organizing</a>
+    <a href="./workflows.html">Workflows</a>
+    <a href="./authentication.html">Authentication</a>
+    <a href="./cookies.html">Cookies</a>
+    <a href="./mock-server.html">Mock server</a>
+    <a class="active" href="./proxy.html">Proxy &amp; record</a>
+    <a href="./cli.html">Command line</a>
+    <a href="./scripting.html">Scripting (pm.*)</a>
+  </nav>
+
+  <article class="docs-article">
+    <h1>Proxy &amp; record</h1>
+    <p class="lede">
+      The record proxy is a <strong>reverse proxy</strong>: point your app at
+      <code>http://127.0.0.1:7699</code> instead of the real server, and every request is
+      forwarded on to the one target you configured — and recorded on the way through. The
+      captures land in <strong>History ▸ Recorded</strong>, where one click turns any of them
+      into a real request file in your collection.
+    </p>
+
+    <h2>Not a system proxy</h2>
+    <p>
+      This is deliberately <em>not</em> the mitmproxy/Charles model. There are no OS proxy
+      settings to flip, no <code>HTTP_PROXY</code> to export, and for plain HTTP no CA to install
+      anywhere — the proxy has exactly one target and you reach it by changing a base URL:
+    </p>
+    <pre><code># before
+API_BASE=http://localhost:3010
+
+# while recording
+API_BASE=http://127.0.0.1:7699</code></pre>
+    <p>
+      The trade is that it can't fan out to arbitrary hosts the way a forward proxy can. In
+      exchange, nothing on your machine is reconfigured, nothing else's traffic is intercepted,
+      and turning recording off is closing one URL — not undoing a system setting you'll forget
+      about.
+    </p>
+
+    <h2>Starting it</h2>
+    <p>
+      A collection must be open — recordings belong to it. Click <strong>Proxy</strong> in the
+      top bar to open the panel, fill in the <strong>Target</strong> (the server you want
+      forwarded to) and a <strong>Port</strong>, then <strong>Start</strong>:
+    </p>
+
+    <figure>
+      <img src="./images/proxy-start.png" alt="The 'Proxy server (record)' panel before starting: Target set to http://localhost:3010, Port 7699, unchecked 'Enable HTTPS (self-signed local CA)' and 'Record MQTT' boxes, 'Not running.' and 'No traffic yet.', with a Start button in the top right.">
+      <figcaption>Not running yet. The target is required; the port defaults to
+        <code>7699</code>. HTTPS and MQTT are separate opt-ins, each with its own port.</figcaption>
+    </figure>
+
+    <p>
+      Once started, a banner shows exactly what is being recorded and where to point your client,
+      with a copy button. Every exchange streams into the live capture log below it:
+    </p>
+
+    <figure>
+      <img src="./images/proxy-running.png" alt="The proxy panel while running: a red Stop button top right, a green banner reading 'Recording → http://localhost:3010 on http://127.0.0.1:7699' with a Copy button, and a capture log of five rows — GET 200 /health 15 ms, GET 200 /users 4 ms, GET 200 /users/1 2 ms, POST 201 /users 3 ms, and a red GET 404 /users/99 3 ms — each with a Save button.">
+      <figcaption>Recording. Each row carries the protocol badge, method, status, path, elapsed
+        time and a <strong>Save</strong> button — the 404 on <code>/users/99</code> is the real
+        target's answer, forwarded back untouched.</figcaption>
+    </figure>
+
+    <p>
+      The proxy is <strong>per-session and never auto-starts</strong>: a listener that records
+      every header verbatim is not something to leave running by accident. The menu item only
+      opens the panel — starting is always an explicit click. It is also bound to whichever
+      collection was open when it started; open a different one and the proxy stops rather than
+      quietly record into a collection the traffic wasn't meant for.
+    </p>
+
+    <h2>From capture to request file</h2>
+    <p>
+      Everything the proxy sees is appended to the collection's <strong>History ▸ Recorded</strong>
+      tab, which survives restarts. Expand a row to read the full request and response headers;
+      click <strong>Save</strong> to write it into the collection as an ordinary
+      <a href="./creating-requests.html">request file</a>:
+    </p>
+
+    <figure>
+      <img src="./images/proxy-recorded.png" alt="The History panel with the 'Recorded (6)' tab active next to a 'Requests' tab, and a Clear button top right. Three REST rows — 404, 201 and 200 — each with a Save button; the 200 row is expanded to show a Request header table (host 127.0.0.1:7699, connection keep-alive, accept */*, user-agent node) and a Response header table (content-type application/json, x-fixture http, date).">
+      <figcaption>History ▸ Recorded. The expanded 200 shows both header sets verbatim — note
+        <code>host: 127.0.0.1:7699</code>, the proxy's own listener, which is what your client
+        actually connected to.</figcaption>
+    </figure>
+
+    <h2>What it understands</h2>
+    <p>
+      Forwarding is a raw pass-through pipe, so streaming responses stream and nothing is
+      buffered on your behalf. The bodies are teed off to the side for the recording only, and
+      each exchange is classified by what it actually was:
+    </p>
+    <ul>
+      <li><strong>REST</strong> — method, path, status, both header sets, and capped body
+        previews.</li>
+      <li><strong>GraphQL</strong> — the <code>operationName</code> is surfaced on the row, so a
+        hundred requests to one <code>/graphql</code> URL are told apart at a glance instead of
+        reading <code>POST /graphql → 200</code> a hundred times. A saved GraphQL capture opens
+        in the editor's GraphQL body mode.</li>
+      <li><strong>gRPC</strong> — service and method, messages sent/received, and the
+        <code>grpc-status</code> from the trailers. gRPC is the one protocol carried end-to-end
+        over HTTP/2, because HTTP/1.1 can't carry those trailers.</li>
+      <li><strong>WebSocket</strong> — one exchange per session, captured frame by frame, with
+        socket.io / engine.io framing decoded so you see event names rather than
+        <code>42["ev",…]</code>.</li>
+      <li><strong>SSE</strong> — the event stream is parsed into discrete events (<code>event</code>,
+        <code>data</code>, <code>id</code>, <code>retry</code>). When the stream is a token
+        stream of JSON deltas, a <strong>Concatenate deltas</strong> toggle joins them back into
+        the text that was actually produced.</li>
+      <li><strong>MQTT</strong> — an opt-in relay on its own port; see below.</li>
+    </ul>
+
+    <h3>Decoded gRPC messages</h3>
+    <p>
+      Protobuf on the wire carries field <em>numbers</em>, never names — so by default Freepost
+      shows a schemaless field-number tree, decoded from the wire format alone. Attach the
+      <code>.proto</code> and the same tree comes back with real field names:
+    </p>
+
+    <figure>
+      <img src="./images/proxy-grpc-decode.png" alt="A GRPC row in History ▸ Recorded (6), POST 200 in 20 ms, expanded to show 'gRPC helloworld.Greeter/SayHello · 1 message sent / 1 received · grpc-status 0', then 'Messages (2) — field numbers only; attach the .proto to see names' with an 'Attach .proto file…' button, a decoded tree reading '→ 5 B  1: \"Ada\"' and '← 11 B  1: \"Hello Ada\"', and below it the gRPC header tables showing content-type application/grpc, te trailers, and content-type application/grpc+proto.">
+      <figcaption>A captured unary call with no schema attached: the arrows are direction, the
+        byte counts are the wire-framed message sizes, and <code>1:</code> is field number 1.
+        <strong>Attach .proto file…</strong> replaces the numbers with names.</figcaption>
+    </figure>
+
+    <p>
+      Decoding without a schema is inherently ambiguous — a varint could be an int, a bool or an
+      enum; a length-delimited field could be a nested message, a string or packed repeats — so
+      the viewer reports the raw wire meaning and resolves length-delimited fields the way
+      mitmproxy does: nested message if it parses cleanly, else a printable UTF-8 string, else
+      bytes. A malformed or truncated message never throws; you get the fields decoded so far
+      plus a marker.
+    </p>
+
+    <h2>Recording HTTPS</h2>
+    <p>
+      Tick <strong>Enable HTTPS (self-signed local CA)</strong> and the proxy opens a second,
+      TLS listener (default port <code>7700</code>) alongside the plain one. On first use it
+      generates a local CA — one long-lived ECDSA P-256 root, plus a short-lived leaf for
+      <code>localhost</code> / <code>127.0.0.1</code> / <code>::1</code> that the listener
+      serves. The model is mkcert's; the leaf is re-issued automatically as it nears expiry,
+      without touching the CA.
+    </p>
+    <p>
+      <strong>Freepost does not install that CA into your OS trust store.</strong> Instead the
+      panel offers <em>Export CA certificate…</em>, <em>Copy CA path</em> and per-stack
+      <em>Trust snippets…</em>, so you point the one client you're recording at the one CA you
+      just made:
+    </p>
+    <pre><code>curl --cacert ~/freepost-proxy-ca.crt https://127.0.0.1:7700/users
+# or skip verification for a quick dev loop:
+curl -k https://127.0.0.1:7700/users
+
+NODE_EXTRA_CA_CERTS=~/freepost-proxy-ca.crt node app.js
+
+# Python
+requests.get('https://127.0.0.1:7700/users', verify='/path/to/ca.crt')
+
+# gRPC (grpc-js)
+const creds = grpc.credentials.createSsl(fs.readFileSync('/path/to/ca.crt'))</code></pre>
+    <p>
+      Why the extra step? The client is <em>your own code</em>, and it already takes a CA as an
+      argument. Scoping trust to that one process keeps it explicit and revocable — a root in
+      your system keychain is trusted by your browser, your mail client and everything else on
+      the machine, for as long as you forget it's there. There <em>is</em> an
+      <em>Install CA into system trust…</em> button if you want it: it opens your operating
+      system's own certificate-import UI (Keychain Access on macOS, the certificate wizard on
+      Windows, or the file's folder on Linux). Nothing is installed unless you confirm it there.
+      <em>Regenerate CA…</em> destroys the current CA and key and issues a new one — anywhere the
+      old one was trusted stops trusting the proxy until you export and install the new one.
+    </p>
+
+    <h2>Recording MQTT</h2>
+    <p>
+      MQTT gets its own checkbox, its own <strong>Broker</strong> address and its own port
+      (default <code>7883</code>). It needs all three because an MQTT broker is not an HTTP
+      origin — the target above could never mean both. Point your MQTT client at the listener
+      instead of the broker:
+    </p>
+    <pre><code>mosquitto_sub -h 127.0.0.1 -p 7883 -t 'sensors/#' -v</code></pre>
+    <p>
+      This is a <strong>transparent TCP relay</strong>, not an embedded broker. Every client
+      connection gets its own connection to the real broker and the bytes are piped both ways, so
+      the real broker stays authoritative and QoS, retained messages, sessions and keep-alive
+      behave exactly as they do without the proxy. Freepost decodes packets off a passive tee,
+      for display only — if the decoder trips on something, decoding stops and the bytes keep
+      flowing. A session whose decoder gave up is reported as unknown, never as errored: the
+      relay's blind spot is not the peer's fault.
+    </p>
+    <p>
+      Cleartext only, today. <code>mqtts://</code> is <strong>rejected with an error</strong>
+      rather than silently downgraded to a cleartext connection you didn't ask for.
+    </p>
+
+    <h2>From the command line</h2>
+    <p>
+      <code>freepost proxy</code> is the headless half — same engine, same
+      <code>recorded.jsonl</code>, so traffic recorded from a terminal shows up in the same
+      History ▸ Recorded tab. <code>--target</code> is required; the positional collection path
+      is what the recordings bind to. It records until Ctrl-C.
+    </p>
+    <pre><code>freepost proxy ./my-collection --target http://localhost:3010
+freepost proxy ./my-collection --target https://api.internal --port 7699 --https
+freepost proxy ./my-collection --target http://localhost:3010 \
+  --mqtt-target mqtt://127.0.0.1:1883</code></pre>
+    <table>
+      <thead><tr><th>Flag</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>--target &lt;url&gt;</code></td><td>Server to forward to. Required; <code>http://</code> or <code>https://</code>.</td></tr>
+        <tr><td><code>--port &lt;n&gt;</code></td><td>Port to listen on. Default <code>7699</code>.</td></tr>
+        <tr><td><code>--https</code></td><td>Also listen with TLS, using the local self-signed CA.</td></tr>
+        <tr><td><code>--https-port &lt;n&gt;</code></td><td>TLS port. Default <code>7700</code>.</td></tr>
+        <tr><td><code>--mqtt-target &lt;url&gt;</code></td><td>Also relay MQTT to this broker (<code>mqtt://host[:port]</code>).</td></tr>
+        <tr><td><code>--mqtt-port &lt;n&gt;</code></td><td>MQTT listen port. Default <code>7883</code>.</td></tr>
+      </tbody>
+    </table>
+    <p>
+      See the <a href="./cli.html">command-line guide</a> for the rest of the CLI. Unlike the app
+      there is no remembered prefill: a CLI invocation states its target every time.
+    </p>
+
+    <h2>Limits worth knowing</h2>
+    <ul>
+      <li><strong>Bodies are capped at 64 KiB</strong> so one large download can't bloat the
+        store. A capture past the cap is marked truncated — and a truncated body is
+        <em>never</em> written into a saved request. You get a note in the file instead
+        (<code>body omitted: capture truncated at 64 KiB</code>), because a silently corrupt body
+        is worse than an honest gap. Binary bodies are treated the same way.</li>
+      <li><strong>Recordings live in <code>.freepost/history/recorded.jsonl</code></strong>,
+        inside the collection, <code>chmod 600</code> (owner-only). The file is trimmed back to
+        the most recent <strong>500</strong> entries — it's allowed to grow to twice that before
+        a trim, so a busy proxy isn't re-reading the whole file on every request.</li>
+      <li><strong>Recorded headers are verbatim — including credentials.</strong> An
+        <code>Authorization</code> header your app sent is in that file as it went over the wire.
+        <code>.freepost/</code> carries a self-regenerating <code>.gitignore</code> that ignores
+        everything in it, so the store stays local. But a request you
+        <strong>Save</strong> into the collection is an ordinary file in your repo, and you may
+        well commit it — read what you saved before you do, and replace secrets with a
+        <code>${VAR}</code> from an <a href="./authentication.html">environment</a>.</li>
+      <li>WebSocket sessions retain at most 200 frames, with a 2 KiB preview per frame; gRPC
+        retains at most 200 messages per direction. A saved WebSocket capture carries the frames
+        that were sent, as comments — session replay is deliberately not promised.</li>
+      <li>Your client's HTTP version may not be the target's. gRPC is always forwarded over
+        HTTP/2 — <code>grpc-status</code> arrives in trailers, which an HTTP/1.1 hop would drop.
+        Any other HTTP/2 leg is forwarded over HTTP/2 only if the target speaks it, and otherwise
+        downgraded to HTTP/1.1 — the same downgrade mitmproxy performs. Without that, an
+        h2-capable client (curl and browsers offer h2 by default) would break against an
+        HTTP/1.1-only backend, which is most of them. HTTP semantics don't depend on the wire
+        version, so what you record is unaffected either way.</li>
+    </ul>
+
+    <div class="callout callout-note">
+      <div class="callout-title">One target, loopback only, off unless you start it</div>
+      The record proxy forwards to the <strong>one target you named</strong> and nowhere else —
+      it is not a forward proxy and cannot be talked into reaching another host. It binds
+      <strong>127.0.0.1</strong>, never <code>0.0.0.0</code>, so nothing off your machine can
+      reach it. And it is off until you explicitly click Start: the menu item opens the panel,
+      nothing more. Same shape as the <a href="./mock-server.html">mock server</a> — the only
+      sockets Freepost opens are the ones you asked for.
+    </div>
+
+    <footer class="docs-footer">
+      Next: <a href="./cli.html">Record headlessly with the command line →</a>
+    </footer>
+  </article>
+</div>
+
+</body>
+</html>

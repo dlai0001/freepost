@@ -17,7 +17,7 @@ export { registerFreepostTools } from './tools'
 
 export function createFreepostMcpServer(ctx: ServerContext): McpServer {
   const server = new McpServer(
-    { name: 'freepost', version: '0.2.0' },
+    { name: 'freepost', version: '0.3.0' },
     {
       instructions:
         'Freepost is an API client whose collections are plain-text request files on disk. ' +

@@ -10,6 +10,8 @@ interface Props {
   url: string
   current: SpecRef | null
   onAttach: (ref: SpecRef) => void
+  /** Detach the current spec from this request (the caller then offers to delete the file). */
+  onRemove: () => void
   onCancel: () => void
 }
 
@@ -31,6 +33,7 @@ export default function AttachSpecModal(props: Props): JSX.Element {
   const [filter, setFilter] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   useEffect(() => {
     void fp()
@@ -103,8 +106,9 @@ export default function AttachSpecModal(props: Props): JSX.Element {
       if (p === null) return
       setBusy(true)
       const r = await fp().importSpec({ root: props.root, source: { kind: 'file', absPath: p } })
-      setStored((s) => [...s, r.path].sort())
+      setStored((s) => (s.includes(r.path) ? s : [...s, r.path].sort()))
       setSpecPath(r.path)
+      setNotice(r.replaced ? `Replaced ${r.path} with the file you picked.` : `Copied into ${r.path}.`)
       setSource('stored')
     } catch (e) {
       setError(errMsg(e))
@@ -132,8 +136,9 @@ export default function AttachSpecModal(props: Props): JSX.Element {
         /* keep default */
       }
       const r = await fp().importSpec({ root: props.root, source: { kind: 'text', text: listed.specText, name } })
-      setStored((s) => [...s, r.path].sort())
+      setStored((s) => (s.includes(r.path) ? s : [...s, r.path].sort()))
       setSpecPath(r.path)
+      setNotice(r.replaced ? `Replaced ${r.path} with the fetched spec.` : `Saved to ${r.path}.`)
       setSource('stored')
     } catch (e) {
       setError(errMsg(e))
@@ -179,7 +184,10 @@ export default function AttachSpecModal(props: Props): JSX.Element {
         )}
         {source === 'file' && (
           <>
-            <label className="modal-label">Copy an OpenAPI 3.x / Swagger 2.0 document (JSON or YAML) into specs/</label>
+            <label className="modal-label">
+              Copy an OpenAPI 3.x / Swagger 2.0 document (JSON or YAML) into specs/. Re-picking a file you
+              already imported replaces the stored copy, so edits to it take effect everywhere.
+            </label>
             <div className="import-file-row">
               <button className="btn" onClick={() => void browse()} disabled={busy}>
                 Browse…
@@ -208,6 +216,7 @@ export default function AttachSpecModal(props: Props): JSX.Element {
         )}
 
         {error !== null && <div className="banner banner-danger">{error}</div>}
+        {notice !== null && <div className="banner banner-ok">{notice}</div>}
 
         {specPath !== null && ops.length > 0 && (
           <>
@@ -242,6 +251,16 @@ export default function AttachSpecModal(props: Props): JSX.Element {
         )}
 
         <div className="modal-actions">
+          {props.current !== null && (
+            <button
+              className="btn btn-danger spec-remove"
+              onClick={props.onRemove}
+              disabled={busy}
+              title="Stop validating this request against a spec"
+            >
+              Remove spec
+            </button>
+          )}
           <button className="btn" onClick={props.onCancel} disabled={busy}>
             Cancel
           </button>

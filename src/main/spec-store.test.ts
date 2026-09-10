@@ -1,9 +1,18 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { scanCollection } from './collection'
-import { importSpecFile, importSpecText, isStoredSpec, listSpecs, readSpec, validateResponseAgainstSpec } from './spec-store'
+import {
+  deleteSpec,
+  importSpecFile,
+  importSpecText,
+  isStoredSpec,
+  listSpecUsage,
+  listSpecs,
+  readSpec,
+  validateResponseAgainstSpec
+} from './spec-store'
 
 let root = ''
 beforeEach(() => {
@@ -43,13 +52,36 @@ describe('importSpecText / importSpecFile', () => {
     expect(y.path).toBe('specs/thing.yaml')
   })
 
-  it('never overwrites: same name gets a numbered suffix', async () => {
+  it('overwrites a spec of the same name in place so attached requests see the edit', async () => {
+    const first = await importSpecText(root, specJson, 'api')
+    expect(first).toMatchObject({ path: 'specs/api.json', replaced: false })
+
+    // Re-import an edited version of the same document: same path, new bytes.
+    const edited = specJson.replace('"integer"', '"string"')
+    const second = await importSpecText(root, edited, 'api')
+    expect(second).toMatchObject({ path: 'specs/api.json', replaced: true })
+    expect(readFileSync(join(root, 'specs/api.json'), 'utf8')).toBe(edited)
+    expect(await listSpecs(root)).toEqual(['specs/api.json'])
+  })
+
+  it('a re-import is visible to the next readSpec, even within one mtime tick', async () => {
+    const { path } = await importSpecText(root, specJson, 'api')
+    const before = await readSpec(root, path)
+    if (!before.ok) throw new Error(before.error)
+    expect(before.spec.doc.paths?.['/pets/{id}']).toBeDefined()
+
+    // Same name and same JSON extension, so it lands on the identical path.
+    const rewritten = JSON.stringify({ openapi: '3.0.0', info: { title: 'p', version: '1' }, paths: { '/x': { get: { responses: { '200': { description: 'ok' } } } } } })
+    await importSpecText(root, rewritten, 'api')
+    const after = await readSpec(root, path)
+    if (!after.ok) throw new Error(after.error)
+    expect(Object.keys(after.spec.doc.paths ?? {})).toEqual(['/x'])
+  })
+
+  it('keeps differently-named specs side by side', async () => {
     await importSpecText(root, specJson, 'api')
-    const second = await importSpecText(root, specYaml, 'api')
-    expect(second.path).toBe('specs/api.yaml')
-    const third = await importSpecText(root, specJson, 'api')
-    expect(third.path).toBe('specs/api (2).json')
-    expect((await listSpecs(root)).sort()).toEqual(['specs/api (2).json', 'specs/api.json', 'specs/api.yaml'])
+    await importSpecText(root, specYaml, 'other')
+    expect(await listSpecs(root)).toEqual(['specs/api.json', 'specs/other.yaml'])
   })
 
   it('rejects documents that are not specs', async () => {
@@ -120,6 +152,45 @@ describe('validateResponseAgainstSpec', () => {
     expect(malformed).toMatchObject({ verdict: 'error', reason: expect.stringContaining('malformed') })
     const notObj = await validateResponseAgainstSpec(root, 'specs/x.json', resp(200, '{}'))
     expect(notObj.verdict).toBe('error')
+  })
+})
+
+describe('listSpecUsage / deleteSpec', () => {
+  function writeReq(rel: string, specPath?: string): void {
+    const abs = join(root, rel)
+    mkdirSync(join(abs, '..'), { recursive: true })
+    const fm = specPath === undefined ? '' : `# ---\n# spec:\n#   path: ${specPath}\n#   operationId: GET /pets/{id}\n# ---\n`
+    writeFileSync(abs, `${fm}curl --request GET --url 'http://x/'\n`)
+  }
+
+  it('lists only the requests pointing at that spec', async () => {
+    await importSpecText(root, specJson, 'pets')
+    await importSpecText(root, specJson, 'other')
+    writeReq('A.curl', 'specs/pets.json')
+    writeReq('nested/B.curl', 'specs/pets.json')
+    writeReq('C.curl', 'specs/other.json')
+    writeReq('D.curl') // no spec at all
+    expect(await listSpecUsage(root, 'specs/pets.json')).toEqual(['A.curl', 'nested/B.curl'])
+    expect(await listSpecUsage(root, 'specs/other.json')).toEqual(['C.curl'])
+    expect(await listSpecUsage(root, 'specs/ghost.json')).toEqual([])
+  })
+
+  it('deletes a stored spec and drops it from the cache', async () => {
+    const { path } = await importSpecText(root, specJson, 'pets')
+    expect((await readSpec(root, path)).ok).toBe(true)
+    await deleteSpec(root, path)
+    expect(existsSync(join(root, path))).toBe(false)
+    expect(await listSpecs(root)).toEqual([])
+    // The cached parse must not outlive the file.
+    expect(await readSpec(root, path)).toMatchObject({ ok: false, error: expect.stringContaining('not found') })
+  })
+
+  it('deleting is idempotent and refuses paths outside specs/', async () => {
+    await expect(deleteSpec(root, 'specs/never-existed.json')).resolves.toBeUndefined()
+    writeFileSync(join(root, 'keepme.curl'), 'curl http://x/\n')
+    await expect(deleteSpec(root, 'keepme.curl')).rejects.toThrow(/not a stored spec/)
+    await expect(deleteSpec(root, '../escape.json')).rejects.toThrow(/not a stored spec/)
+    expect(existsSync(join(root, 'keepme.curl'))).toBe(true)
   })
 })
 

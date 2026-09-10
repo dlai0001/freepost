@@ -178,9 +178,28 @@
       To link a hand-written request, click <strong>Spec</strong> in the request toolbar: pick a
       spec already in <code>specs/</code>, or import one from a file or URL, then choose the
       operation — the one matching the request's method and path is suggested. A chip under the
-      toolbar shows the attached operation; its <strong>×</strong> detaches it. The same link
-      powers the <a href="./mock-server.html">mock server's</a> spec fallback and the CLI's
+      toolbar shows the attached operation. The same link powers the
+      <a href="./mock-server.html">mock server's</a> spec fallback and the CLI's
       <code>--strict-spec</code> flag.
+    </p>
+
+    <h3>Updating a spec after you edit it</h3>
+    <p>
+      Attaching <strong>copies</strong> the document into <code>specs/</code>, so the collection stays
+      self-contained and versions with your requests. That also means editing your original file has no
+      effect until you bring the change in: re-pick the same file (or re-fetch the same URL) from the
+      <strong>Spec</strong> dialog and Freepost <strong>replaces the stored copy in place</strong>.
+      The path does not change, so every request already pointing at that spec validates against your
+      edits on its next send.
+    </p>
+
+    <h3>Removing a spec</h3>
+    <p>
+      Click <strong>Remove spec</strong> in the <strong>Spec</strong> dialog, or the
+      <strong>×</strong> on the chip. The request stops validating immediately, and Freepost then asks
+      whether to delete the file from <code>specs/</code> — telling you first if other requests still
+      point at it, so a shared spec is never removed by surprise. Choose <strong>Keep file</strong> to
+      leave it in place for those requests, or for re-attaching later.
     </p>
 
     <figure>

@@ -75,6 +75,8 @@ const api = {
   listSpecs: (args: unknown) => ipcRenderer.invoke(IPC.specList, args),
   importSpec: (args: unknown) => ipcRenderer.invoke(IPC.specImport, args),
   listSpecOperations: (args: unknown) => ipcRenderer.invoke(IPC.specOperations, args),
+  listSpecUsage: (args: unknown) => ipcRenderer.invoke(IPC.specUsage, args),
+  deleteSpec: (args: unknown) => ipcRenderer.invoke(IPC.specDelete, args),
 
   codegenTargets: () => ipcRenderer.invoke(IPC.codegenTargets),
   generateCode: (args: unknown) => ipcRenderer.invoke(IPC.codegenGenerate, args),

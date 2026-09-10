@@ -57,7 +57,7 @@ import {
   type RecordedGrpcSave
 } from '../core/record/to-request'
 import { dedupeRelPath, importOpenApi, listOpenApiOperations, type ListOpenApiResult } from '../core/importers/openapi'
-import { importSpecFile, importSpecText, listSpecs, readSpec } from './spec-store'
+import { deleteSpec, importSpecFile, importSpecText, listSpecUsage, listSpecs, readSpec } from './spec-store'
 import { CODEGEN_TARGETS, generateCode } from '../core/codegen'
 import { parseDataFile } from '../core/data'
 import {
@@ -964,6 +964,12 @@ export function registerIpcHandlers(): void {
         ? importSpecFile(args.root, args.source.absPath)
         : importSpecText(args.root, args.source.text, args.source.name)
     }
+  )
+  ipcMain.handle(IPC.specUsage, async (_e, args: { root: string; path: string }) =>
+    listSpecUsage(args.root, args.path)
+  )
+  ipcMain.handle(IPC.specDelete, async (_e, args: { root: string; path: string }) =>
+    deleteSpec(args.root, args.path)
   )
   ipcMain.handle(IPC.specOperations, async (_e, args: { root: string; path: string }): Promise<ListOpenApiResult> => {
     const read = await readSpec(args.root, args.path)

@@ -22,6 +22,8 @@ const external = [
   'ws',
   'chai',
   'js-yaml',
+  'ajv',
+  'ajv-formats',
   // gRPC stays external too, and browser-vs-node resolution is only half the
   // reason. protobufjs (under @grpc/proto-loader) reaches `fs` through
   // @protobufjs/inquire, which is a *dynamic* `require()` in a try/catch. Bundled

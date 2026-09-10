@@ -52,6 +52,8 @@ export default function ImportModal(props: Props): JSX.Element {
   const [oaOps, setOaOps] = useState<OpenApiOperationSummary[]>([])
   const [oaSelected, setOaSelected] = useState<Set<string>>(new Set())
   const [oaFolderPrefix, setOaFolderPrefix] = useState('')
+  // Store the spec under specs/ and link each imported request to its operation.
+  const [attachSpec, setAttachSpec] = useState(true)
 
   const oaGroups = useMemo(() => {
     const byFolder = new Map<string, OpenApiOperationSummary[]>()
@@ -139,11 +141,20 @@ export default function ImportModal(props: Props): JSX.Element {
     try {
       let written: string[]
       if (mode === 'openapi-url') {
+        let specName = 'openapi'
+        try {
+          const last = new URL(specUrl.trim()).pathname.split('/').filter((s) => s !== '').pop()
+          if (last !== undefined && last !== '') specName = last
+        } catch {
+          /* keep default */
+        }
         const res = await fp().importOpenApiFromUrl({
           root,
           specText: oaSpecText as string,
           selectedIds: [...oaSelected],
-          folderPrefix: oaFolderPrefix.trim() === '' ? undefined : oaFolderPrefix.trim()
+          folderPrefix: oaFolderPrefix.trim() === '' ? undefined : oaFolderPrefix.trim(),
+          attachSpec,
+          specName
         })
         written = res.written
       } else {
@@ -151,7 +162,7 @@ export default function ImportModal(props: Props): JSX.Element {
         const res =
           mode === 'paste'
             ? await fp().importCommand({ root, text: pasted, name: trimmedName })
-            : await fp().importFile({ root, path: filePath as string, name: trimmedName })
+            : await fp().importFile({ root, path: filePath as string, name: trimmedName, attachSpec })
         written = res.written
       }
       props.onDone(written.length === 1 ? `Imported ${written[0]}` : `Imported ${written.length} files`)
@@ -190,7 +201,8 @@ export default function ImportModal(props: Props): JSX.Element {
         {mode === 'file' && (
           <>
             <label className="modal-label">
-              Postman collection (.json) or any shell script with a curl / websocat / wscat command
+              Postman collection (.json), OpenAPI/Swagger spec (.json/.yaml), or any shell script with a
+              curl / websocat / wscat command
             </label>
             <div className="import-file-row">
               <button className="btn" onClick={() => void browse()} disabled={busy}>
@@ -212,6 +224,11 @@ export default function ImportModal(props: Props): JSX.Element {
               placeholder="Create user"
               onChange={(e) => setName(e.target.value)}
             />
+            <label className="modal-check">
+              <input type="checkbox" checked={attachSpec} onChange={(e) => setAttachSpec(e.target.checked)} />
+              For OpenAPI/Swagger files: copy the spec into <span className="mono">specs/</span> and attach it to each
+              imported request (validates responses; powers mock fallback)
+            </label>
           </>
         )}
 
@@ -274,6 +291,11 @@ export default function ImportModal(props: Props): JSX.Element {
                   placeholder="e.g. External APIs / Acme"
                   onChange={(e) => setOaFolderPrefix(e.target.value)}
                 />
+                <label className="modal-check">
+                  <input type="checkbox" checked={attachSpec} onChange={(e) => setAttachSpec(e.target.checked)} />
+                  Copy the spec into <span className="mono">specs/</span> and attach it to each imported request
+                  (validates responses; powers mock fallback)
+                </label>
 
                 <div className="oa-op-list">
                   <label className="oa-select-all">

@@ -112,12 +112,26 @@
       details. Omit <code>--port</code> to let the OS pick a free one.
     </p>
 
+    <h2>Spec fallback</h2>
+    <p>
+      Requests that have an <a href="./importing.html#attach-spec">OpenAPI/Swagger spec attached</a>
+      contribute every operation in that spec as a <strong>fallback route</strong>. When an
+      incoming request matches no saved example, the mock looks for a spec operation with the
+      same method and path shape (<code>/pets/{id}</code> matches <code>/pets/42</code>, with or
+      without the server's base path) and synthesises a response from the documented success
+      response: its <code>example</code> if there is one, otherwise a minimal value built from the
+      schema (<code>""</code>, <code>0</code>, <code>false</code>, nested objects, one-element
+      arrays). Saved examples always win over spec routes, so you can start from a spec and refine
+      individual endpoints by saving real responses. The live log tags these entries
+      <strong>spec</strong>.
+    </p>
+
     <div class="callout callout-note">
       <div class="callout-title">Unmatched requests never leave your machine</div>
-      A request that matches no route returns <strong>404</strong> with a JSON body listing the
-      available routes — the mock never proxies through to a real server. That keeps the
-      offline-first, zero-surprise-network guarantee intact: the only socket the mock opens is the
-      local listener you explicitly started.
+      A request that matches neither a saved example nor a spec operation returns
+      <strong>404</strong> with a JSON body listing the available routes — the mock never proxies
+      through to a real server. That keeps the offline-first, zero-surprise-network guarantee
+      intact: the only socket the mock opens is the local listener you explicitly started.
     </div>
 
     <footer class="docs-footer">

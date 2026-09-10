@@ -14,6 +14,7 @@ import type {
   OAuth2Grant,
   ParseError,
   RequestFile,
+  SpecRef,
   VariableDecl,
   VariableMeta
 } from '../../../shared/model'
@@ -23,6 +24,7 @@ import { detectOperationType } from '../../../core/graphql/operation'
 import ResponsePanel from './ResponsePanel'
 import CodegenModal from './CodegenModal'
 import ExamplesModal from './ExamplesModal'
+import AttachSpecModal from './AttachSpecModal'
 import CodeEditor from './CodeEditor'
 import GqlSchemaExplorer from './GqlSchemaExplorer'
 import StreamLog, { streamEntry, type StreamEntry } from './StreamLog'
@@ -185,6 +187,9 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
   // Modals.
   const [showCodegen, setShowCodegen] = useState(false)
   const [showExamples, setShowExamples] = useState(false)
+  const [showSpec, setShowSpec] = useState(false)
+  // OpenAPI operation this request validates against (frontmatter.spec).
+  const [specRef, setSpecRef] = useState<SpecRef | null>(null)
   const [preScript, setPreScript] = useState('')
   const [testScript, setTestScript] = useState('')
   const [description, setDescription] = useState('')
@@ -285,6 +290,11 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
     setInsecure(http?.options.insecure === true)
     setCaCert(http?.options.caCert ?? '')
     setSendCookies(fm.cookies !== false)
+    setSpecRef(
+      fm.spec !== undefined && typeof fm.spec.path === 'string' && typeof fm.spec.operationId === 'string'
+        ? { path: fm.spec.path, operationId: fm.spec.operationId }
+        : null
+    )
 
     // Auth: frontmatter.auth => oauth2; --user => basic; Bearer header => bearer.
     const user = http?.options.user
@@ -405,6 +415,9 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
     // Cookie jar opt-out: only `cookies: false` is persisted; enabled is the default.
     if (!sendCookies) fm.cookies = false
     else delete fm.cookies
+
+    if (specRef !== null) fm.spec = specRef
+    else delete fm.spec
 
     // Variable metadata (preserve descriptions; secret comes from the table).
     const varMeta: Record<string, VariableMeta | null> = {}
@@ -1047,7 +1060,32 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
         <button className="btn" onClick={() => setShowExamples(true)}>
           Examples
         </button>
+        <button
+          className={'btn' + (specRef !== null ? ' btn-toggled' : '')}
+          onClick={() => setShowSpec(true)}
+          title={specRef !== null ? 'Change the attached OpenAPI operation' : 'Validate responses against an OpenAPI/Swagger spec'}
+        >
+          Spec
+        </button>
       </div>
+
+      {specRef !== null && (
+        <div className="spec-chip-row">
+          <span className="spec-chip" title={`Responses are validated against ${specRef.operationId} in ${specRef.path}`}>
+            Spec: <span className="mono">{specRef.path}</span> · <span className="mono">{specRef.operationId}</span>
+            <button
+              className="icon-btn"
+              title="Detach the spec"
+              onClick={() => {
+                setSpecRef(null)
+                touch()
+              }}
+            >
+              ×
+            </button>
+          </span>
+        </div>
+      )}
 
       <div className={'req-split' + (respBelow ? ' req-split-col' : '')}>
         <div className="req-editor">
@@ -1867,11 +1905,27 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
             below={respBelow}
             root={props.root}
             relPath={props.relPath}
+            hasSpec={specRef !== null}
             onToggleLayout={() => setRespBelow(!respBelow)}
             onClose={() => setRespOpen(false)}
           />
         )}
       </div>
+
+      {showSpec && (
+        <AttachSpecModal
+          root={props.root}
+          method={method}
+          url={url}
+          current={specRef}
+          onAttach={(ref) => {
+            setSpecRef(ref)
+            setShowSpec(false)
+            touch()
+          }}
+          onCancel={() => setShowSpec(false)}
+        />
+      )}
 
       {showCodegen && (
         <CodegenModal

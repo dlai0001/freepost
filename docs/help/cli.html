@@ -72,9 +72,16 @@ node out/cli/index.mjs run ./my-collection</code></pre>
         <tr><td><code>--bail</code></td><td>Stop at the first failing request or step.</td></tr>
         <tr><td><code>--reporter &lt;cli|json&gt;</code></td><td>Human output (default) or a JSON array of reports for machines.</td></tr>
         <tr><td><code>--no-mcp-spawn</code></td><td>Skip <a href="./mcp.html">MCP</a> requests whose server is a stdio subprocess, so CI never spawns a program.</td></tr>
+        <tr><td><code>--strict-spec</code></td><td>Fail a request whose response doesn't match its <a href="./importing.html#attach-spec">attached OpenAPI spec</a> (or whose status is undocumented). Without it, the spec verdict is printed but never affects the exit code.</td></tr>
       </tbody>
     </table>
     <p><strong>Exit codes:</strong> <code>0</code> everything passed · <code>1</code> a request errored, a test failed, or a workflow halted · <code>2</code> a usage error (bad flag, missing collection).</p>
+    <p>
+      Requests with an attached spec print a verdict line under their result —
+      <code>✓ spec 200 application/json</code>, or <code>✗ spec 200 application/json — 2 mismatches</code>
+      followed by one line per problem (<code>/items/0/id: must be integer</code>) and the closest
+      documented response. The JSON reporter carries the full report as <code>specValidation</code>.
+    </p>
 
     <h3>What runs, what's skipped</h3>
     <p>One-shot requests run: HTTP (<code>.curl</code>), gRPC <strong>unary</strong> (<code>.grpc</code>), MQTT <strong>publish</strong> (<code>.mqtt</code>), and <a href="./mcp.html">MCP</a> (<code>.mcp</code>) — including their <code>pm.*</code> assertions. Long-lived requests are skipped with a note at the end of the run: WebSocket (<code>.ws</code>) and MQTT <strong>subscribe</strong>. (gRPC server-streaming can't be told apart without loading the proto, so it runs and reports a clear "use the streaming client" error.) authorization_code OAuth needs a token cached by a prior interactive sign-in — see <a href="./authentication.html">Authentication</a>.</p>
@@ -82,8 +89,9 @@ node out/cli/index.mjs run ./my-collection</code></pre>
     <h2><code>freepost mock &lt;collection&gt; [--port &lt;n&gt;]</code></h2>
     <p>
       Starts the <a href="./mock-server.html">mock server</a> from the collection's saved examples
-      and serves until Ctrl-C. Omit <code>--port</code> for an OS-assigned port. Great for standing
-      up fake dependencies in local dev or integration jobs.
+      — plus fallback routes synthesised from any attached OpenAPI specs — and serves until Ctrl-C.
+      Omit <code>--port</code> for an OS-assigned port. Great for standing up fake dependencies in
+      local dev or integration jobs; a collection with specs but no saved examples works too.
     </p>
     <pre><code>freepost mock ./my-collection --port 8080</code></pre>
 

@@ -43,7 +43,7 @@ import { parseRequestFile, requestKindForPath } from '../core/format'
 import { parseWorkflow, runWorkflow, validateReferences } from '../core/workflow'
 import { executeRequest, readEnvFile } from '../main/execute'
 import { ensureFreepostDir, listFiles } from '../main/collection'
-import { buildRoutesForCollection } from '../main/mock'
+import { buildMockTables } from '../main/mock'
 import { ensureProxyCerts } from '../main/proxy-certs'
 import {
   appendRecorded,
@@ -56,6 +56,7 @@ import { MockServer, McpSessionClient, mcpConnectArgs, MqttRecordProxy, RecordPr
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { createFreepostMcpServer } from '../main/mcp-server'
 import { resolveVariables, substitute } from '../core/vars'
+import { formatSpecValidation } from '../core/spec/format'
 import {
   buildSnapshot,
   diffSnapshots,
@@ -83,6 +84,8 @@ interface RunOptions {
   reporter: 'cli' | 'json'
   /** Skip .mcp files whose server is a subprocess (--no-mcp-spawn). */
   noMcpSpawn: boolean
+  /** Fail requests whose response mismatches their attached OpenAPI spec (--strict-spec). */
+  strictSpec: boolean
 }
 
 interface MockOptions {
@@ -134,6 +137,7 @@ run options:
   --bail                 stop at the first failing request/step
   --reporter <cli|json>  output format (default: cli)
   --no-mcp-spawn         skip .mcp requests that would spawn a stdio server
+  --strict-spec          fail a request whose response does not match its attached OpenAPI spec
 
 mock options:
   --port <n>             port to listen on (default: an ephemeral port)
@@ -279,7 +283,8 @@ function parseArgs(argv: string[]): { options?: Options; error?: string; help?: 
     filters: [],
     bail: false,
     reporter: 'cli',
-    noMcpSpawn: false
+    noMcpSpawn: false,
+    strictSpec: false
   }
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i]
@@ -290,6 +295,7 @@ function parseArgs(argv: string[]): { options?: Options; error?: string; help?: 
       case '--filter': { const v = next(); if (v !== undefined) opts.filters.push(v); break }
       case '--bail': opts.bail = true; break
       case '--no-mcp-spawn': opts.noMcpSpawn = true; break
+      case '--strict-spec': opts.strictSpec = true; break
       case '--reporter': {
         const v = next()
         if (v !== 'cli' && v !== 'json') return { error: `--reporter must be 'cli' or 'json'` }
@@ -345,6 +351,11 @@ function reportRequest(io: CliIo, rel: string, r: ExecutionReport, totals: Total
   for (const t of tests) {
     if (t.passed) io.write(c.dim(`    ✓ ${t.name}\n`))
     else io.write(c.red(`    ✗ ${t.name}${t.error !== undefined ? ` — ${t.error}` : ''}\n`))
+  }
+  if (r.specValidation !== undefined) {
+    const { kind, lines } = formatSpecValidation(r.specValidation)
+    const tint = kind === 'fail' ? c.red : c.dim
+    for (const line of lines) io.write(tint(`    ${line}\n`))
   }
 }
 
@@ -553,18 +564,22 @@ async function runMcpServe(opts: McpOptions, root: string, io: CliIo): Promise<n
  */
 async function runMockServer(opts: MockOptions, root: string, io: CliIo): Promise<number> {
   const c = paint(io)
-  const routes = await buildRoutesForCollection(root)
-  if (routes.length === 0) {
-    io.write(c.red('No routes: no requests with saved examples found in this collection.\n'))
+  const { routes, specRoutes } = await buildMockTables(root)
+  if (routes.length === 0 && specRoutes.length === 0) {
+    io.write(c.red('No routes: no requests with saved examples or attached OpenAPI specs found in this collection.\n'))
     return 2
   }
   const server = new MockServer()
   server.on('request', (e) => {
     const mark = e.matched ? c.green('✓') : c.red('✗')
-    io.write(`${mark} ${e.method} ${e.path} ${c.dim(`→ ${e.status}${e.exampleName !== undefined ? ' ' + e.exampleName : ''}`)}\n`)
+    const detail = e.source === 'spec' ? ` ${e.operationId ?? ''} (spec)` : e.exampleName !== undefined ? ' ' + e.exampleName : ''
+    io.write(`${mark} ${e.method} ${e.path} ${c.dim(`→ ${e.status}${detail}`)}\n`)
   })
-  const { port } = await server.start({ routes, port: opts.port })
-  io.write(c.green(`Mock server listening on http://127.0.0.1:${port}`) + c.dim(` · ${routes.length} route(s) · Ctrl-C to stop\n`))
+  const { port } = await server.start({ routes, specRoutes, port: opts.port })
+  io.write(
+    c.green(`Mock server listening on http://127.0.0.1:${port}`) +
+      c.dim(` · ${routes.length} example route(s) · ${specRoutes.length} spec route(s) · Ctrl-C to stop\n`)
+  )
 
   return await new Promise<number>((resolvePromise) => {
     const stop = (): void => {
@@ -751,7 +766,7 @@ export async function run(argv: string[], io: CliIo): Promise<number> {
       const report = await runWorkflow({
         workflowPath: wfRel,
         wf: parsedWf.wf,
-        execute: (rel) => executeRequest({ root, path: rel, envPath, session })
+        execute: (rel) => executeRequest({ root, path: rel, envPath, session, strictSpec: opts.strictSpec })
       })
       if (opts.reporter === 'json') jsonOut.push(report)
       else for (const s of report.steps) reportStep(io, s, totals)
@@ -799,7 +814,7 @@ export async function run(argv: string[], io: CliIo): Promise<number> {
       if (opts.filters.length > 0 && !opts.filters.some((f) => rel.toLowerCase().includes(f.toLowerCase()))) {
         continue
       }
-      const report = await executeRequest({ root, path: rel, envPath, session })
+      const report = await executeRequest({ root, path: rel, envPath, session, strictSpec: opts.strictSpec })
       if (opts.reporter === 'json') jsonOut.push(report)
       else reportRequest(io, rel, report, totals)
       if (report.errored && opts.bail) break

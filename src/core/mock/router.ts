@@ -57,7 +57,7 @@ export function pathToSegments(url: string): RouteSegment[] {
 }
 
 /** Number of wildcard segments — used to prefer more-specific routes. */
-function paramCount(route: MockRoute): number {
+export function paramCount(route: { segments: RouteSegment[] }): number {
   return route.segments.filter((s) => 'param' in s).length
 }
 
@@ -99,12 +99,15 @@ function incomingSegments(path: string): string[] {
     })
 }
 
-/** Find the route matching this method + path, binding any path params. */
-export function matchRoute(
-  routes: MockRoute[],
+/**
+ * Find the route matching this method + path, binding any path params. Generic
+ * over the route shape so spec-derived routes (core/spec/mock) share the matcher.
+ */
+export function matchRoute<R extends { method: string; segments: RouteSegment[] }>(
+  routes: R[],
   method: string,
   path: string
-): { route: MockRoute; params: Record<string, string> } | null {
+): { route: R; params: Record<string, string> } | null {
   const wantMethod = method.toUpperCase()
   const segs = incomingSegments(path)
   for (const route of routes) {

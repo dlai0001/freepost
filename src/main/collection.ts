@@ -3,6 +3,7 @@ import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'fs'
 import { join, relative, sep } from 'path'
 import type { TreeNode } from '../shared/model'
 import { requestKindForPath } from '../core/format'
+import { SPEC_DIR } from './spec-store'
 
 /** PLAN.md leak guardrail: .freepost/ always carries a self-regenerating ignore-all. */
 export function ensureFreepostDir(root: string): string {
@@ -33,6 +34,8 @@ export async function scanCollection(root: string): Promise<TreeNode> {
       const childAbs = join(abs, e.name)
       const childRel = rel === '.' ? e.name : `${rel}/${e.name}`
       if (e.isDirectory()) {
+        // Stored OpenAPI specs (specs/) hold no requests — keep them out of the tree.
+        if (rel === '.' && e.name === SPEC_DIR) continue
         children.push(await scanDir(childAbs, childRel, e.name))
       } else if (e.name.endsWith('.workflow.json')) {
         children.push({

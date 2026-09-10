@@ -12,7 +12,7 @@ interface Props {
 export default function MockServerModal(props: Props): JSX.Element {
   const [running, setRunning] = useState(false)
   const [port, setPort] = useState<number | null>(null)
-  const [routes, setRoutes] = useState<number | null>(null)
+  const [routes, setRoutes] = useState<{ examples: number; spec: number } | null>(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [log, setLog] = useState<MockRequestLogEntry[]>([])
@@ -39,10 +39,10 @@ export default function MockServerModal(props: Props): JSX.Element {
     setBusy(true)
     setMessage(null)
     try {
-      const { port: p, routes: n } = await fp().startMock({ root: props.root })
+      const { port: p, routes: n, specRoutes: s } = await fp().startMock({ root: props.root })
       setRunning(true)
       setPort(p)
-      setRoutes(n)
+      setRoutes({ examples: n, spec: s })
     } catch (e) {
       setMessage(errMsg(e))
     } finally {
@@ -88,13 +88,14 @@ export default function MockServerModal(props: Props): JSX.Element {
           The mock server replays your saved response examples over HTTP. Mark an example{' '}
           <strong>active</strong> from a request&apos;s Examples list to choose which one it serves;
           add <span className="mono">?__example=NAME</span> to a request to force a specific one.
-          Unmatched paths return 404 (requests never leave your machine).
+          Paths with no example fall back to a response synthesised from any OpenAPI spec attached
+          to your requests; anything else returns 404 (requests never leave your machine).
         </div>
 
         {running && baseUrl !== null ? (
           <div className="banner banner-ok">
             Listening at <span className="mono">{baseUrl}</span>
-            {routes !== null ? ` · ${routes} route(s)` : ''}{' '}
+            {routes !== null ? ` · ${routes.examples} example route(s) · ${routes.spec} spec route(s)` : ''}{' '}
             <button
               className="btn btn-small"
               onClick={() => void navigator.clipboard?.writeText(baseUrl)}
@@ -120,6 +121,11 @@ export default function MockServerModal(props: Props): JSX.Element {
                 <span className={'status-pill ' + statusCls}>{e.status}</span>
                 <span className="history-url mono">{e.path}</span>
                 {e.exampleName !== undefined && <span className="resp-meta">{e.exampleName}</span>}
+                {e.source === 'spec' && (
+                  <span className="resp-meta" title={e.operationId}>
+                    spec
+                  </span>
+                )}
                 <span className="history-at">{new Date(e.at).toLocaleTimeString()}</span>
               </div>
             )

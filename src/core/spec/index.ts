@@ -117,6 +117,14 @@ export interface SpecDoc {
 
 export const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete', 'head', 'options']
 
+/**
+ * Collection-relative directory stored specs live in (hidden from the request
+ * tree). Declared here rather than in main/spec-store so the collection
+ * scanner can skip it without importing the store — which would close an
+ * import cycle now that the store walks the collection.
+ */
+export const SPEC_DIR = 'specs'
+
 /** A parsed, version-classified spec document. */
 export interface ParsedSpec {
   doc: SpecDoc

@@ -190,6 +190,9 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
   const [showSpec, setShowSpec] = useState(false)
   // OpenAPI operation this request validates against (frontmatter.spec).
   const [specRef, setSpecRef] = useState<SpecRef | null>(null)
+  // After detaching, offer to delete the stored file — with the other requests
+  // still pointing at it, so a shared spec isn't removed by surprise.
+  const [specDelete, setSpecDelete] = useState<{ path: string; alsoUsedBy: string[] } | null>(null)
   const [preScript, setPreScript] = useState('')
   const [testScript, setTestScript] = useState('')
   const [description, setDescription] = useState('')
@@ -621,6 +624,38 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
       return res.file
     }
     return assemble()
+  }
+
+  /**
+   * Detach the spec from this request, then ask whether to delete the stored
+   * file. The usage scan reads the collection from disk, where this request
+   * still carries the old reference until it is saved — so drop ourselves from
+   * the list to report only the requests that genuinely still need it.
+   */
+  async function detachSpec(): Promise<void> {
+    const ref = specRef
+    setSpecRef(null)
+    setShowSpec(false)
+    touch()
+    if (ref === null) return
+    let alsoUsedBy: string[] = []
+    try {
+      alsoUsedBy = (await fp().listSpecUsage({ root: props.root, path: ref.path })).filter(
+        (p) => p !== props.relPath
+      )
+    } catch {
+      /* usage is advisory; still offer the delete */
+    }
+    setSpecDelete({ path: ref.path, alsoUsedBy })
+  }
+
+  async function deleteSpecFile(path: string): Promise<void> {
+    setSpecDelete(null)
+    try {
+      await fp().deleteSpec({ root: props.root, path })
+    } catch (e) {
+      setError(errMsg(e))
+    }
   }
 
   async function save(): Promise<boolean> {
@@ -1073,14 +1108,7 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
         <div className="spec-chip-row">
           <span className="spec-chip" title={`Responses are validated against ${specRef.operationId} in ${specRef.path}`}>
             Spec: <span className="mono">{specRef.path}</span> · <span className="mono">{specRef.operationId}</span>
-            <button
-              className="icon-btn"
-              title="Detach the spec"
-              onClick={() => {
-                setSpecRef(null)
-                touch()
-              }}
-            >
+            <button className="icon-btn" title="Remove the spec" onClick={() => void detachSpec()}>
               ×
             </button>
           </span>
@@ -1923,7 +1951,35 @@ function RequestTab(props: Props, ref: ForwardedRef<TabHandle>): JSX.Element {
             setShowSpec(false)
             touch()
           }}
+          onRemove={() => void detachSpec()}
           onCancel={() => setShowSpec(false)}
+        />
+      )}
+
+      {specDelete !== null && (
+        <ConfirmModal
+          title="Delete the spec file?"
+          danger
+          message={
+            <>
+              <div>
+                The request no longer validates against a spec. Also delete{' '}
+                <span className="mono">{specDelete.path}</span> from the collection?
+              </div>
+              {specDelete.alsoUsedBy.length > 0 && (
+                <div className="banner banner-warn">
+                  Still used by {specDelete.alsoUsedBy.length} other request
+                  {specDelete.alsoUsedBy.length === 1 ? '' : 's'}:{' '}
+                  <span className="mono">{specDelete.alsoUsedBy.join(', ')}</span>. Deleting it will
+                  leave {specDelete.alsoUsedBy.length === 1 ? 'it' : 'them'} unable to validate.
+                </div>
+              )}
+            </>
+          }
+          confirmText="Delete file"
+          onConfirm={() => void deleteSpecFile(specDelete.path)}
+          cancelText="Keep file"
+          onCancel={() => setSpecDelete(null)}
         />
       )}
 

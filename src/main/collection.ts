@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'fs'
 import { join, relative, sep } from 'path'
 import type { TreeNode } from '../shared/model'
 import { requestKindForPath } from '../core/format'
-import { SPEC_DIR } from './spec-store'
+import { SPEC_DIR } from '../core/spec'
 
 /** PLAN.md leak guardrail: .freepost/ always carries a self-regenerating ignore-all. */
 export function ensureFreepostDir(root: string): string {

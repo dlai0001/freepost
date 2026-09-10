@@ -9,11 +9,12 @@ import { basename, extname, join, relative, resolve } from 'path'
 import type { HttpResponseModel, OpenApiOperationSummary, SpecRef, SpecValidationReport } from '../shared/model'
 import { listOpenApiOperations } from '../core/importers/openapi'
 import { sanitizePathSegment } from '../core/importers/postman'
-import { parseSpec, type ParsedSpec } from '../core/spec'
+import { parseRequestFile, requestKindForPath } from '../core/format'
+import { listFiles } from './collection'
+import { SPEC_DIR, parseSpec, type ParsedSpec } from '../core/spec'
 import { validateResponse } from '../core/spec/validate'
 
-/** Collection-relative directory specs are stored under (hidden from the request tree). */
-export const SPEC_DIR = 'specs'
+export { SPEC_DIR }
 
 /** Absolute path of a collection-relative spec, refusing paths that escape the root. */
 export function specAbsPath(root: string, rel: string): string {
@@ -24,6 +25,15 @@ export function specAbsPath(root: string, rel: string): string {
 }
 
 const cache = new Map<string, { mtimeMs: number; spec: ParsedSpec; text: string }>()
+
+/**
+ * Forget a cached parse. `readSpec` already invalidates on mtime, but a
+ * rewrite within the filesystem's timestamp granularity could otherwise slip
+ * through — so every write/delete drops the entry explicitly.
+ */
+function invalidate(abs: string): void {
+  cache.delete(abs)
+}
 
 /** Read + parse a stored spec, cached by mtime so repeated runs don't re-parse. */
 export async function readSpec(
@@ -75,12 +85,19 @@ export interface ImportedSpec {
   path: string
   version: string
   operations: OpenApiOperationSummary[]
+  /** True when an existing spec of the same name was overwritten. */
+  replaced: boolean
 }
 
 /**
  * Validate and store spec text under `specs/`, naming it after `preferredName`
- * (sanitised; extension normalised to .json/.yaml by content). An existing
- * file with the same name is never overwritten — the new one gets " (2)".
+ * (sanitised; extension normalised to .json/.yaml by content).
+ *
+ * Re-importing a spec of the same name **overwrites it in place** rather than
+ * writing a numbered copy. The path staying stable is the point: every request
+ * already pointing at it picks up the edit on its next send, which is what
+ * makes "edit the spec, re-import, done" work. A numbered copy instead left
+ * every existing request pinned to the stale original.
  */
 export async function importSpecText(root: string, text: string, preferredName: string): Promise<ImportedSpec> {
   const listed = listOpenApiOperations(text)
@@ -96,11 +113,38 @@ export async function importSpecText(root: string, text: string, preferredName: 
   const stem = sanitizePathSegment(basename(preferredName, extname(preferredName))) || 'openapi'
   const ext = isJson ? '.json' : '.yaml'
   await fs.mkdir(join(root, SPEC_DIR), { recursive: true })
-  // dedupeRelPath only knows the .curl extension, so suffix the stem here.
-  let rel = `${SPEC_DIR}/${stem}${ext}`
-  for (let n = 2; existsSync(join(root, rel)); n++) rel = `${SPEC_DIR}/${stem} (${n})${ext}`
-  await fs.writeFile(join(root, rel), text, 'utf8')
-  return { path: rel, version: listed.version, operations: listed.operations }
+  const rel = `${SPEC_DIR}/${stem}${ext}`
+  const abs = specAbsPath(root, rel)
+  const replaced = existsSync(abs)
+  await fs.writeFile(abs, text, 'utf8')
+  invalidate(abs)
+  return { path: rel, version: listed.version, operations: listed.operations, replaced }
+}
+
+/** Collection-relative paths of the requests whose frontmatter points at this spec. */
+export async function listSpecUsage(root: string, specPath: string): Promise<string[]> {
+  const out: string[] = []
+  for (const rel of await listFiles(root)) {
+    if (requestKindForPath(rel) !== 'curl') continue
+    let raw: string
+    try {
+      raw = await fs.readFile(join(root, rel), 'utf8')
+    } catch {
+      continue
+    }
+    const parsed = parseRequestFile(raw, 'curl')
+    if (!parsed.ok) continue
+    if (parsed.file.frontmatter.spec?.path === specPath) out.push(rel)
+  }
+  return out.sort()
+}
+
+/** Delete a stored spec. Refuses anything outside `specs/`. */
+export async function deleteSpec(root: string, rel: string): Promise<void> {
+  if (!rel.startsWith(`${SPEC_DIR}/`)) throw new Error(`not a stored spec: ${rel}`)
+  const abs = specAbsPath(root, rel)
+  await fs.rm(abs, { force: true })
+  invalidate(abs)
 }
 
 /** `importSpecText` for a file on disk (anywhere), named after its basename. */

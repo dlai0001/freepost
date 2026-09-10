@@ -93,6 +93,8 @@ export const IPC = {
   specList: 'spec:list', // ({ root }) => string[] — stored specs under specs/
   specImport: 'spec:import', // ({ root, source }) => { path, version, operations } — copy a spec into specs/
   specOperations: 'spec:operations', // ({ root, path }) => ListOpenApiResult — operations of a stored spec
+  specUsage: 'spec:usage', // ({ root, path }) => string[] — requests referencing this spec
+  specDelete: 'spec:delete', // ({ root, path }) => void — remove a stored spec file
 
   codegenTargets: 'codegen:targets', // () => CodegenTargetInfo[]
   codegenGenerate: 'codegen:generate', // ({ root, path, target, envPath?, resolve? }) => { code: string }
@@ -282,11 +284,20 @@ export interface FreepostApi {
 
   /** Collection-relative paths of the OpenAPI/Swagger documents stored under specs/. */
   listSpecs(args: { root: string }): Promise<string[]>
-  /** Copy a spec (a file anywhere on disk, or fetched text) into specs/ and list its operations. */
+  /**
+   * Copy a spec (a file anywhere on disk, or fetched text) into specs/ and list
+   * its operations. A spec of the same name is overwritten in place, so every
+   * request pointing at it picks up the new content; `replaced` says whether
+   * that happened.
+   */
   importSpec(args: {
     root: string
     source: { kind: 'file'; absPath: string } | { kind: 'text'; text: string; name: string }
-  }): Promise<{ path: string; version: string; operations: OpenApiOperationSummary[] }>
+  }): Promise<{ path: string; version: string; operations: OpenApiOperationSummary[]; replaced: boolean }>
+  /** Collection-relative paths of the requests whose frontmatter points at this spec. */
+  listSpecUsage(args: { root: string; path: string }): Promise<string[]>
+  /** Delete a stored spec file from specs/. */
+  deleteSpec(args: { root: string; path: string }): Promise<void>
   /** Operations of a stored spec. */
   listSpecOperations(args: { root: string; path: string }): Promise<
     { ok: true; operations: OpenApiOperationSummary[]; version: string } | { ok: false; error: string }

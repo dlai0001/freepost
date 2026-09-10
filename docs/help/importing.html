@@ -6,7 +6,7 @@
 <link rel="icon" type="image/png" href="../favicon.png">
 <link rel="apple-touch-icon" href="../apple-touch-icon.png">
 <title>Importing — Freepost Help</title>
-<meta name="description" content="Import requests into Freepost from a pasted curl command, a Postman collection file, or an OpenAPI/Swagger URL with per-endpoint selection.">
+<meta name="description" content="Import requests into Freepost from a pasted curl command, a Postman collection file, or an OpenAPI/Swagger spec with per-endpoint selection — and attach the spec so every response is validated against it.">
 <link rel="stylesheet" href="./style.css">
 </head>
 <body>
@@ -164,6 +164,16 @@
       closest documented response (fewest errors) is shown too, which is the fastest way to spot
       "this is really the 404 shape". Response headers declared in the spec are checked as well.
     </p>
+
+    <figure>
+      <img src="./images/spec-body-squiggles.png" alt="The response panel after sending: a red pill reads '✗ 4 mismatches vs 200 application/json', and the JSON body shows wavy underlines under an integer id (must be string), an unexpected email property, and the opening brace (missing required property role), each with its message inline.">
+      <figcaption>The Body tab: each mismatching value is underlined and explained in place.</figcaption>
+    </figure>
+
+    <figure>
+      <img src="./images/spec-schema-tab.png" alt="The Schema tab listing four problems against 200 application/json — a missing required property, an unexpected property, a type error at /id, and a missing required response header — followed by 'Closest documented response: 404 application/json (1 problem)'.">
+      <figcaption>The Schema tab: every problem with its JSON pointer, plus the closest documented response.</figcaption>
+    </figure>
     <p>
       To link a hand-written request, click <strong>Spec</strong> in the request toolbar: pick a
       spec already in <code>specs/</code>, or import one from a file or URL, then choose the
@@ -172,6 +182,16 @@
       powers the <a href="./mock-server.html">mock server's</a> spec fallback and the CLI's
       <code>--strict-spec</code> flag.
     </p>
+
+    <figure>
+      <img src="./images/spec-attach-modal.png" alt="The Attach OpenAPI spec dialog: tabs for In collection, From file and From URL; a dropdown showing specs/users.yaml; and a radio list of operations grouped by tag, with GET /users marked SUGGESTED.">
+      <figcaption>Attaching a spec by hand: the operation that matches the request's method and path is suggested.</figcaption>
+    </figure>
+
+    <figure>
+      <img src="./images/spec-chip.png" alt="The request toolbar with the Spec button highlighted and, beneath it, a chip reading 'Spec: specs/users.yaml · GET /users/{id}' with an × to detach.">
+      <figcaption>The chip under the toolbar shows which operation the request is linked to.</figcaption>
+    </figure>
 
     <footer class="docs-footer">
       Next: <a href="./organizing.html">Saving &amp; organizing your collection →</a>

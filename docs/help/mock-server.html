@@ -6,7 +6,7 @@
 <link rel="icon" type="image/png" href="../favicon.png">
 <link rel="apple-touch-icon" href="../apple-touch-icon.png">
 <title>Mock server — Freepost Help</title>
-<meta name="description" content="Run a local mock server from your saved response examples: mark an active example, override with a query or header, and serve routes offline or in CI.">
+<meta name="description" content="Run a local mock server from your saved response examples: mark an active example, override with a query or header, fall back to responses synthesised from your OpenAPI spec, and serve routes offline or in CI.">
 <link rel="stylesheet" href="./style.css">
 </head>
 <body>
@@ -125,6 +125,12 @@
       individual endpoints by saving real responses. The live log tags these entries
       <strong>spec</strong>.
     </p>
+
+    <figure>
+      <img src="./images/mock-server-spec-fallback.png" alt="The Mock server panel listening with '0 example route(s) · 3 spec route(s)', and a log showing GET /pets/7 answered 200 with a 'spec' tag and GET /nope answered 404.">
+      <figcaption>A collection with no saved examples still mocks: <code>/pets/7</code> was synthesised
+        from the attached spec, <code>/nope</code> fell through to 404.</figcaption>
+    </figure>
 
     <div class="callout callout-note">
       <div class="callout-title">Unmatched requests never leave your machine</div>

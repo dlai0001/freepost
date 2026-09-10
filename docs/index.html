@@ -623,7 +623,39 @@
         </svg>
         <div class="card-body">
           <h3><span class="ico"><svg viewBox="0 0 512 512" aria-hidden="true"><path d="M128 64c0-35.3 28.7-64 64-64L352 0l0 128c0 17.7 14.3 32 32 32l128 0 0 288c0 35.3-28.7 64-64 64l-256 0c-35.3 0-64-28.7-64-64l0-112 174.1 0-39 39c-9.4 9.4-9.4 24.6 0 33.9s24.6 9.4 33.9 0l80-80c9.4-9.4 9.4-24.6 0-33.9l-80-80c-9.4-9.4-24.6-9.4-33.9 0s-9.4 24.6 0 33.9l39 39L128 288l0-224zm0 224l0 48L24 336c-13.3 0-24-10.7-24-24s10.7-24 24-24l104 0zM512 128l-128 0L384 0 512 128z"/></svg></span>Import OpenAPI &amp; Swagger</h3>
-          <p>Point Freepost at any OpenAPI/Swagger spec URL, preview every endpoint, and pick exactly which ones to bring in. Each becomes a runnable curl file with sensible placeholder values already filled in.</p>
+          <p>Point Freepost at any OpenAPI/Swagger spec URL, preview every endpoint, and pick exactly which ones to bring in. Each becomes a runnable curl file with sensible placeholder values already filled in — and stays linked to its operation in the spec.</p>
+        </div>
+      </div>
+<div class="card">
+        <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A response body checked against its OpenAPI schema: a red verdict pill reads 3 mismatches, and the JSON has a wavy underline under a numeric id with the note 'must be string' and under an extra email property.">
+          <rect width="400" height="200" fill="#0a0d12"/>
+          <rect x="24" y="20" width="60" height="20" rx="10" fill="#238636" opacity="0.25" stroke="#3fb950"/>
+          <text x="54" y="34" font-family="ui-monospace, Menlo, monospace" font-size="11" font-weight="700" fill="#3fb950" text-anchor="middle">200 OK</text>
+          <rect x="94" y="20" width="200" height="20" rx="10" fill="#f85149" opacity="0.12" stroke="#f85149"/>
+          <text x="194" y="34" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" font-weight="600" fill="#f85149" text-anchor="middle">&#10007; 3 mismatches vs 200 application/json</text>
+          <g font-family="ui-monospace, Menlo, monospace" font-size="11.5">
+            <text x="24" y="66" fill="#e6edf3">{</text>
+            <text x="40" y="86" fill="#79c0ff">"id"</text><text x="70" y="86" fill="#e6edf3">:</text>
+            <text x="84" y="86" fill="#a5d6ff">1</text><text x="92" y="86" fill="#e6edf3">,</text>
+            <path d="M84 89 q2 2 4 0 t4 0" stroke="#f85149" stroke-width="1.2" fill="none"/>
+            <rect x="40" y="93" width="140" height="16" fill="#f85149" opacity="0.08"/>
+            <rect x="40" y="93" width="2" height="16" fill="#f85149"/>
+            <text x="48" y="105" font-family="-apple-system, Segoe UI, sans-serif" font-size="10" fill="#f85149">&#10007; must be string</text>
+            <text x="40" y="128" fill="#79c0ff">"name"</text><text x="86" y="128" fill="#e6edf3">:</text>
+            <text x="100" y="128" fill="#a5d6ff">"Ada Lovelace"</text><text x="198" y="128" fill="#e6edf3">,</text>
+            <text x="40" y="150" fill="#79c0ff">"email"</text><text x="94" y="150" fill="#e6edf3">:</text>
+            <text x="108" y="150" fill="#a5d6ff">"ada@example.com"</text>
+            <path d="M40 153 q2 2 4 0 t4 0 t4 0 t4 0 t4 0 t4 0 t4 0 t4 0 t4 0 t4 0 t4 0 t4 0 t4 0" stroke="#f85149" stroke-width="1.2" fill="none"/>
+            <rect x="40" y="157" width="190" height="16" fill="#f85149" opacity="0.08"/>
+            <rect x="40" y="157" width="2" height="16" fill="#f85149"/>
+            <text x="48" y="169" font-family="-apple-system, Segoe UI, sans-serif" font-size="10" fill="#f85149">&#10007; unexpected property "email"</text>
+            <text x="24" y="190" fill="#e6edf3">}</text>
+          </g>
+          <text x="376" y="190" font-family="-apple-system, Segoe UI, sans-serif" font-size="11" fill="#8b949e" text-anchor="end">closest: <tspan fill="#e6edf3">404 application/json</tspan></text>
+        </svg>
+        <div class="card-body">
+          <h3><span class="ico"><svg viewBox="0 0 512 512" aria-hidden="true"><path d="M256 0c4.6 0 9.2 1 13.4 2.9L457.7 82.8c22 9.3 38.4 31 38.3 57.2c-.5 99.2-41.3 280.7-213.6 363.2c-16.7 8-36.1 8-52.8 0C57.3 420.7 16.5 239.2 16 140c-.1-26.2 16.3-47.9 38.3-57.2L242.7 2.9C246.8 1 251.4 0 256 0zm0 66.8l0 378.1C394 378 431.1 230.1 432 141.4L256 66.8s0 0 0 0z"/></svg></span>Every response checked against the spec</h3>
+          <p>Attach an OpenAPI or Swagger operation to a request and each response is validated against its documented schema — status, body, and headers. Mismatches are underlined right in the JSON with the reason inline, and when the shape doesn't fit, Freepost tells you which documented response it <em>does</em> match. Works in the app, the CLI (<code>--strict-spec</code> for CI), and MCP.</p>
         </div>
       </div>
 <div class="card">
@@ -652,7 +684,7 @@
         </div>
       </div>
 <div class="card">
-        <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A mock server: an app calls a local port and gets back a saved 200 example; an unmatched path gets a 404.">
+        <svg class="shot" viewBox="0 0 400 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A mock server: an app calls a local port and gets back a saved 200 example; a path with no example is answered from the OpenAPI spec; an unmatched path gets a 404.">
           <rect width="400" height="200" fill="#0a0d12"/>
           <rect x="24" y="40" width="96" height="120" rx="8" fill="#0d1117" stroke="#30363d"/>
           <text x="72" y="106" font-family="-apple-system, Segoe UI, sans-serif" font-size="12" fill="#8b949e" text-anchor="middle">your app</text>
@@ -666,13 +698,14 @@
             <path d="M276 100 L124 100" stroke="#8b949e" stroke-width="1.5"/>
             <path d="M124 100 l8 -4 v8 z" fill="#8b949e"/>
             <text x="200" y="116" fill="#e6edf3" text-anchor="middle">200 · saved example</text>
-            <path d="M124 134 L276 134" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4 3"/>
-            <text x="200" y="152" fill="#f85149" text-anchor="middle">/nope → 404 (never proxied)</text>
+            <path d="M124 134 L276 134" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="4 3"/>
+            <text x="200" y="152" fill="#58a6ff" text-anchor="middle">GET /pets/7 → 200 · from the spec</text>
+            <text x="200" y="180" fill="#f85149" text-anchor="middle">/nope → 404 (never proxied)</text>
           </g>
         </svg>
         <div class="card-body">
           <h3><span class="ico"><svg viewBox="0 0 512 512" aria-hidden="true"><path d="M192 104.8c0-9.2-5.8-17.3-13.2-22.8C167.2 73.3 160 61.3 160 48c0-26.5 28.7-48 64-48s64 21.5 64 48c0 13.3-7.2 25.3-18.8 34c-7.4 5.5-13.2 13.6-13.2 22.8c0 12.8 10.4 23.2 23.2 23.2l56.8 0c26.5 0 48 21.5 48 48l0 56.8c0 12.8 10.4 23.2 23.2 23.2c9.2 0 17.3-5.8 22.8-13.2c8.7-11.6 20.7-18.8 34-18.8c26.5 0 48 28.7 48 64s-21.5 64-48 64c-13.3 0-25.3-7.2-34-18.8c-5.5-7.4-13.6-13.2-22.8-13.2c-12.8 0-23.2 10.4-23.2 23.2L384 464c0 26.5-21.5 48-48 48l-56.8 0c-12.8 0-23.2-10.4-23.2-23.2c0-9.2 5.8-17.3 13.2-22.8c11.6-8.7 18.8-20.7 18.8-34c0-26.5-28.7-48-64-48s-64 21.5-64 48c0 13.3 7.2 25.3 18.8 34c7.4 5.5 13.2 13.6 13.2 22.8c0 12.8-10.4 23.2-23.2 23.2L48 512c-26.5 0-48-21.5-48-48L0 343.2C0 330.4 10.4 320 23.2 320c9.2 0 17.3 5.8 22.8 13.2C54.7 344.8 66.7 352 80 352c26.5 0 48-28.7 48-64s-21.5-64-48-64c-13.3 0-25.3 7.2-34 18.8C40.5 250.2 32.4 256 23.2 256C10.4 256 0 245.6 0 232.8L0 176c0-26.5 21.5-48 48-48l120.8 0c12.8 0 23.2-10.4 23.2-23.2z"/></svg></span>Mock server from your examples</h3>
-          <p>Serve your saved response examples over a local HTTP port — no real backend needed. Mark an example active, or force one with a query param. Unmatched paths return 404 and never proxy out, so it stays fully offline. Runs from the app or <code>freepost mock</code> in CI.</p>
+          <p>Serve your saved response examples over a local HTTP port — no real backend needed. Mark an example active, or force one with a query param. Endpoints with no example fall back to responses synthesised from your attached OpenAPI spec; anything else returns 404 and never proxies out, so it stays fully offline. Runs from the app or <code>freepost mock</code> in CI.</p>
         </div>
       </div>
 <div class="card">

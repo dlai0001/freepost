@@ -228,3 +228,67 @@ describe('validateResponse (OpenAPI 3.1)', () => {
     expect(r.errors.map((e) => `${e.keyword}${e.instancePath}`).sort()).toEqual(['exclusiveMinimum/n', 'type/v'])
   })
 })
+
+describe('OpenAPI 3.0 nullable on composed schemas', () => {
+  // `nullable: true` carries no `type` of its own when the types come from a
+  // composition keyword, a $ref, or an enum — widening `type` is not enough.
+  const spec = parse({
+    openapi: '3.0.3',
+    info: { title: 't', version: '1' },
+    components: {
+      schemas: {
+        Cat: { type: 'object', required: ['meow'], properties: { meow: { type: 'boolean' } } },
+        Dog: { type: 'object', required: ['woof'], properties: { woof: { type: 'boolean' } } }
+      }
+    },
+    paths: {
+      '/x': {
+        get: {
+          responses: {
+            '200': {
+              description: 'ok',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      any: { nullable: true, anyOf: [{ $ref: '#/components/schemas/Cat' }, { $ref: '#/components/schemas/Dog' }] },
+                      one: { nullable: true, oneOf: [{ type: 'string' }, { type: 'integer' }] },
+                      all: { nullable: true, allOf: [{ $ref: '#/components/schemas/Cat' }] },
+                      ref: { nullable: true, $ref: '#/components/schemas/Cat' },
+                      choice: { nullable: true, type: 'string', enum: ['a', 'b'] },
+                      plain: { nullable: true, type: 'integer' }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  })
+  const run3 = (body: unknown) => run(spec, resp(200, body), 'GET /x')
+
+  it('accepts null for anyOf / oneOf / allOf / $ref / enum / plain', () => {
+    const r = run3({ any: null, one: null, all: null, ref: null, choice: null, plain: null })
+    expect(r.errors).toEqual([])
+    expect(r.verdict).toBe('match')
+  })
+
+  it('still accepts legitimate non-null values', () => {
+    const r = run3({ any: { meow: true }, one: 'x', all: { meow: false }, ref: { meow: true }, choice: 'b', plain: 7 })
+    expect(r.errors).toEqual([])
+  })
+
+  it('still rejects values that match neither null nor the schema', () => {
+    const paths = run3({ any: { oink: true }, one: true, choice: 'z', plain: 'nope' }).errors.map((e) => e.instancePath)
+    for (const p of ['/any', '/one', '/choice', '/plain']) expect(paths).toContain(p)
+  })
+
+  it('keeps the plain-type error message specific (no anyOf wrapping)', () => {
+    const err = run3({ plain: 'nope' }).errors.find((e) => e.instancePath === '/plain')
+    expect(err?.keyword).toBe('type')
+    expect(err?.message).toBe('must be integer,null')
+  })
+})

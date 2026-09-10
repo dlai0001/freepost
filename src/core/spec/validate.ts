@@ -62,8 +62,29 @@ export function prepareSchemaDoc(spec: ParsedSpec): Record<string, unknown> {
     if (!node || typeof node !== 'object') return
     const obj = node as Record<string, unknown>
     if (obj.nullable === true) {
-      if (typeof obj.type === 'string') obj.type = [obj.type, 'null']
-      else if (Array.isArray(obj.type) && !obj.type.includes('null')) obj.type = [...obj.type, 'null']
+      delete obj.nullable
+      // A bare `type` can simply be widened, which keeps ajv's error messages
+      // specific ("must be integer,null"). But `nullable` carries no type of
+      // its own when the permitted values come from a composition keyword, a
+      // $ref, or an enum — widening does nothing there (and for a $ref the
+      // sibling is ignored outright), so null has to be offered as its own
+      // alternative: "null, or whatever the original schema said".
+      const composed =
+        obj.enum !== undefined ||
+        obj.$ref !== undefined ||
+        obj.anyOf !== undefined ||
+        obj.oneOf !== undefined ||
+        obj.allOf !== undefined ||
+        obj.not !== undefined
+      if (!composed && typeof obj.type === 'string') {
+        obj.type = [obj.type, 'null']
+      } else if (!composed && Array.isArray(obj.type)) {
+        if (!obj.type.includes('null')) obj.type = [...obj.type, 'null']
+      } else {
+        const inner = { ...obj }
+        for (const k of Object.keys(obj)) delete obj[k]
+        obj.anyOf = [{ type: 'null' }, inner]
+      }
     }
     if (obj.type === 'file') delete obj.type
     if (spec.isSwagger2) {

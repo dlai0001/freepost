@@ -25,6 +25,15 @@ interface Props {
   graphqlSchema?: GraphQLSchema | null
   /** When set, `${VAR}` references are highlighted and get a hover hint. */
   varLookup?: VarLookup
+  /**
+   * Extra extensions (e.g. diagnostics decorations). Held in a compartment and
+   * reconfigured whenever the array identity changes, so pass a memoised value.
+   */
+  extraExtensions?: Extension[]
+  /** Fill the host's height instead of sizing by `rows` (host must be a flex/height-constrained box). */
+  fill?: boolean
+  /** Called once with the live view, for callers that need to scroll/select programmatically. */
+  onViewReady?: (view: EditorView) => void
 }
 
 function languageExtension(lang: EditorLanguage, schema?: GraphQLSchema | null): Extension {
@@ -35,21 +44,21 @@ function languageExtension(lang: EditorLanguage, schema?: GraphQLSchema | null):
 }
 
 /** Editor chrome themed to match the app's GitHub-dark palette (styles.css vars). */
-function theme(rows: number): ReturnType<typeof EditorView.theme> {
+function theme(rows: number, fill: boolean): ReturnType<typeof EditorView.theme> {
   return EditorView.theme({
     '&': {
       color: 'var(--text)',
       backgroundColor: 'var(--bg)',
       border: '1px solid var(--border)',
       borderRadius: '6px',
-      fontSize: '13px'
+      fontSize: '13px',
+      ...(fill ? { height: '100%' } : {})
     },
     '&.cm-focused': { outline: 'none', borderColor: 'var(--accent)' },
     '.cm-scroller': {
       fontFamily: 'ui-monospace, Menlo, Consolas, monospace',
       lineHeight: '1.5',
-      minHeight: `${rows * 1.5 + 1}em`,
-      maxHeight: '60vh'
+      ...(fill ? { minHeight: '0', maxHeight: 'none' } : { minHeight: `${rows * 1.5 + 1}em`, maxHeight: '60vh' })
     },
     '.cm-content': { caretColor: 'var(--text)' },
     '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--text)' },
@@ -80,6 +89,7 @@ export default function CodeEditor(props: Props): JSX.Element {
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
   const langComp = useRef(new Compartment())
+  const extraComp = useRef(new Compartment())
   const onChangeRef = useRef(props.onChange)
   onChangeRef.current = props.onChange
   // Read live inside the CodeMirror extension so decorations/tooltips always
@@ -97,10 +107,11 @@ export default function CodeEditor(props: Props): JSX.Element {
         langComp.current.of(languageExtension(props.language ?? 'text', props.graphqlSchema)),
         syntaxHighlighting(oneDarkHighlightStyle),
         variableHighlighting(() => varLookupRef.current ?? null),
-        theme(props.rows ?? 8),
+        theme(props.rows ?? 8, props.fill === true),
         EditorView.lineWrapping,
         EditorState.readOnly.of(props.readOnly === true),
         props.placeholder !== undefined ? cmPlaceholder(props.placeholder) : [],
+        extraComp.current.of(props.extraExtensions ?? []),
         EditorView.updateListener.of((u) => {
           if (u.docChanged) onChangeRef.current(u.state.doc.toString())
         })
@@ -108,6 +119,7 @@ export default function CodeEditor(props: Props): JSX.Element {
     })
     const v = new EditorView({ state, parent: host.current })
     view.current = v
+    props.onViewReady?.(v)
     return () => {
       v.destroy()
       view.current = null
@@ -143,5 +155,10 @@ export default function CodeEditor(props: Props): JSX.Element {
     view.current?.dispatch({ effects: refreshVarsEffect.of(null) })
   }, [props.varLookup])
 
-  return <div className="cm-host" ref={host} />
+  // Swap in caller-supplied extensions (e.g. a fresh set of spec diagnostics).
+  useEffect(() => {
+    view.current?.dispatch({ effects: extraComp.current.reconfigure(props.extraExtensions ?? []) })
+  }, [props.extraExtensions])
+
+  return <div className={'cm-host' + (props.fill === true ? ' cm-host-fill' : '')} ref={host} />
 }

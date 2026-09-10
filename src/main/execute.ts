@@ -31,6 +31,7 @@ import { ensureFreepostDir } from './collection'
 import { loadJar, saveJar } from './cookie-store'
 import { isExpired, readCachedToken, writeCachedToken } from './oauth-cache'
 import { resolveConfigChain } from './config-resolve'
+import { validateResponseAgainstSpec } from './spec-store'
 
 /** One in-memory cookie jar per collection root, loaded from disk on first access. */
 const jars = new Map<string, CookieJar>()
@@ -87,6 +88,12 @@ export interface ExecuteArgs {
    * inherited collection/folder config. Disk callers (CLI, workflows) omit it.
    */
   model?: RequestFile
+  /**
+   * Treat a response that mismatches the request's attached OpenAPI spec (or
+   * carries an undocumented status) as a failure (`errored`). Off by default:
+   * the validation report is always attached, but only opts in to exit codes.
+   */
+  strictSpec?: boolean
 }
 
 /** Full request execution: parse -> pre-script -> resolve -> send -> test-script. */
@@ -367,6 +374,14 @@ export async function executeRequest(args: ExecuteArgs): Promise<ExecutionReport
   }
 
   if (response !== undefined && response.status >= 400) report.errored = true
+
+  // Spec validation: attached whenever the request links an OpenAPI operation;
+  // only --strict-spec lets it fail the run.
+  if (response !== undefined && file.frontmatter.spec !== undefined) {
+    report.specValidation = await validateResponseAgainstSpec(root, file.frontmatter.spec, response)
+    const v = report.specValidation.verdict
+    if (args.strictSpec === true && (v === 'mismatch' || v === 'undocumented-status')) report.errored = true
+  }
 
   appendHistory(root, {
     at: new Date().toISOString(),

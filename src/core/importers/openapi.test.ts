@@ -247,4 +247,17 @@ describe('importOpenApi — selectedIds filter', () => {
     if (!res.ok) throw new Error(res.error)
     expect(res.files).toHaveLength(0)
   })
+
+  it('reports each file\'s operation id and stamps frontmatter.spec when given a specPath', () => {
+    const plain = importOpenApi(JSON.stringify(openapi3))
+    if (!plain.ok) throw new Error(plain.error)
+    expect(plain.files.map((f) => f.operationId).sort()).toEqual(['GET /users/{id}', 'POST /orders'])
+    expect(plain.files.every((f) => f.file.frontmatter.spec === undefined)).toBe(true)
+
+    const stamped = importOpenApi(JSON.stringify(openapi3), { specPath: 'specs/api.json' })
+    if (!stamped.ok) throw new Error(stamped.error)
+    for (const f of stamped.files) {
+      expect(f.file.frontmatter.spec).toEqual({ path: 'specs/api.json', operationId: f.operationId })
+    }
+  })
 })

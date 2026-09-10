@@ -83,6 +83,8 @@
       <li>A <strong>Postman collection</strong> (v2.1 JSON export) — folders, requests, and
         <code>pm.*</code> scripts import as-is; Postman's <code>{{var}}</code> syntax converts
         to Freepost's <code>${VAR}</code>.</li>
+      <li>An <strong>OpenAPI 3.x / Swagger 2.0</strong> document (JSON or YAML) — one request per
+        operation, grouped by tag.</li>
       <li>Any <strong>shell script</strong> containing a single <code>curl</code>,
         <code>websocat</code>, or <code>wscat</code> command.</li>
     </ul>
@@ -140,6 +142,36 @@
       Imports only ever add new <code>.curl</code> files — nothing else in your collection is
       touched. Run an OpenAPI import again later and just select the new endpoints.
     </div>
+
+    <h2 id="attach-spec">Attach a spec: validate responses against it</h2>
+    <p>
+      Both OpenAPI import paths have <strong>Copy the spec into <code>specs/</code> and attach it</strong>
+      checked by default. The document is stored in your collection (so it's versioned with your
+      requests) and every imported request records which operation it came from in its frontmatter:
+    </p>
+    <pre><code># ---
+# spec:
+#   path: specs/petstore.yaml
+#   operationId: GET /pets/{id}
+# ---</code></pre>
+    <p>
+      From then on, every response is checked against that operation's documented response for
+      its status code. The response panel shows a verdict pill next to the status
+      (<strong>✓ matches 200 application/json</strong>, <strong>✗ 3 mismatches</strong>, or
+      <strong>⚠ status undocumented</strong>), the <strong>Body</strong> tab underlines each
+      offending value in red with the reason inline, and the <strong>Schema</strong> tab lists
+      every problem — click one to jump to it. When the documented response doesn't fit, the
+      closest documented response (fewest errors) is shown too, which is the fastest way to spot
+      "this is really the 404 shape". Response headers declared in the spec are checked as well.
+    </p>
+    <p>
+      To link a hand-written request, click <strong>Spec</strong> in the request toolbar: pick a
+      spec already in <code>specs/</code>, or import one from a file or URL, then choose the
+      operation — the one matching the request's method and path is suggested. A chip under the
+      toolbar shows the attached operation; its <strong>×</strong> detaches it. The same link
+      powers the <a href="./mock-server.html">mock server's</a> spec fallback and the CLI's
+      <code>--strict-spec</code> flag.
+    </p>
 
     <footer class="docs-footer">
       Next: <a href="./organizing.html">Saving &amp; organizing your collection →</a>

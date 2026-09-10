@@ -1,5 +1,6 @@
 /**
- * Mock HTTP server: replays a collection's saved response examples. Part of
+ * Mock HTTP server: replays a collection's saved response examples, falling
+ * back to responses synthesised from attached OpenAPI specs. Part of
  * src/engine — the only place allowed to open a socket. Unlike the rest of the
  * engine this opens a *listening* socket, but only one the user explicitly
  * starts, and it is bound to loopback by default. Routing/selection logic is
@@ -9,13 +10,16 @@ import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import type { AddressInfo, Socket } from 'node:net'
 import type { MockRequestLogEntry } from '../shared/model'
-import type { MockRoute } from '../core/mock/router'
+import type { MockRoute, RouteSegment } from '../core/mock/router'
 import { matchRoute, pickExample } from '../core/mock/router'
+import type { SpecRoute } from '../core/spec/mock'
 
 export type MockState = 'idle' | 'listening' | 'stopped'
 
 export interface MockStartArgs {
   routes: MockRoute[]
+  /** Fallback routes synthesised from attached OpenAPI specs; tried after `routes`. */
+  specRoutes?: SpecRoute[]
   /** 0 (default) picks an ephemeral port. */
   port?: number
   /** Defaults to 127.0.0.1 — never bind 0.0.0.0 implicitly. */
@@ -37,7 +41,7 @@ const SKIP_HEADERS = new Set([
 ])
 
 /** Human-readable route pattern, e.g. `GET /users/:id`. */
-function routePattern(r: MockRoute): string {
+function routePattern(r: { method: string; segments: RouteSegment[] }): string {
   const p = r.segments.map((s) => ('literal' in s ? s.literal : `:${s.param}`)).join('/')
   return `${r.method} /${p}`
 }
@@ -46,6 +50,7 @@ export class MockServer {
   private server?: Server
   private readonly sockets = new Set<Socket>()
   private routes: MockRoute[] = []
+  private specRoutes: SpecRoute[] = []
   private _state: MockState = 'idle'
   private _port?: number
   private readonly listeners: { [E in keyof MockServerEvents]: MockServerEvents[E][] } = {
@@ -81,12 +86,40 @@ export class MockServer {
     const at = new Date().toISOString()
 
     if (match === null) {
+      // No saved example: fall back to a response synthesised from an attached spec.
+      const specMatch = matchRoute(this.specRoutes, method, url.pathname)
+      if (specMatch !== null) {
+        const r = specMatch.route
+        res.statusCode = r.status
+        for (const h of r.headers) {
+          try {
+            res.setHeader(h.name, h.value)
+          } catch {
+            /* skip an invalid header name/value from the spec */
+          }
+        }
+        res.end(r.bodyText)
+        this.emit('request', {
+          method,
+          path: url.pathname,
+          status: r.status,
+          matched: true,
+          source: 'spec',
+          operationId: r.operationId,
+          sourcePath: r.specPath,
+          at
+        })
+        return
+      }
       const body = JSON.stringify(
         {
           error: 'no matching mock route',
           method,
           path: url.pathname,
-          availableRoutes: this.routes.map(routePattern)
+          availableRoutes: [
+            ...this.routes.map(routePattern),
+            ...this.specRoutes.map((r) => `${routePattern(r)} (spec)`)
+          ]
         },
         null,
         2
@@ -133,6 +166,7 @@ export class MockServer {
       path: url.pathname,
       status: example.response.status,
       matched: true,
+      source: 'example',
       exampleName: example.name,
       sourcePath: match.route.sourcePath,
       at
@@ -143,6 +177,7 @@ export class MockServer {
   async start(args: MockStartArgs): Promise<{ port: number }> {
     if (this._state === 'listening') throw new Error('Mock server is already running')
     this.routes = args.routes
+    this.specRoutes = args.specRoutes ?? []
     const host = args.host ?? '127.0.0.1'
     const server = createServer((req, res) => this.handle(req, res))
     this.server = server

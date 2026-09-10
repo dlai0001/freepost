@@ -9,7 +9,7 @@
  * grouped into folders by first tag, else by first path segment. Server /
  * host info collapses into a single `BASE_URL` variable; path templates
  * (`{id}`) and header/query parameters become `${VAR}` references, each with a
- * generated VariableDecl.
+ * generated VariableDecl. Spec parsing/deref/example helpers live in core/spec.
  */
 
 import type {
@@ -21,90 +21,29 @@ import type {
   VariableDecl
 } from '@shared/model'
 import { sanitizePathSegment, sanitizeVarName } from './postman'
-import * as yaml from 'js-yaml'
+import {
+  HTTP_METHODS,
+  derefSchema,
+  exampleFromMediaType,
+  exampleFromSchema,
+  operationId,
+  parseSpecDoc,
+  resolveBaseUrl,
+  specVersionLabel,
+  type OperationObject,
+  type ParameterObject,
+  type SchemaObject,
+  type SecurityScheme,
+  type SpecDoc
+} from '../spec'
 
 export type ImportResult =
-  | { ok: true; files: { relPath: string; file: RequestFile }[]; note?: string }
+  | { ok: true; files: { relPath: string; file: RequestFile; operationId: string }[]; note?: string }
   | { ok: false; error: string }
 
 export type ListOpenApiResult =
   | { ok: true; operations: OpenApiOperationSummary[]; version: string }
   | { ok: false; error: string }
-
-/* ------------------------------ spec shapes ------------------------------ */
-/* Module-local structural types for the slice of the specs we read. */
-
-interface SchemaObject {
-  type?: string
-  format?: string
-  properties?: Record<string, SchemaObject>
-  items?: SchemaObject
-  required?: string[]
-  example?: unknown
-  examples?: unknown
-  default?: unknown
-  enum?: unknown[]
-  $ref?: string
-  allOf?: SchemaObject[]
-}
-
-interface MediaTypeObject {
-  schema?: SchemaObject
-  example?: unknown
-  examples?: Record<string, { value?: unknown }>
-}
-
-interface ParameterObject {
-  name?: string
-  in?: string
-  required?: boolean
-  schema?: SchemaObject
-  type?: string // Swagger 2 inline type
-  description?: string
-}
-
-interface RequestBodyObject {
-  content?: Record<string, MediaTypeObject>
-  required?: boolean
-}
-
-interface OperationObject {
-  operationId?: string
-  tags?: string[]
-  summary?: string
-  description?: string
-  parameters?: ParameterObject[]
-  requestBody?: RequestBodyObject
-  consumes?: string[] // Swagger 2
-  security?: Array<Record<string, string[]>>
-}
-
-type PathItem = Record<string, unknown> & { parameters?: ParameterObject[] }
-
-interface SecurityScheme {
-  type?: string
-  scheme?: string // http: bearer/basic
-  in?: string // apiKey: header/query
-  name?: string // apiKey header/query name
-  flows?: unknown
-}
-
-interface SpecDoc {
-  openapi?: string
-  swagger?: string
-  servers?: Array<{ url?: string }>
-  host?: string
-  basePath?: string
-  schemes?: string[]
-  paths?: Record<string, PathItem>
-  security?: Array<Record<string, string[]>>
-  components?: { securitySchemes?: Record<string, SecurityScheme> }
-  securityDefinitions?: Record<string, SecurityScheme>
-  /** Resolved BASE_URL default, stashed on the doc during import. */
-  __baseUrlDefault?: string
-}
-
-const HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete', 'head', 'options']
 
 const VAR_REF = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g
 
@@ -113,100 +52,6 @@ function collectVarRefs(text: string, into: Set<string>): void {
 }
 
 /* -------------------------------- helpers -------------------------------- */
-
-/** Parse JSON, falling back to YAML. Returns undefined on total failure. */
-function parseDocument(text: string): unknown {
-  try {
-    return JSON.parse(text)
-  } catch {
-    /* fall through to YAML */
-  }
-  try {
-    return yaml.load(text)
-  } catch {
-    return undefined
-  }
-}
-
-/** Resolve a local `#/...` $ref against the root document. */
-function resolveRef(ref: string, root: SpecDoc): SchemaObject | undefined {
-  if (!ref.startsWith('#/')) return undefined
-  const parts = ref.slice(2).split('/')
-  let cur: unknown = root
-  for (const p of parts) {
-    if (cur && typeof cur === 'object') {
-      cur = (cur as Record<string, unknown>)[decodeURIComponent(p.replace(/~1/g, '/').replace(/~0/g, '~'))]
-    } else {
-      return undefined
-    }
-  }
-  return cur as SchemaObject | undefined
-}
-
-/** Follow a $ref (once, guarded) and flatten a shallow allOf merge. */
-function derefSchema(schema: SchemaObject | undefined, root: SpecDoc, seen = new Set<string>()): SchemaObject | undefined {
-  if (!schema) return undefined
-  if (schema.$ref) {
-    if (seen.has(schema.$ref)) return {}
-    seen.add(schema.$ref)
-    return derefSchema(resolveRef(schema.$ref, root), root, seen)
-  }
-  if (Array.isArray(schema.allOf)) {
-    const merged: SchemaObject = { type: 'object', properties: {} }
-    for (const part of schema.allOf) {
-      const d = derefSchema(part, root, seen)
-      if (d?.properties) merged.properties = { ...merged.properties, ...d.properties }
-    }
-    return merged
-  }
-  return schema
-}
-
-/**
- * Build a minimal example value for a schema: honor an explicit example,
- * else synthesize from type/properties (string => "", number => 0,
- * boolean => false, object => nested, array => [items]).
- */
-function exampleFromSchema(schema: SchemaObject | undefined, root: SpecDoc, depth = 0): unknown {
-  const s = derefSchema(schema, root)
-  if (!s) return null
-  if (s.example !== undefined) return s.example
-  if (Array.isArray(s.enum) && s.enum.length > 0) return s.enum[0]
-  if (s.default !== undefined) return s.default
-  if (depth > 6) return null
-
-  const type = s.type ?? (s.properties ? 'object' : undefined)
-  switch (type) {
-    case 'string':
-      return ''
-    case 'integer':
-    case 'number':
-      return 0
-    case 'boolean':
-      return false
-    case 'array':
-      return [exampleFromSchema(s.items, root, depth + 1)]
-    case 'object':
-    default: {
-      const out: Record<string, unknown> = {}
-      for (const [key, propSchema] of Object.entries(s.properties ?? {})) {
-        out[key] = exampleFromSchema(propSchema, root, depth + 1)
-      }
-      return out
-    }
-  }
-}
-
-/** Pull an example out of a media type object (example / examples / schema). */
-function exampleFromMediaType(mt: MediaTypeObject | undefined, root: SpecDoc): unknown {
-  if (!mt) return undefined
-  if (mt.example !== undefined) return mt.example
-  if (mt.examples) {
-    const first = Object.values(mt.examples)[0]
-    if (first && typeof first === 'object' && 'value' in first) return first.value
-  }
-  return exampleFromSchema(mt.schema, root)
-}
 
 /** Convert `{param}` path templates to `${param}`, registering each var. */
 function templatizePath(path: string, refs: Set<string>): string {
@@ -220,11 +65,6 @@ function templatizePath(path: string, refs: Set<string>): string {
 /** Case-insensitive header presence check. */
 function hasHeader(headers: Header[], name: string): boolean {
   return headers.some((h) => h.name.toLowerCase() === name.toLowerCase())
-}
-
-/** Stable per-operation selection key shared by `listOpenApiOperations` and `importOpenApi`'s filter. */
-function operationId(method: string, path: string): string {
-  return `${method.toUpperCase()} ${path}`
 }
 
 /** Suffix a candidate relPath with " (2)", " (3)", ... until `isTaken` returns false. */
@@ -460,40 +300,6 @@ function applySecurity(
 
 /* --------------------------------- entry --------------------------------- */
 
-/** Resolve the BASE_URL default from OpenAPI 3 servers or Swagger 2 host. */
-function resolveBaseUrl(doc: SpecDoc, isSwagger2: boolean): string {
-  if (isSwagger2) {
-    const scheme = doc.schemes && doc.schemes.length > 0 ? doc.schemes[0] : 'https'
-    const host = doc.host && doc.host.length > 0 ? doc.host : 'localhost'
-    const basePath = doc.basePath ?? ''
-    return `${scheme}://${host}${basePath}`
-  }
-  const raw = doc.servers?.[0]?.url ?? ''
-  if (!raw) return ''
-  // Server URLs may contain {var} template segments; keep the literal text
-  // as the BASE_URL default (a runnable default beats a dangling template).
-  return raw.replace(/\{([^{}]+)\}/g, (_m, _name: string) => `${_name}`)
-}
-
-/** Parse + validate the document shape shared by `importOpenApi` and `listOpenApiOperations`. */
-function parseSpecDoc(text: string): { ok: true; doc: SpecDoc; isSwagger2: boolean } | { ok: false; error: string } {
-  const data = parseDocument(text)
-  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
-    return { ok: false, error: 'document root must be a JSON/YAML object' }
-  }
-  const doc = data as SpecDoc
-
-  const isOpenApi3 = typeof doc.openapi === 'string' && doc.openapi.startsWith('3')
-  const isSwagger2 = typeof doc.swagger === 'string' && doc.swagger.startsWith('2')
-  if (!isOpenApi3 && !isSwagger2) {
-    return { ok: false, error: 'not an OpenAPI 3.x or Swagger 2.0 document: missing "openapi"/"swagger" version' }
-  }
-  if (!doc.paths || typeof doc.paths !== 'object' || Array.isArray(doc.paths)) {
-    return { ok: false, error: 'not a valid spec: missing "paths" object' }
-  }
-  return { ok: true, doc, isSwagger2 }
-}
-
 /**
  * Enumerate every operation (path x method) in a spec without converting it —
  * cheap (no schema deref / example synthesis), for previewing a spec before
@@ -522,8 +328,7 @@ export function listOpenApiOperations(text: string): ListOpenApiResult {
     }
   }
 
-  const version = isSwagger2 ? 'Swagger 2.0' : `OpenAPI ${doc.openapi}`
-  return { ok: true, operations, version }
+  return { ok: true, operations, version: specVersionLabel(doc, isSwagger2) }
 }
 
 /**
@@ -532,13 +337,20 @@ export function listOpenApiOperations(text: string): ListOpenApiResult {
  * is given, only operations whose `${METHOD} ${path}` id is in the set are
  * converted/written; omitted entirely, every operation is imported (existing
  * behavior). Selecting an empty set still yields `ok: true, files: []` as
- * long as the spec itself defines at least one operation.
+ * long as the spec itself defines at least one operation. With `opts.specPath`
+ * (the collection-relative path the caller stored the spec under) every file
+ * gets `frontmatter.spec` pointing at its operation, so responses validate
+ * against the spec and the mock server can synthesise from it.
  */
-export function importOpenApi(text: string, opts?: { selectedIds?: Set<string> }): ImportResult {
+export function importOpenApi(
+  text: string,
+  opts?: { selectedIds?: Set<string>; specPath?: string }
+): ImportResult {
   const parsed = parseSpecDoc(text)
   if (!parsed.ok) return parsed
   const { doc, isSwagger2 } = parsed
   const selectedIds = opts?.selectedIds
+  const specPath = opts?.specPath
 
   doc.__baseUrlDefault = resolveBaseUrl(doc, isSwagger2)
 
@@ -547,7 +359,7 @@ export function importOpenApi(text: string, opts?: { selectedIds?: Set<string> }
     : doc.components?.securitySchemes ?? {}
   const globalSecurity = doc.security ?? []
 
-  const files: { relPath: string; file: RequestFile }[] = []
+  const files: { relPath: string; file: RequestFile; operationId: string }[] = []
   const usedPaths = new Set<string>()
   let operationCount = 0
 
@@ -559,7 +371,8 @@ export function importOpenApi(text: string, opts?: { selectedIds?: Set<string> }
         const op = (pathItem as Record<string, unknown>)[method]
         if (!op || typeof op !== 'object') continue
         operationCount++
-        if (selectedIds !== undefined && !selectedIds.has(operationId(method, path))) continue
+        const id = operationId(method, path)
+        if (selectedIds !== undefined && !selectedIds.has(id)) continue
         const converted = convertOperation(
           method,
           path,
@@ -570,7 +383,8 @@ export function importOpenApi(text: string, opts?: { selectedIds?: Set<string> }
         // De-duplicate collision-prone relPaths (missing operationId, etc.).
         const relPath = dedupeRelPath(converted.relPath, (p) => usedPaths.has(p))
         usedPaths.add(relPath)
-        files.push({ relPath, file: converted.file })
+        if (specPath !== undefined) converted.file.frontmatter.spec = { path: specPath, operationId: id }
+        files.push({ relPath, file: converted.file, operationId: id })
       }
     }
   } catch (e) {
@@ -581,7 +395,7 @@ export function importOpenApi(text: string, opts?: { selectedIds?: Set<string> }
     return { ok: false, error: 'spec defines no operations under "paths"' }
   }
 
-  const version = isSwagger2 ? 'Swagger 2.0' : `OpenAPI ${doc.openapi}`
+  const version = specVersionLabel(doc, isSwagger2)
   return {
     ok: true,
     files,

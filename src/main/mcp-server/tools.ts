@@ -23,6 +23,8 @@ import { buildSchema, getIntrospectionQuery, graphqlSync } from 'graphql'
 import type { GqlSchemaSummary, ParseError, RequestFile, TreeNode } from '../../shared/model'
 import { parseRequestFile, requestKindForPath, writeRequestFile } from '../../core/format'
 import { dedupeRelPath, importOpenApi } from '../../core/importers/openapi'
+import { formatSpecValidation } from '../../core/spec/format'
+import { importSpecText, isStoredSpec } from '../spec-store'
 import { parseIntrospection, FULL_INTROSPECTION_QUERY } from '../../core/graphql/introspection'
 import { isLocalEnv, serializeEnvFile } from '../../core/env'
 import { detectOperationType } from '../../core/graphql/operation'
@@ -387,6 +389,9 @@ export function registerFreepostTools(server: McpServer, ctx: ServerContext): vo
             out.push('', `${label} console:`, ...outcome.consoleLines.map((l) => `  ${l}`))
           }
         }
+        if (report.specValidation !== undefined) {
+          out.push('', 'spec:', ...formatSpecValidation(report.specValidation).lines.map((l) => `  ${l}`))
+        }
         return report.errored ? failure(out.join('\n')) : text(out.join('\n'))
       })
   )
@@ -399,7 +404,9 @@ export function registerFreepostTools(server: McpServer, ctx: ServerContext): vo
       description:
         'Generate one .curl request per operation from an OpenAPI 3 or Swagger 2 spec (JSON or ' +
         'YAML), grouped into folders by tag. Returns the files created — read and edit them ' +
-        'with write_request to add test scripts.',
+        'with write_request to add test scripts. By default the spec is also stored under ' +
+        'specs/ and each request is linked to its operation (frontmatter `spec`), so run_request ' +
+        'validates responses against it and the mock server can synthesise responses from it.',
       inputSchema: {
         spec: z.string().optional().describe('The spec document itself (JSON or YAML text)'),
         specPath: z
@@ -409,10 +416,14 @@ export function registerFreepostTools(server: McpServer, ctx: ServerContext): vo
         targetDir: z
           .string()
           .optional()
-          .describe('Collection-relative folder to import into. Defaults to the collection root.')
+          .describe('Collection-relative folder to import into. Defaults to the collection root.'),
+        attachSpec: z
+          .boolean()
+          .optional()
+          .describe('Store the spec in specs/ and link every imported request to it (default: true)')
       }
     },
-    async ({ spec, specPath, targetDir }) =>
+    async ({ spec, specPath, targetDir, attachSpec }) =>
       guard(async () => {
         assertWritable(ctx, 'import_openapi')
         if ((spec === undefined) === (specPath === undefined)) {
@@ -427,7 +438,21 @@ export function registerFreepostTools(server: McpServer, ctx: ServerContext): vo
           doc = spec!
         }
 
-        const result = importOpenApi(doc)
+        // A spec already inside the collection is linked in place; anything
+        // else is copied under specs/ first.
+        let storedSpecPath: string | undefined
+        if (attachSpec !== false) {
+          if (specPath !== undefined && isStoredSpec(root(), specPath)) storedSpecPath = specPath
+          else {
+            try {
+              storedSpecPath = (await importSpecText(root(), doc, specPath ?? 'openapi')).path
+            } catch (e) {
+              throw new ToolError(`Could not import the spec: ${e instanceof Error ? e.message : String(e)}`)
+            }
+          }
+        }
+
+        const result = importOpenApi(doc, { specPath: storedSpecPath })
         if (!result.ok) throw new ToolError(`Could not import the spec: ${result.error}`)
         if (result.files.length === 0) throw new ToolError('The spec produced no operations.')
 
@@ -448,6 +473,9 @@ export function registerFreepostTools(server: McpServer, ctx: ServerContext): vo
           [
             `Imported ${created.length} request(s) from the spec:`,
             ...created.map((c) => `  ${c}`),
+            ...(storedSpecPath !== undefined
+              ? ['', `Spec stored at ${storedSpecPath}; each request's frontmatter links its operation for response validation.`]
+              : []),
             '',
             'None of them have test scripts yet — add them with write_request.'
           ].join('\n')

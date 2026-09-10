@@ -72,6 +72,9 @@ const api = {
   importOpenApi: (args: unknown) => ipcRenderer.invoke(IPC.importOpenApi, args),
   listOpenApiFromUrl: (args: unknown) => ipcRenderer.invoke(IPC.importOpenApiListUrl, args),
   importOpenApiFromUrl: (args: unknown) => ipcRenderer.invoke(IPC.importOpenApiApplyUrl, args),
+  listSpecs: (args: unknown) => ipcRenderer.invoke(IPC.specList, args),
+  importSpec: (args: unknown) => ipcRenderer.invoke(IPC.specImport, args),
+  listSpecOperations: (args: unknown) => ipcRenderer.invoke(IPC.specOperations, args),
 
   codegenTargets: () => ipcRenderer.invoke(IPC.codegenTargets),
   generateCode: (args: unknown) => ipcRenderer.invoke(IPC.codegenGenerate, args),

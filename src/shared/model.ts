@@ -81,6 +81,8 @@ export interface Frontmatter {
   auth?: OAuth2Config
   /** Cookie jar opt-out: `false` disables sending AND storing cookies. Absent = enabled. */
   cookies?: boolean
+  /** OpenAPI/Swagger operation this request is validated against (and mocked from). */
+  spec?: SpecRef
   [key: string]: unknown
 }
 
@@ -470,6 +472,8 @@ export interface ExecutionReport {
   unresolved?: string[]
   /** errored = transport error || status >= 400 || any failed test. */
   errored: boolean
+  /** Response-vs-OpenAPI check; present only when the request has `frontmatter.spec`. */
+  specValidation?: SpecValidationReport
 }
 
 /* ------------------------------ openapi import ---------------------------- */
@@ -483,6 +487,54 @@ export interface OpenApiOperationSummary {
   summary?: string
   /** Sanitized folder this operation will be written under (first tag, else first path segment). */
   folder: string
+}
+
+/* ----------------------------- spec validation --------------------------- */
+
+/** Per-request link to an OpenAPI/Swagger document stored in the collection. */
+export interface SpecRef {
+  /** Collection-relative path of the spec file, e.g. `specs/petstore.yaml`. */
+  path: string
+  /** `${METHOD} ${path}` as written in the spec, e.g. `GET /pets/{id}`. */
+  operationId: string
+}
+
+/** Which documented response a validation ran against. */
+export interface SpecResponseKey {
+  /** Response key as written in the spec: '200', '2XX', 'default'. */
+  status: string
+  mediaType?: string
+}
+
+export interface SpecValidationError {
+  target: 'body' | 'header' | 'status'
+  /** JSON pointer into the parsed body ('' = root); lower-cased header name for target 'header'. */
+  instancePath: string
+  /** ajv keyword ('type', 'required', 'additionalProperties', 'enum', 'format', ...). */
+  keyword: string
+  message: string
+  schemaPath?: string
+  /** ajv params (missingProperty, additionalProperty, allowedValues, ...). */
+  params?: Record<string, unknown>
+}
+
+export type SpecVerdict = 'match' | 'mismatch' | 'undocumented-status' | 'skipped' | 'error'
+
+export interface SpecValidationReport {
+  verdict: SpecVerdict
+  spec: SpecRef
+  /** 'OpenAPI 3.0.3' | 'Swagger 2.0' */
+  specVersion?: string
+  /** Set for match / mismatch. */
+  matchedResponse?: SpecResponseKey
+  /** Empty on match / skipped / error. */
+  errors: SpecValidationError[]
+  /** On mismatch / undocumented-status: the documented response with the fewest errors. */
+  closestMatch?: { response: SpecResponseKey; errors: SpecValidationError[] }
+  /** On undocumented-status: the response keys the operation documents. */
+  documentedStatuses?: string[]
+  /** Why validation was skipped or errored. */
+  reason?: string
 }
 
 /* ------------------------------ collections ------------------------------ */
@@ -756,7 +808,11 @@ export interface MockRequestLogEntry {
   path: string
   status: number
   matched: boolean
+  /** Where the served response came from; absent on 404. */
+  source?: 'example' | 'spec'
   exampleName?: string
+  /** Spec operation id when `source === 'spec'`. */
+  operationId?: string
   sourcePath?: string
   at: string
 }

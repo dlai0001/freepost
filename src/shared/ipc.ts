@@ -87,9 +87,12 @@ export const IPC = {
   fileBrowse: 'file:browse', // ({ title?, filters? }) => string | null (generic native file picker)
   importFile: 'import:file', // ({ root, path, name? }) => { written: string[] } — Postman JSON or shell script
   importCommand: 'import:command', // ({ root, text, name? }) => { written: string[] } — pasted curl/websocat/wscat
-  importOpenApi: 'import:openapi', // ({ root, path }) => { written: string[] } — OpenAPI/Swagger
+  importOpenApi: 'import:openapi', // ({ root, path, attachSpec? }) => { written: string[]; specPath? } — OpenAPI/Swagger
   importOpenApiListUrl: 'import:openapi-list-url', // ({ url }) => { ok, operations, version, specText } | { ok:false, error } — fetch + list, no writes
-  importOpenApiApplyUrl: 'import:openapi-apply-url', // ({ root, specText, selectedIds, folderPrefix? }) => { written: string[] }
+  importOpenApiApplyUrl: 'import:openapi-apply-url', // ({ root, specText, selectedIds, folderPrefix?, attachSpec?, specName? }) => { written: string[]; specPath? }
+  specList: 'spec:list', // ({ root }) => string[] — stored specs under specs/
+  specImport: 'spec:import', // ({ root, source }) => { path, version, operations } — copy a spec into specs/
+  specOperations: 'spec:operations', // ({ root, path }) => ListOpenApiResult — operations of a stored spec
 
   codegenTargets: 'codegen:targets', // () => CodegenTargetInfo[]
   codegenGenerate: 'codegen:generate', // ({ root, path, target, envPath?, resolve? }) => { code: string }
@@ -243,12 +246,17 @@ export interface FreepostApi {
     title?: string
     filters?: { name: string; extensions: string[] }[]
   }): Promise<string | null>
-  /** Import a file: Postman collection JSON, or any shell script containing a curl/websocat/wscat command. */
-  importFile(args: { root: string; path: string; name?: string }): Promise<{ written: string[] }>
+  /**
+   * Import a file: Postman collection JSON, OpenAPI/Swagger (JSON or YAML), or
+   * any shell script containing a curl/websocat/wscat command. For specs,
+   * `attachSpec` (default true) stores the document under specs/ and links
+   * every generated request to its operation.
+   */
+  importFile(args: { root: string; path: string; name?: string; attachSpec?: boolean }): Promise<{ written: string[]; specPath?: string }>
   /** Import a pasted curl/websocat/wscat command as a new request file. */
   importCommand(args: { root: string; text: string; name?: string }): Promise<{ written: string[] }>
   /** Import an OpenAPI 3.x / Swagger 2.0 document (JSON or YAML). */
-  importOpenApi(args: { root: string; path: string }): Promise<{ written: string[] }>
+  importOpenApi(args: { root: string; path: string; attachSpec?: boolean }): Promise<{ written: string[]; specPath?: string }>
   /** Fetch an OpenAPI/Swagger document from a URL and list its operations, without writing anything. */
   listOpenApiFromUrl(args: { url: string }): Promise<
     | { ok: true; operations: OpenApiOperationSummary[]; version: string; specText: string }
@@ -266,7 +274,23 @@ export interface FreepostApi {
     specText: string
     selectedIds: string[]
     folderPrefix?: string
-  }): Promise<{ written: string[] }>
+    /** Store the spec under specs/ and link each request to it (default true). */
+    attachSpec?: boolean
+    /** Preferred file name for the stored spec (e.g. the URL's basename). */
+    specName?: string
+  }): Promise<{ written: string[]; specPath?: string }>
+
+  /** Collection-relative paths of the OpenAPI/Swagger documents stored under specs/. */
+  listSpecs(args: { root: string }): Promise<string[]>
+  /** Copy a spec (a file anywhere on disk, or fetched text) into specs/ and list its operations. */
+  importSpec(args: {
+    root: string
+    source: { kind: 'file'; absPath: string } | { kind: 'text'; text: string; name: string }
+  }): Promise<{ path: string; version: string; operations: OpenApiOperationSummary[] }>
+  /** Operations of a stored spec. */
+  listSpecOperations(args: { root: string; path: string }): Promise<
+    { ok: true; operations: OpenApiOperationSummary[]; version: string } | { ok: false; error: string }
+  >
 
   codegenTargets(): Promise<CodegenTargetInfo[]>
   generateCode(args: {
@@ -287,7 +311,7 @@ export interface FreepostApi {
   setActiveExample(args: { root: string; path: string; name: string }): Promise<void>
 
   /** Start (or return the already-running) mock server for a collection. */
-  startMock(args: { root: string; port?: number }): Promise<{ port: number; routes: number }>
+  startMock(args: { root: string; port?: number }): Promise<{ port: number; routes: number; specRoutes: number }>
   stopMock(args: { root: string }): Promise<void>
   mockStatus(args: { root: string }): Promise<{ running: boolean; port?: number; routes?: number }>
   onMockLog(cb: (e: { root: string; entry: MockRequestLogEntry }) => void): () => void

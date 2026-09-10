@@ -6,7 +6,7 @@ import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { spawn } from 'child_process'
 import { promises as fs } from 'fs'
 import { existsSync, watch, type FSWatcher } from 'fs'
-import { dirname, isAbsolute, join, relative, sep } from 'path'
+import { basename, dirname, isAbsolute, join, relative, sep } from 'path'
 import { IPC } from '../shared/ipc'
 import type {
   AcquiredToken,
@@ -56,7 +56,8 @@ import {
   recordedToRequestFile,
   type RecordedGrpcSave
 } from '../core/record/to-request'
-import { dedupeRelPath, importOpenApi, listOpenApiOperations } from '../core/importers/openapi'
+import { dedupeRelPath, importOpenApi, listOpenApiOperations, type ListOpenApiResult } from '../core/importers/openapi'
+import { importSpecFile, importSpecText, listSpecs, readSpec } from './spec-store'
 import { CODEGEN_TARGETS, generateCode } from '../core/codegen'
 import { parseDataFile } from '../core/data'
 import {
@@ -80,7 +81,7 @@ import {
   type GqlTransport
 } from '../engine'
 import { writeCachedToken } from './oauth-cache'
-import { buildRoutesForCollection } from './mock'
+import { buildMockTables } from './mock'
 import { appProxyStatus, proxyTlsDir, startAppProxy, stopAppProxy } from './record-proxy'
 import { recordedFilePath } from './recorded-store'
 import { ensureProxyCerts, regenerateProxyCa } from './proxy-certs'
@@ -864,7 +865,7 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(
     IPC.importFile,
-    async (_e, args: { root: string; path: string; name?: string }) => {
+    async (_e, args: { root: string; path: string; name?: string; attachSpec?: boolean }) => {
       const text = await fs.readFile(args.path, 'utf8')
       const trimmed = text.trimStart()
       // Auto-detect: Postman collection JSON, OpenAPI/Swagger (JSON or YAML),
@@ -874,7 +875,7 @@ export function registerIpcHandlers(): void {
           const obj = JSON.parse(text) as { info?: unknown; openapi?: unknown; swagger?: unknown }
           if (obj !== null && typeof obj === 'object') {
             if (obj.openapi !== undefined || obj.swagger !== undefined) {
-              return importOpenApiText(args.root, text)
+              return importOpenApiText(args.root, text, { attachSpec: args.attachSpec, specName: basename(args.path) })
             }
             if (obj.info !== undefined) return importPostmanJson(args.root, text)
           }
@@ -885,15 +886,18 @@ export function registerIpcHandlers(): void {
       // OpenAPI/Swagger YAML (or JSON not caught above).
       if (/^\s*(openapi|swagger)\s*:/m.test(text) || args.path.match(/\.ya?ml$/i)) {
         const oa = importOpenApi(text)
-        if (oa.ok) return importOpenApiText(args.root, text)
+        if (oa.ok) return importOpenApiText(args.root, text, { attachSpec: args.attachSpec, specName: basename(args.path) })
       }
       const fallback = args.path.split(/[\\/]/).pop()?.replace(/\.(sh|bash|txt|curl|ws)$/i, '')
       return importAsCommand(args.root, text, args.name ?? fallback)
     }
   )
 
-  ipcMain.handle(IPC.importOpenApi, async (_e, args: { root: string; path: string }) => {
-    return importOpenApiText(args.root, await fs.readFile(args.path, 'utf8'))
+  ipcMain.handle(IPC.importOpenApi, async (_e, args: { root: string; path: string; attachSpec?: boolean }) => {
+    return importOpenApiText(args.root, await fs.readFile(args.path, 'utf8'), {
+      attachSpec: args.attachSpec,
+      specName: basename(args.path)
+    })
   })
 
   ipcMain.handle(
@@ -930,14 +934,42 @@ export function registerIpcHandlers(): void {
     IPC.importOpenApiApplyUrl,
     async (
       _e,
-      args: { root: string; specText: string; selectedIds: string[]; folderPrefix?: string }
+      args: {
+        root: string
+        specText: string
+        selectedIds: string[]
+        folderPrefix?: string
+        attachSpec?: boolean
+        specName?: string
+      }
     ) => {
       return importOpenApiText(args.root, args.specText, {
         selectedIds: new Set(args.selectedIds),
-        folderPrefix: args.folderPrefix
+        folderPrefix: args.folderPrefix,
+        attachSpec: args.attachSpec,
+        specName: args.specName
       })
     }
   )
+
+  // ---- stored OpenAPI specs (specs/) ----
+  ipcMain.handle(IPC.specList, async (_e, args: { root: string }) => listSpecs(args.root))
+  ipcMain.handle(
+    IPC.specImport,
+    async (
+      _e,
+      args: { root: string; source: { kind: 'file'; absPath: string } | { kind: 'text'; text: string; name: string } }
+    ) => {
+      return args.source.kind === 'file'
+        ? importSpecFile(args.root, args.source.absPath)
+        : importSpecText(args.root, args.source.text, args.source.name)
+    }
+  )
+  ipcMain.handle(IPC.specOperations, async (_e, args: { root: string; path: string }): Promise<ListOpenApiResult> => {
+    const read = await readSpec(args.root, args.path)
+    if (!read.ok) return { ok: false, error: read.error }
+    return listOpenApiOperations(read.text)
+  })
 
   // ---- code generation ----
   ipcMain.handle(IPC.codegenTargets, () => CODEGEN_TARGETS)
@@ -1039,15 +1071,15 @@ export function registerIpcHandlers(): void {
     const existing = mockServers.get(args.root)
     if (existing !== undefined && existing.state === 'listening') {
       // Idempotent: rebuild routes and report the already-bound port.
-      const routes = await buildRoutesForCollection(args.root)
-      return { port: existing.port ?? 0, routes: routes.length }
+      const { routes, specRoutes } = await buildMockTables(args.root)
+      return { port: existing.port ?? 0, routes: routes.length, specRoutes: specRoutes.length }
     }
-    const routes = await buildRoutesForCollection(args.root)
+    const { routes, specRoutes } = await buildMockTables(args.root)
     const server = new MockServer()
     server.on('request', (entry) => broadcast(IPC.mockLog, { root: args.root, entry }))
-    const { port } = await server.start({ routes, port: args.port })
+    const { port } = await server.start({ routes, specRoutes, port: args.port })
     mockServers.set(args.root, server)
-    return { port, routes: routes.length }
+    return { port, routes: routes.length, specRoutes: specRoutes.length }
   })
   ipcMain.handle(IPC.mockStop, async (_e, args: { root: string }) => {
     const server = mockServers.get(args.root)
@@ -1395,12 +1427,19 @@ function sanitizeFolderPrefix(raw: string | undefined): string | undefined {
   return segments.length > 0 ? segments.join('/') : undefined
 }
 
+/**
+ * Convert a spec into request files. Unless `attachSpec` is false the spec is
+ * first stored under specs/ (named after `specName`) and every generated
+ * request links its operation via `frontmatter.spec`.
+ */
 async function importOpenApiText(
   root: string,
   text: string,
-  opts?: { selectedIds?: Set<string>; folderPrefix?: string }
-): Promise<{ written: string[] }> {
-  const result = importOpenApi(text, opts?.selectedIds !== undefined ? { selectedIds: opts.selectedIds } : undefined)
+  opts?: { selectedIds?: Set<string>; folderPrefix?: string; attachSpec?: boolean; specName?: string }
+): Promise<{ written: string[]; specPath?: string }> {
+  let specPath: string | undefined
+  if (opts?.attachSpec !== false) specPath = (await importSpecText(root, text, opts?.specName ?? 'openapi')).path
+  const result = importOpenApi(text, { selectedIds: opts?.selectedIds, specPath })
   if (!result.ok) throw new Error(result.error)
   const prefix = sanitizeFolderPrefix(opts?.folderPrefix)
   const written: string[] = []
@@ -1412,7 +1451,7 @@ async function importOpenApiText(
     await fs.writeFile(abs, writeRequestFile(f.file))
     written.push(relPath)
   }
-  return { written }
+  return specPath === undefined ? { written } : { written, specPath }
 }
 
 /** Resolve ${VAR} against values, then raw session/env, for scalar config fields. */

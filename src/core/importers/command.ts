@@ -12,7 +12,7 @@ import {
   parseRequestFile,
   tokenizeCommandText
 } from '../format'
-import type { CommandToken } from '../format/shell'
+import { scanLine, type CommandToken, type QuoteState } from '../format/shell'
 import { extractVarRefs } from '../vars'
 
 export type ImportCommandResult =
@@ -201,16 +201,35 @@ function importWscat(argv: CommandToken[]): ImportCommandResult {
   return { ok: true, kind: 'websocat', file, suggestedName: suggestName(file) }
 }
 
-/** Join backslash continuations and return the first supported command line. */
+/**
+ * Join backslash continuations and quoted strings that span lines (newline
+ * and indentation kept verbatim), and return the first supported command line.
+ */
 function extractCommandLine(text: string): { text: string; line: number } | null {
   const lines = text.split('\n').map((l) => (l.endsWith('\r') ? l.slice(0, -1) : l))
   for (let i = 0; i < lines.length; i++) {
     const first = lines[i].trim().split(/\s+/)[0] ?? ''
     if (!COMMANDS.has(first)) continue
-    let joined = lines[i].trim()
-    let j = i
-    while (joined.endsWith('\\') && j + 1 < lines.length) {
-      joined = joined.slice(0, -1) + ' ' + lines[++j].trim()
+    let joined = ''
+    let current = lines[i].trim()
+    let quote: QuoteState = 'none'
+    for (let j = i; ; ) {
+      const scan = scanLine(current, quote)
+      quote = scan.quote
+      if (j + 1 >= lines.length) {
+        joined += scan.continues ? current.slice(0, -1) : current
+        break
+      }
+      if (scan.continues) {
+        joined += current.slice(0, -1) + ' '
+        current = lines[++j].trim()
+      } else if (quote !== 'none') {
+        joined += current + '\n'
+        current = lines[++j]
+      } else {
+        joined += current
+        break
+      }
     }
     return { text: joined, line: i + 1 }
   }

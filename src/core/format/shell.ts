@@ -224,6 +224,36 @@ function parseAssignment(
   )
 }
 
+export type QuoteState = 'none' | 'single' | 'double'
+
+/**
+ * Scan one physical line starting in quote state `quote`. Returns the quote
+ * state at end of line and whether it ends in a backslash-newline line
+ * continuation (outside single quotes, where backslash is literal).
+ */
+export function scanLine(line: string, quote: QuoteState): { quote: QuoteState; continues: boolean } {
+  for (let p = 0; p < line.length; p++) {
+    const c = line[p]
+    if (quote === 'single') {
+      if (c === "'") quote = 'none'
+      continue
+    }
+    if (c === '\\') {
+      if (p === line.length - 1) return { quote, continues: true }
+      p++
+      continue
+    }
+    if (quote === 'double') {
+      if (c === '"') quote = 'none'
+    } else if (c === "'") {
+      quote = 'single'
+    } else if (c === '"') {
+      quote = 'double'
+    }
+  }
+  return { quote, continues: false }
+}
+
 /**
  * Parse the body starting at `lines[startIndex]` (0-based over the whole
  * file's physical lines; error line numbers are `index + 1`).
@@ -262,17 +292,27 @@ export function parseBody(lines: string[], startIndex: number): BodyResult {
       continue
     }
 
-    // Command invocation: join backslash-newline continuations, then tokenize.
+    // Command invocation: join backslash-newline continuations and quoted
+    // strings that span lines (newline kept, as in bash), then tokenize.
     const segments: { text: string; line: number }[] = []
     let j = i
-    let current = stripCr(lines[j])
-    while (current.endsWith('\\')) {
-      segments.push({ text: current.slice(0, -1), line: j + 1 })
+    let quote: QuoteState = 'none'
+    for (;;) {
+      const current = stripCr(lines[j])
+      const scan = scanLine(current, quote)
+      quote = scan.quote
+      if (scan.continues) {
+        segments.push({ text: current.slice(0, -1), line: j + 1 })
+      } else if (quote !== 'none' && j + 1 < lines.length) {
+        segments.push({ text: current + '\n', line: j + 1 })
+      } else {
+        // Done, or an unclosed quote at EOF (the tokenizer reports it).
+        segments.push({ text: current, line: j + 1 })
+        break
+      }
       j++
       if (j >= lines.length) return fail(j, 'line continuation ("\\") at end of file')
-      current = stripCr(lines[j])
     }
-    segments.push({ text: current, line: j + 1 })
 
     let src = ''
     const marks = segments.map((s) => {

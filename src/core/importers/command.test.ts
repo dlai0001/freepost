@@ -32,6 +32,25 @@ describe('importCommandText — curl', () => {
     expect(r.file.http?.headers).toEqual([{ name: 'Accept', value: 'application/json' }])
   })
 
+  it('keeps a multi-line quoted --data body verbatim (Postman "Copy as cURL" shape)', () => {
+    const script = [
+      "curl --location 'https://api.example.com/v1/items' \\",
+      "--header 'Content-Type: application/json' \\",
+      "--data '{",
+      '    "name": "widget",',
+      '    "tags": ["a", "b"]',
+      "}'",
+      'echo done'
+    ].join('\n')
+    const r = importCommandText(script)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.file.http?.body).toEqual({
+      kind: 'raw',
+      value: '{\n    "name": "widget",\n    "tags": ["a", "b"]\n}'
+    })
+  })
+
   it('drops unsupported flags with an import-note instead of failing', () => {
     const r = importCommandText(
       `curl -s --compressed -o /tmp/out.json -X GET https://x.dev/api -H 'Accept: text/plain'`

@@ -327,6 +327,22 @@ describe('round-trip law: parse(write(f)) deep-equals f', () => {
       },
     })
   })
+
+  it('holds for multi-line bodies (single- and double-quoted, tabs, quotes)', () => {
+    const base = (value: string, variables: RequestFile['variables'] = []): RequestFile => ({
+      kind: 'curl',
+      frontmatter: {},
+      variables,
+      comments: [],
+      http: { method: 'POST', url: 'https://x', headers: [], body: { kind: 'raw', value }, options: {} },
+    })
+    const plain = roundTrip(base('{\n\t"name": "it\'s here",\n\t"n": 1\n}\n'))
+    expect(plain).toContain("--data '{\n")
+    const templated = roundTrip(
+      base('{\n\t"name": "${who}",\n\t"path": "C:\\\\tmp \\\\\n"\n}', [{ name: 'who', required: false, defaultValue: '' }]),
+    )
+    expect(templated).toContain('--data "{\n')
+  })
 })
 
 describe('writeRequestFile: canonical layout', () => {
@@ -582,6 +598,18 @@ describe('parseRequestFile: strict-grammar rejections (with line info)', () => {
   it('rejects two commands', () => {
     const e = parseErr(["curl --url 'https://a'", "curl --url 'https://b'"].join('\n'))
     expect(e.line).toBe(2)
+    expect(e.message).toMatch(/exactly one command/)
+  })
+
+  it('rejects a quoted string left open at end of file, at its opening line', () => {
+    const e = parseErr(["curl \\", "  --url 'https://x' \\", "  --data '{", '  "a": 1'].join('\n'))
+    expect(e.line).toBe(3)
+    expect(e.message).toMatch(/unterminated single-quoted/)
+  })
+
+  it('still rejects a second command after a multi-line quoted body', () => {
+    const e = parseErr(["curl --url 'https://x' --data '{", "}'", "curl --url 'https://y'"].join('\n'))
+    expect(e.line).toBe(3)
     expect(e.message).toMatch(/exactly one command/)
   })
 

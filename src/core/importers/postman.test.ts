@@ -5,6 +5,7 @@ import {
   sanitizePathSegment,
   sanitizeVarName
 } from './postman'
+import { parseRequestFile, writeRequestFile } from '../format'
 
 /* -------------------------------- fixture -------------------------------- */
 
@@ -218,6 +219,32 @@ describe('request mapping', () => {
       kind: 'raw',
       value: '{"user": "${user_name}", "password": "${password}"}'
     })
+  })
+
+  it('writes multi-line raw JSON bodies to .curl files that parse back unchanged', () => {
+    const raw = '{\n\t"name": "it\'s {{who}}",\n\t"tags": ["a", "b"]\n}'
+    for (const value of [raw, raw.replace('{{who}}', 'me')]) {
+      const r = importPostmanCollection(
+        JSON.stringify({
+          info: { name: 'x' },
+          item: [
+            {
+              name: 'Create',
+              request: {
+                method: 'POST',
+                url: 'https://x',
+                body: { mode: 'raw', raw: value, options: { raw: { language: 'json' } } }
+              }
+            }
+          ]
+        })
+      )
+      if (!r.ok) throw new Error(r.error)
+      const file = r.files[0].file
+      const back = parseRequestFile(writeRequestFile(file), 'curl')
+      if (!back.ok) throw new Error(JSON.stringify(back.errors))
+      expect(back.file.http?.body).toEqual({ kind: 'raw', value: value.replace('{{who}}', '${who}') })
+    }
   })
 
   it('maps graphql bodies to frontmatter.graphql, parsing the variables JSON string', () => {
